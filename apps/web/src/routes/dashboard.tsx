@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Card, Col, Row, Spin, Typography } from 'antd'
+import { Card, Col, message, Row, Spin, Typography } from 'antd'
+import { useEffect } from 'react'
 import { useDashboardStats } from '@/hooks/use-dashboard'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 
@@ -10,10 +11,18 @@ export const Route = createFileRoute('/dashboard')({
 })
 
 function DashboardPage() {
-  const { data, isLoading } = useDashboardStats()
+  const { data, isLoading, isError, error } = useDashboardStats()
+  const [messageApi, contextHolder] = message.useMessage()
+
+  useEffect(() => {
+    if (isError) {
+      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+    }
+  }, [isError, error, messageApi])
 
   return (
     <AuthenticatedLayout>
+      {contextHolder}
       <Title level={3}>仪表盘</Title>
       <Spin spinning={isLoading}>
         <Row gutter={[16, 16]}>

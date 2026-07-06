@@ -9,6 +9,7 @@ export interface FileItem {
   mimeType: string
   size: number
   uploadedBy: number | null
+  uploadedByUsername: string | null
   createdAt: string
 }
 

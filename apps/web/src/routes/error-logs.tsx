@@ -1,13 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router'
 import {
-  Alert,
   Button,
   Card,
   Col,
+  Collapse,
+  Divider,
   Drawer,
   Empty,
   Form,
   Input,
+  List,
   Modal,
   message,
   Popconfirm,
@@ -22,14 +24,18 @@ import {
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import {
   type ErrorLog,
+  type ErrorLogGroup,
   type ErrorWhitelist,
+  useBatchResolveErrorLog,
   useCreateWhitelist,
   useDeleteErrorLog,
   useDeleteWhitelist,
   useErrorLogs,
+  useErrorLogsGrouped,
   useErrorStats,
   useResolveErrorLog,
   useUpdateWhitelist,
@@ -47,13 +53,6 @@ function ErrorLogsPage() {
   return (
     <AuthenticatedLayout>
       <Title level={3}>错误日志</Title>
-
-      <Alert
-        title="错误日志记录系统异常和未捕获运行时错误，白名单可过滤已知噪声"
-        type="warning"
-        showIcon
-        style={{ marginBottom: 16 }}
-      />
 
       <Tabs
         defaultActiveKey="logs"
@@ -84,6 +83,7 @@ function LogsTab() {
   const [sourceFilter, setSourceFilter] = useState<string | undefined>(undefined)
   const [resolvedFilter, setResolvedFilter] = useState<string | undefined>(undefined)
   const [selectedLog, setSelectedLog] = useState<ErrorLog | null>(null)
+  const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error } = useErrorLogs({
     page,
@@ -93,8 +93,39 @@ function LogsTab() {
     isResolved: resolvedFilter,
   })
   const { data: stats } = useErrorStats()
+  const { data: grouped } = useErrorLogsGrouped(10)
   const deleteMutation = useDeleteErrorLog()
   const resolveMutation = useResolveErrorLog()
+  const batchResolveMutation = useBatchResolveErrorLog()
+
+  useEffect(() => {
+    if (isError) {
+      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+    }
+  }, [isError, error, messageApi])
+
+  const handleBatchResolve = (item: ErrorLogGroup) => {
+    batchResolveMutation.mutate(
+      { message: item.message, source: item.source },
+      {
+        onSuccess: (res) => {
+          messageApi.success(`已批量处理 ${res.affected} 条相同错误`)
+        },
+        onError: () => {
+          messageApi.error('批量处理失败')
+        },
+      },
+    )
+  }
+
+  // 联动筛选: 点击聚合项"查看详情"后，用 message 作为关键词筛选列表
+  const handleViewGroupDetails = (item: ErrorLogGroup) => {
+    setKeyword(item.message)
+    setSearchInput(item.message)
+    setSourceFilter(item.source)
+    setResolvedFilter(undefined)
+    setPage(1)
+  }
 
   const columns: ColumnsType<ErrorLog> = [
     {
@@ -142,147 +173,218 @@ function LogsTab() {
     },
     {
       title: '操作',
-      width: 200,
-      render: (_: unknown, record: ErrorLog) => (
-        <Space>
-          <Button size="small" onClick={() => setSelectedLog(record)}>
-            详情
-          </Button>
-          {!record.isResolved && (
-            <Button
-              size="small"
-              type="primary"
-              loading={resolveMutation.isPending}
-              onClick={() => resolveMutation.mutate(record.id)}
+      width: 220,
+      render: (_: unknown, record: ErrorLog) => {
+        const actions: { key: string; node: ReactNode }[] = [
+          {
+            key: 'detail',
+            node: (
+              <Button type="link" size="small" onClick={() => setSelectedLog(record)}>
+                详情
+              </Button>
+            ),
+          },
+        ]
+        if (!record.isResolved) {
+          actions.push({
+            key: 'resolve',
+            node: (
+              <Button
+                type="link"
+                size="small"
+                loading={resolveMutation.isPending}
+                onClick={() => resolveMutation.mutate(record.id)}
+              >
+                标记已处理
+              </Button>
+            ),
+          })
+        }
+        actions.push({
+          key: 'delete',
+          node: (
+            <Popconfirm
+              title="确认删除该错误日志？"
+              onConfirm={() => deleteMutation.mutate(record.id)}
             >
-              标记已处理
-            </Button>
-          )}
-          <Popconfirm
-            title="确认删除该错误日志？"
-            onConfirm={() => deleteMutation.mutate(record.id)}
-          >
-            <Button size="small" danger>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+              <Button type="link" size="small" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          ),
+        })
+        return (
+          <Space size={0}>
+            {actions.map((item, i) => (
+              <span key={item.key} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                {i > 0 && <Divider type="vertical" style={{ margin: '0 4px' }} />}
+                {item.node}
+              </span>
+            ))}
+          </Space>
+        )
+      },
     },
   ]
 
   return (
     <>
-      {isError && (
-        <Alert
-          title="加载失败"
-          description={(error as Error)?.message ?? '未知错误'}
-          type="error"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      {contextHolder}
 
-      {/* 统计面板 */}
+      {/* 统计面板 - 紧凑横排 */}
       {stats && (
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={6}>
-            <Card>
+        <Card size="small" style={{ marginBottom: 16 }}>
+          <Row gutter={16}>
+            <Col span={6}>
               <Statistic title="总错误数" value={stats.total} />
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
+            </Col>
+            <Col span={6}>
               <Statistic
                 title="未处理"
                 value={stats.unresolved}
                 valueStyle={{ color: '#cf1322' }}
               />
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
+            </Col>
+            <Col span={6}>
               <Statistic
                 title="前端错误"
                 value={stats.bySource.frontend ?? 0}
                 valueStyle={{ color: '#1677ff' }}
               />
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
+            </Col>
+            <Col span={6}>
               <Statistic
                 title="后端错误"
                 value={stats.bySource.backend ?? 0}
                 valueStyle={{ color: '#cf1322' }}
               />
-            </Card>
-          </Col>
-        </Row>
+            </Col>
+          </Row>
+        </Card>
       )}
 
-      <Card>
-        <Space style={{ marginBottom: 16 }} wrap>
-          <Input.Search
-            placeholder="搜索错误消息"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onSearch={(v) => {
-              setKeyword(v || undefined)
-              setPage(1)
-            }}
-            style={{ width: 260 }}
-            allowClear
-          />
-          <Select
-            placeholder="来源"
-            value={sourceFilter}
-            onChange={(v) => {
-              setSourceFilter(v)
-              setPage(1)
-            }}
-            allowClear
-            style={{ width: 120 }}
-            options={[
-              { value: 'frontend', label: '前端' },
-              { value: 'backend', label: '后端' },
-            ]}
-          />
-          <Select
-            placeholder="状态"
-            value={resolvedFilter}
-            onChange={(v) => {
-              setResolvedFilter(v)
-              setPage(1)
-            }}
-            allowClear
-            style={{ width: 120 }}
-            options={[
-              { value: 'false', label: '未处理' },
-              { value: 'true', label: '已处理' },
-            ]}
-          />
-        </Space>
-
-        <Table<ErrorLog>
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.list ?? []}
-          loading={isLoading}
-          locale={{ emptyText: <Empty description="暂无错误日志" /> }}
-          pagination={{
-            current: page,
-            pageSize,
-            total: data?.total ?? 0,
-            showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, s) => {
-              setPage(p)
-              setPageSize(s)
+      {/* 相同报错聚合 Top 10 - 可折叠 */}
+      {grouped && grouped.length > 0 && (
+        <Collapse
+          size="small"
+          style={{ marginBottom: 16 }}
+          items={[
+            {
+              key: 'grouped',
+              label: `相似错误聚合 Top 10（共 ${grouped.length} 组）`,
+              children: (
+                <List
+                  size="small"
+                  dataSource={grouped}
+                  renderItem={(item: ErrorLogGroup) => (
+                    <List.Item
+                      actions={[
+                        <Button
+                          key="view"
+                          type="link"
+                          size="small"
+                          onClick={() => handleViewGroupDetails(item)}
+                        >
+                          查看详情
+                        </Button>,
+                        <Popconfirm
+                          key="batch-resolve"
+                          title={`确认将这 ${item.count} 条相同错误全部标记为已处理？`}
+                          onConfirm={() => handleBatchResolve(item)}
+                        >
+                          <Button type="link" size="small" loading={batchResolveMutation.isPending}>
+                            全部已处理
+                          </Button>
+                        </Popconfirm>,
+                      ]}
+                    >
+                      <Space style={{ width: '100%' }} direction="vertical" size={0}>
+                        <Space>
+                          <Tag color={item.source === 'frontend' ? 'blue' : 'red'}>
+                            {item.source === 'frontend' ? '前端' : '后端'}
+                          </Tag>
+                          <Text type="danger" ellipsis style={{ maxWidth: 500 }}>
+                            {item.message}
+                          </Text>
+                          <Tag color="orange">×{item.count}</Tag>
+                        </Space>
+                        <Text type="secondary" className="text-xs">
+                          首次: {new Date(item.firstCreatedAt).toLocaleString('zh-CN')} · 最后:
+                          {new Date(item.lastCreatedAt).toLocaleString('zh-CN')} · 样本ID:{' '}
+                          {item.sampleId}
+                        </Text>
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              ),
             },
-          }}
+          ]}
         />
-      </Card>
+      )}
+
+      {/* 搜索区 */}
+      <Space style={{ marginBottom: 16 }} wrap>
+        <Input.Search
+          placeholder="搜索错误消息"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onSearch={(v) => {
+            setKeyword(v || undefined)
+            setPage(1)
+          }}
+          style={{ width: 260 }}
+          allowClear
+        />
+        <Select
+          placeholder="来源"
+          value={sourceFilter}
+          onChange={(v) => {
+            setSourceFilter(v)
+            setPage(1)
+          }}
+          allowClear
+          style={{ width: 120 }}
+          options={[
+            { value: 'frontend', label: '前端' },
+            { value: 'backend', label: '后端' },
+          ]}
+        />
+        <Select
+          placeholder="状态"
+          value={resolvedFilter}
+          onChange={(v) => {
+            setResolvedFilter(v)
+            setPage(1)
+          }}
+          allowClear
+          style={{ width: 120 }}
+          options={[
+            { value: 'false', label: '未处理' },
+            { value: 'true', label: '已处理' },
+          ]}
+        />
+      </Space>
+
+      <Table<ErrorLog>
+        rowKey="id"
+        bordered
+        columns={columns}
+        dataSource={data?.list ?? []}
+        loading={isLoading}
+        locale={{ emptyText: <Empty description="暂无错误日志" /> }}
+        pagination={{
+          current: page,
+          pageSize,
+          total: data?.total ?? 0,
+          showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 条`,
+          onChange: (p, s) => {
+            setPage(p)
+            setPageSize(s)
+          },
+        }}
+      />
 
       <Drawer title="错误详情" open={!!selectedLog} onClose={() => setSelectedLog(null)} size={640}>
         {selectedLog && (
@@ -412,6 +514,13 @@ function WhitelistTab() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form] = Form.useForm<WhitelistFormValues>()
+  const [messageApi, contextHolder] = message.useMessage()
+
+  useEffect(() => {
+    if (isError) {
+      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+    }
+  }, [isError, error, messageApi])
 
   const openCreate = () => {
     setEditingId(null)
@@ -436,19 +545,27 @@ function WhitelistTab() {
 
   const handleSubmit = async () => {
     const values = await form.validateFields()
-    if (editingId) {
-      await updateMutation.mutateAsync({ id: editingId, data: values })
-      message.success('更新成功')
-    } else {
-      await createMutation.mutateAsync(values)
-      message.success('创建成功')
+    try {
+      if (editingId) {
+        await updateMutation.mutateAsync({ id: editingId, data: values })
+        messageApi.success('更新成功')
+      } else {
+        await createMutation.mutateAsync(values)
+        messageApi.success('创建成功')
+      }
+      setModalOpen(false)
+    } catch (err) {
+      messageApi.error(`操作失败: ${(err as Error)?.message ?? '未知错误'}`)
     }
-    setModalOpen(false)
   }
 
   const handleToggleActive = async (record: ErrorWhitelist, checked: boolean) => {
-    await updateMutation.mutateAsync({ id: record.id, data: { isActive: checked } })
-    message.success(checked ? '已启用' : '已禁用')
+    try {
+      await updateMutation.mutateAsync({ id: record.id, data: { isActive: checked } })
+      messageApi.success(checked ? '已启用' : '已禁用')
+    } catch (err) {
+      messageApi.error(`操作失败: ${(err as Error)?.message ?? '未知错误'}`)
+    }
   }
 
   const columns: ColumnsType<ErrorWhitelist> = [
@@ -493,52 +610,63 @@ function WhitelistTab() {
     {
       title: '操作',
       width: 140,
-      render: (_: unknown, record: ErrorWhitelist) => (
-        <Space>
-          <Button size="small" onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm
-            title="确认删除该白名单规则？"
-            onConfirm={() => deleteMutation.mutate(record.id)}
-          >
-            <Button size="small" danger>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: unknown, record: ErrorWhitelist) => {
+        const actions: { key: string; node: ReactNode }[] = [
+          {
+            key: 'edit',
+            node: (
+              <Button type="link" size="small" onClick={() => openEdit(record)}>
+                编辑
+              </Button>
+            ),
+          },
+          {
+            key: 'delete',
+            node: (
+              <Popconfirm
+                title="确认删除该白名单规则？"
+                onConfirm={() => deleteMutation.mutate(record.id)}
+              >
+                <Button type="link" size="small" danger>
+                  删除
+                </Button>
+              </Popconfirm>
+            ),
+          },
+        ]
+        return (
+          <Space size={0}>
+            {actions.map((item, i) => (
+              <span key={item.key} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                {i > 0 && <Divider type="vertical" style={{ margin: '0 4px' }} />}
+                {item.node}
+              </span>
+            ))}
+          </Space>
+        )
+      },
     },
   ]
 
   return (
     <>
-      {isError && (
-        <Alert
-          title="加载失败"
-          description={(error as Error)?.message ?? '未知错误'}
-          type="error"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      {contextHolder}
 
-      <Card>
-        <Space style={{ marginBottom: 16 }}>
-          <Button type="primary" onClick={openCreate}>
-            新增白名单
-          </Button>
-        </Space>
+      <div className="flex justify-end mb-4">
+        <Button type="primary" onClick={openCreate}>
+          新增白名单
+        </Button>
+      </div>
 
-        <Table<ErrorWhitelist>
-          rowKey="id"
-          columns={columns}
-          dataSource={data ?? []}
-          loading={isLoading}
-          locale={{ emptyText: <Empty description="暂无白名单规则" /> }}
-          pagination={false}
-        />
-      </Card>
+      <Table<ErrorWhitelist>
+        rowKey="id"
+        bordered
+        columns={columns}
+        dataSource={data ?? []}
+        loading={isLoading}
+        locale={{ emptyText: <Empty description="暂无白名单规则" /> }}
+        pagination={false}
+      />
 
       <Modal
         title={editingId ? '编辑白名单' : '新增白名单'}

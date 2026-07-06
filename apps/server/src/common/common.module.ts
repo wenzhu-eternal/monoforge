@@ -1,11 +1,13 @@
-import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common'
+import { forwardRef, Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common'
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core'
+import { ErrorLogsModule } from '@/modules/error-logs/error-logs.module'
 import { HttpExceptionFilter } from './filters/http-exception.filter'
 import { ResponseInterceptor } from './interceptors/response.interceptor'
 import { SanitizeMiddleware } from './middleware/sanitize.middleware'
 
 @Global()
 @Module({
+  imports: [forwardRef(() => ErrorLogsModule)],
   providers: [
     {
       provide: APP_INTERCEPTOR,

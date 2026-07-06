@@ -7,8 +7,15 @@ export const Permissions = {
   ROLE_CREATE: 'role:create',
   ROLE_UPDATE: 'role:update',
   ROLE_DELETE: 'role:delete',
+  PERMISSION_VIEW: 'permission:view',
+  PERMISSION_CREATE: 'permission:create',
+  PERMISSION_UPDATE: 'permission:update',
+  PERMISSION_DELETE: 'permission:delete',
   FILE_VIEW: 'file:view',
   FILE_UPLOAD: 'file:upload',
+  AUDIT_VIEW: 'audit:view',
+  ERROR_LOG_VIEW: 'error_log:view',
+  ERROR_LOG_MANAGE: 'error_log:manage',
 } as const
 
 export type PermissionCode = (typeof Permissions)[keyof typeof Permissions]

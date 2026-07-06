@@ -110,6 +110,13 @@ export class MailService {
   }
 
   /**
+   * 判断邮件服务是否已配置（供 Controller 检查并返回友好提示）
+   */
+  isConfigured(): boolean {
+    return this.transporter !== null
+  }
+
+  /**
    * 发送 HTML 邮件
    */
   private async sendHtml(to: string, subject: string, html: string): Promise<void> {

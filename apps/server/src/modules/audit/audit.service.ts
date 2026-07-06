@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { count, desc, eq } from 'drizzle-orm'
 import { db } from '@/db'
-import { auditLogs } from '@/db/schema'
+import { auditLogs, users } from '@/db/schema'
 
 export interface RecordAuditLogParams {
   userId: number
@@ -14,19 +14,22 @@ export interface RecordAuditLogParams {
   userAgent?: string
 }
 
+export interface AuditLogWithUser {
+  id: number
+  userId: number
+  username: string | null
+  action: string
+  resource: string
+  resourceId: number | null
+  oldValue: unknown
+  newValue: unknown
+  ip: string | null
+  userAgent: string | null
+  createdAt: Date
+}
+
 export interface PaginatedAuditLogs {
-  list: Array<{
-    id: number
-    userId: number
-    action: string
-    resource: string
-    resourceId: number | null
-    oldValue: unknown
-    newValue: unknown
-    ip: string | null
-    userAgent: string | null
-    createdAt: Date
-  }>
+  list: AuditLogWithUser[]
   total: number
   page: number
   pageSize: number
@@ -58,6 +61,7 @@ export class AuditService {
         .select({
           id: auditLogs.id,
           userId: auditLogs.userId,
+          username: users.username,
           action: auditLogs.action,
           resource: auditLogs.resource,
           resourceId: auditLogs.resourceId,
@@ -68,6 +72,7 @@ export class AuditService {
           createdAt: auditLogs.createdAt,
         })
         .from(auditLogs)
+        .leftJoin(users, eq(auditLogs.userId, users.id))
         .limit(safePageSize)
         .offset(offset)
         .orderBy(desc(auditLogs.createdAt)),
@@ -84,13 +89,29 @@ export class AuditService {
     }
   }
 
-  async findById(id: number) {
-    const log = await db.query.auditLogs.findFirst({
-      where: eq(auditLogs.id, id),
-    })
-    if (!log) {
+  async findById(id: number): Promise<AuditLogWithUser> {
+    const log = await db
+      .select({
+        id: auditLogs.id,
+        userId: auditLogs.userId,
+        username: users.username,
+        action: auditLogs.action,
+        resource: auditLogs.resource,
+        resourceId: auditLogs.resourceId,
+        oldValue: auditLogs.oldValue,
+        newValue: auditLogs.newValue,
+        ip: auditLogs.ip,
+        userAgent: auditLogs.userAgent,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.userId, users.id))
+      .where(eq(auditLogs.id, id))
+      .limit(1)
+
+    if (log.length === 0) {
       throw new NotFoundException(`审计日志 ID ${id} 不存在`)
     }
-    return log
+    return log[0] as AuditLogWithUser
   }
 }

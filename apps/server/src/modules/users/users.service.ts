@@ -3,8 +3,9 @@ import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import * as argon2 from 'argon2'
 import { desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import type { User } from '@/db/schema'
-import { users } from '@/db/schema'
+import { roles, users } from '@/db/schema'
 import { Cacheable } from '@/modules/cache/cache.decorator'
 import { CacheService } from '@/modules/cache/cache.service'
 
@@ -19,7 +20,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export interface PaginatedUsers {
-  list: Omit<User, 'password'>[]
+  list: Record<string, unknown>[]
   total: number
   page: number
   pageSize: number
@@ -36,16 +37,41 @@ export class UsersService {
     const offset = (safePage - 1) * safePageSize
 
     const [items, countResult] = await Promise.all([
-      db.query.users.findMany({
-        limit: safePageSize,
-        offset,
-        orderBy: [desc(users.createdAt)],
-      }),
-      db.select({ count: sql<number>`count(*)::int` }).from(users),
+      db
+        .select({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          nickname: users.nickname,
+          avatar: users.avatar,
+          phone: users.phone,
+          roleId: users.roleId,
+          status: users.status,
+          createdAt: users.createdAt,
+          updatedAt: users.updatedAt,
+          roleName: roles.name,
+        })
+        .from(users)
+        .leftJoin(roles, eq(users.roleId, roles.id))
+        .where(notDeleted(users.deletedAt))
+        .limit(safePageSize)
+        .offset(offset)
+        .orderBy(desc(users.createdAt)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(notDeleted(users.deletedAt)),
     ])
 
     const total = countResult[0]?.count ?? 0
-    const list = items.map(({ password: _, ...rest }) => rest)
+    const list = items.map((item) => {
+      const { ...rest } = item
+      // 如果有角色信息，添加到 roles 数组
+      if (item.roleName) {
+        return { ...rest, roles: [{ id: item.roleId, name: item.roleName }] }
+      }
+      return rest
+    })
 
     return {
       list,
@@ -89,6 +115,7 @@ export class UsersService {
     password: string
     nickname?: string
     phone?: string
+    roleId?: number | null
   }): Promise<Omit<User, 'password'>> {
     const existingUsername = await db.query.users.findFirst({
       where: eq(users.username, data.username),
@@ -141,6 +168,7 @@ export class UsersService {
       phone?: string
       status?: boolean
       password?: string
+      roleId?: number | null
     },
   ): Promise<Omit<User, 'password'>> {
     const existingUser = await db.query.users.findFirst({
@@ -201,7 +229,8 @@ export class UsersService {
       throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
     }
 
-    await db.delete(users).where(eq(users.id, id))
+    // 软删除: 设置 deletedAt 时间戳
+    await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id))
 
     // 删除后清缓存
     await this.cacheService.delByPattern(`cache:user:*${id}*`)

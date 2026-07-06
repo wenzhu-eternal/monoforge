@@ -6,16 +6,15 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common'
-import { eq } from 'drizzle-orm'
 import type { Request, Response } from 'express'
 import { appendErrorLog } from '@/common/logger'
-import { db } from '@/db'
-import { errorLogs } from '@/db/schema'
-import { errorWhitelist } from '@/db/schema/error-whitelist'
+import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name)
+
+  constructor(private readonly errorLogsService: ErrorLogsService) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp()
@@ -53,7 +52,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       appendErrorLog(`${request.method} ${request.url} [${status}] ${message}`, stack)
     }
 
-    // 异步入库错误日志（不阻塞响应），带白名单过滤
+    // 异步入库错误日志（不阻塞响应），白名单过滤与缓存交给 ErrorLogsService
     if (shouldRecordToDb) {
       this.recordErrorLog(exception, request).catch((err) => {
         this.logger.error('[ErrorLogs] 入库失败:', err)
@@ -68,38 +67,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
   }
 
   /**
-   * 记录错误日志到 DB，支持白名单过滤（matchType: message/url）
+   * 委托给 ErrorLogsService.record() 入库
+   * - 自动补 source: 'backend' / errorType: 'http_error'
+   * - 复用 Redis 白名单缓存
    */
   private async recordErrorLog(exception: unknown, request: Request): Promise<void> {
     const message = exception instanceof Error ? exception.message : String(exception)
     const stack = exception instanceof Error ? exception.stack : undefined
 
-    // 白名单过滤: 查询全部激活白名单，按 matchType 匹配
-    try {
-      const whitelist = await db
-        .select({
-          pattern: errorWhitelist.pattern,
-          matchType: errorWhitelist.matchType,
-        })
-        .from(errorWhitelist)
-        .where(eq(errorWhitelist.isActive, true))
-
-      const isMatched = whitelist.some((w) => {
-        const target = w.matchType === 'url' ? request.url : message
-        return target.includes(w.pattern)
-      })
-      if (isMatched) {
-        return
-      }
-    } catch {
-      // 白名单查询失败不影响主流程
-    }
-
     const userPayload = (request as { user?: { sub?: number } }).user
     const forwardedFor = request.headers['x-forwarded-for'] as string | undefined
     const ip = forwardedFor?.split(',')[0]?.trim() ?? request.ip
 
-    await db.insert(errorLogs).values({
+    await this.errorLogsService.record({
       message,
       stack,
       context: {
@@ -109,7 +89,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       },
       userId: userPayload?.sub,
       ip,
-      userAgent: request.headers['user-agent'] ?? null,
+      userAgent: request.headers['user-agent'] ?? undefined,
     })
   }
 }

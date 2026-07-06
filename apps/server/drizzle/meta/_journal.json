@@ -43,6 +43,27 @@
       "when": 1783151857630,
       "tag": "0005_lying_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783252548592,
+      "tag": "0006_elite_maggott",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783255420750,
+      "tag": "0007_bizarre_paper_doll",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783256721586,
+      "tag": "0008_loud_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,7 @@ mb-monorepo/
 1. **禁止 `synchronize`** - 所有表结构变更走 `drizzle-kit generate` 迁移
 2. **表名使用 snake_case 复数** - `users` / `roles` / `error_logs`
 3. **使用 PostgreSQL** - JSONB 存可变结构
+4. **软删除** - 所有表添加 `deleted_at` 字段，删除操作仅设置时间戳，查询时过滤 `deleted_at IS NULL`
 
 ## 命名规范
 
@@ -100,3 +101,23 @@ docker compose up redis     # 只启动 Redis
 - [antd v6 迁移指南](https://ant.design/docs/react/migration-v6/)
 - [Drizzle ORM 文档](https://orm.drizzle.team/docs)
 - [TanStack Router](https://tanstack.com/router/latest)
+
+## 前端交互规范
+
+1. **Table 样式**：所有 `<Table>` 必须加 `bordered`，多操作按钮用 `<Divider type="vertical" style={{ margin: '0 4px' }} />` 分隔，操作按钮统一 `type="link" size="small"`
+2. **错误提示**：加载失败用 `message.useMessage()` + `useEffect` 监听 `isError` 弹 toast，不再用 `<Alert>` 常驻；`contextHolder` 紧跟外层组件
+3. **布局**：顶部不再用 `<Card>` 包裹 Table，标题行右侧放主操作按钮（如"新建"/"上传"）
+4. **antd 中文化**：`__root.tsx` 的 `ConfigProvider` 必须配 `locale={zhCN}`，所有 Modal/Popconfirm 默认显示"确定/取消"，不再为每个弹窗单独写 `okText/cancelText`
+5. **菜单跳转**：`handleMenuClick` 必须判断 `key.startsWith('/')` 才跳转，分组节点 key（如 `'system'`/`'log'`/`'content'`）不触发 `navigate`
+6. **菜单可见性**：admin 专属菜单（如邮件发送）基于 `user?.roles?.some(r => r.name === 'admin')` 判断；普通业务菜单基于 `hasPermission(Permissions.XXX)`
+
+## 错误日志规范
+
+1. **入库链路**：所有后端错误必须经 `ErrorLogsService.record()` 入库，禁止在 ExceptionFilter 或其他位置直接 `db.insert(errorLogs)`，以确保 `errorType` 与白名单缓存一致
+2. **聚合查询**：`findGrouped` 必须 `where eq(isResolved=false)`，全处理后聚合列表自动隐藏
+3. **限流豁免**：error-logs 模块的只读接口（findAll/stats/grouped/whitelist）必须 `@SkipThrottle()`，避免 429
+
+## 数据库 helpers 规范
+
+1. **`notDeleted(deletedAt)` 仅传单列**：正确用法 `and(eq(col, val), notDeleted(deletedAt))`；错误用法 `notDeleted(id, deletedAt)` 会把所有传入列都判 `IS NULL` → 永远查不到记录
+2. **删除绑定校验**：删除实体前必须检查外键引用（如 rolePermissions / users.roleId），存在未软删的引用则抛 `ConflictException`

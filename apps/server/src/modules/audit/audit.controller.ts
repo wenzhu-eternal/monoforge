@@ -8,21 +8,21 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
-import { Roles } from '@/common/decorators/roles.decorator'
-import { RolesGuard } from '@/common/guards/roles.guard'
+import { Permissions } from '@/common/decorators/permissions.decorator'
+import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { AuthGuard } from '@/modules/auth/auth.guard'
 import { AuditService } from './audit.service'
 
 @ApiTags('Audit')
 @Controller('audit-logs')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  @Roles('admin')
-  @ApiOperation({ summary: '分页查询审计日志（仅管理员）' })
+  @Permissions('audit:view')
+  @ApiOperation({ summary: '分页查询审计日志' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   async findAll(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
@@ -38,8 +38,8 @@ export class AuditController {
   }
 
   @Get(':id')
-  @Roles('admin')
-  @ApiOperation({ summary: '按ID查询审计日志（仅管理员）' })
+  @Permissions('audit:view')
+  @ApiOperation({ summary: '按ID查询审计日志' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.auditService.findById(id)
   }

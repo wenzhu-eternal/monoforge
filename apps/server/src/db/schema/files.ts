@@ -10,6 +10,7 @@ export const files = pgTable('files', {
   path: text('path').notNull(), // 磁盘绝对路径
   uploadedBy: integer('uploaded_by').references(() => users.id), // 上传者
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at'),
 })
 
 export type FileRecord = typeof files.$inferSelect

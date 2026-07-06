@@ -29,6 +29,7 @@ export const errorLogs = pgTable('error_logs', {
   resolvedAt: timestamp('resolved_at'),
   resolvedBy: integer('resolved_by'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at'),
 })
 
 export type ErrorLog = typeof errorLogs.$inferSelect

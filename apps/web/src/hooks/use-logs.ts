@@ -13,6 +13,7 @@ export interface LogQuery {
 export interface AuditLog {
   id: number
   userId: number
+  username: string | null
   action: string
   resource: string
   resourceId: number | null
@@ -66,6 +67,15 @@ export interface ErrorStats {
   byType: Record<string, number>
 }
 
+export interface ErrorLogGroup {
+  message: string
+  source: string
+  count: number
+  firstCreatedAt: string
+  lastCreatedAt: string
+  sampleId: number
+}
+
 export interface ErrorLogQuery extends LogQuery {
   source?: string
   isResolved?: string
@@ -94,6 +104,18 @@ export const useErrorStats = () => {
   })
 }
 
+export const useErrorLogsGrouped = (limit = 10) => {
+  return useQuery({
+    queryKey: ['error-logs-grouped', limit],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<ErrorLogGroup[]>>('/api/v1/error-logs/grouped', {
+        params: { limit },
+      })
+      return response.data.data!
+    },
+  })
+}
+
 export const useResolveErrorLog = () => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -103,6 +125,25 @@ export const useResolveErrorLog = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['error-logs'] })
       queryClient.invalidateQueries({ queryKey: ['error-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['error-logs-grouped'] })
+    },
+  })
+}
+
+export const useBatchResolveErrorLog = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ message, source }: { message: string; source: string }) => {
+      const response = await api.post<ApiResponse<{ message: string; affected: number }>>(
+        '/api/v1/error-logs/batch-resolve',
+        { message, source },
+      )
+      return response.data.data!
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['error-logs'] })
+      queryClient.invalidateQueries({ queryKey: ['error-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['error-logs-grouped'] })
     },
   })
 }

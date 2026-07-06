@@ -2,18 +2,22 @@ import type { CreateUser, UpdateUser, User } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
+  Divider,
   Form,
   Input,
   Modal,
   message,
   Popconfirm,
+  Select,
   Space,
   Switch,
   Table,
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
+import { useRoles } from '@/hooks/use-roles'
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers } from '@/hooks/use-users'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 
@@ -30,18 +34,33 @@ function UsersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading } = useUsers({ page, pageSize, order: 'desc' })
+  const { data, isLoading, isError, error } = useUsers({ page, pageSize, order: 'desc' })
+  const { data: rolesData } = useRoles({ page: 1, pageSize: 100, order: 'desc' })
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
 
-  const [form] = Form.useForm<CreateUser & UpdateUser>()
+  const [form] = Form.useForm<CreateUser & UpdateUser & { roleId?: number }>()
+
+  useEffect(() => {
+    if (isError) {
+      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+    }
+  }, [isError, error, messageApi])
 
   const columns: ColumnsType<User> = [
     { title: 'ID', dataIndex: 'id', key: 'id' },
     { title: '用户名', dataIndex: 'username', key: 'username' },
     { title: '邮箱', dataIndex: 'email', key: 'email' },
     { title: '昵称', dataIndex: 'nickname', key: 'nickname' },
+    {
+      title: '角色',
+      key: 'role',
+      render: (_, record) => {
+        const role = record.roles?.[0]
+        return role?.name ?? '-'
+      },
+    },
     {
       title: '状态',
       dataIndex: 'status',
@@ -55,24 +74,48 @@ function UsersPage() {
     {
       title: '操作',
       key: 'actions',
-      render: (_, record) => (
-        <Space>
-          <Button type="link" onClick={() => handleEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm title="确定要删除该用户吗？" onConfirm={() => handleDelete(record.id)}>
-            <Button type="link" danger>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+      width: 160,
+      render: (_, record) => {
+        const actions: { key: string; node: ReactNode }[] = [
+          {
+            key: 'edit',
+            node: (
+              <Button type="link" onClick={() => handleEdit(record)}>
+                编辑
+              </Button>
+            ),
+          },
+          {
+            key: 'delete',
+            node: (
+              <Popconfirm title="确定要删除该用户吗？" onConfirm={() => handleDelete(record.id)}>
+                <Button type="link" danger>
+                  删除
+                </Button>
+              </Popconfirm>
+            ),
+          },
+        ]
+        return (
+          <Space size={0}>
+            {actions.map((item, i) => (
+              <span key={item.key} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                {i > 0 && <Divider type="vertical" style={{ margin: '0 4px' }} />}
+                {item.node}
+              </span>
+            ))}
+          </Space>
+        )
+      },
     },
   ]
 
   const handleEdit = (user: User) => {
     setEditingUser(user)
-    form.setFieldsValue(user)
+    form.setFieldsValue({
+      ...user,
+      roleId: user.roles?.[0]?.id,
+    })
     setIsModalOpen(true)
   }
 
@@ -85,13 +128,13 @@ function UsersPage() {
     }
   }
 
-  const handleSubmit = async (values: CreateUser | UpdateUser) => {
+  const handleSubmit = async (values: CreateUser & UpdateUser & { roleId?: number }) => {
     try {
       if (editingUser) {
         // 编辑时若密码为空则不传
         const updateData = { ...values }
         if (!updateData.password) {
-          delete updateData.password
+          delete (updateData as { password?: string }).password
         }
         await updateUser.mutateAsync({ id: editingUser.id, data: updateData as UpdateUser })
         messageApi.success('更新成功')
@@ -130,6 +173,7 @@ function UsersPage() {
         </Button>
       </div>
       <Table
+        bordered
         columns={columns}
         dataSource={data?.list}
         rowKey="id"
@@ -187,7 +231,7 @@ function UsersPage() {
               <Form.Item
                 name="email"
                 label="邮箱"
-                rules={[{ type: 'email', message: '请输入有效邮箱' }]}
+                rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
               >
                 <Input />
               </Form.Item>
@@ -206,6 +250,15 @@ function UsersPage() {
           </Form.Item>
           <Form.Item name="phone" label="手机号">
             <Input />
+          </Form.Item>
+          <Form.Item name="roleId" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
+            <Select
+              placeholder="请选择角色"
+              options={rolesData?.list.map((role) => ({
+                value: role.id,
+                label: role.name,
+              }))}
+            />
           </Form.Item>
           {editingUser && (
             <Form.Item name="status" label="状态" valuePropName="checked">

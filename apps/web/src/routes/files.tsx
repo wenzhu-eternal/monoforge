@@ -4,7 +4,7 @@ import type { UploadProps } from 'antd'
 import {
   Alert,
   Button,
-  Card,
+  Divider,
   Empty,
   Image,
   message,
@@ -16,7 +16,8 @@ import {
   Upload,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import {
   downloadFile,
   type FileItem,
@@ -38,9 +39,16 @@ function FilesPage() {
   const [pageSize, setPageSize] = useState(10)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error } = useFiles({ page, pageSize })
   const deleteMutation = useDeleteFile()
+
+  useEffect(() => {
+    if (isError) {
+      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+    }
+  }, [isError, error, messageApi])
 
   const uploadProps: UploadProps = {
     name: 'file',
@@ -60,10 +68,10 @@ function FilesPage() {
         })
         onSuccess?.({})
         queryClient.invalidateQueries({ queryKey: ['files'] })
-        message.success('上传成功')
+        messageApi.success('上传成功')
       } catch (err: any) {
         onError?.(err)
-        message.error(`上传失败: ${err?.response?.data?.message ?? err?.message ?? '未知错误'}`)
+        messageApi.error(`上传失败: ${err?.response?.data?.message ?? err?.message ?? '未知错误'}`)
       }
     },
   }
@@ -73,7 +81,7 @@ function FilesPage() {
       const url = await previewFile(record.id)
       setPreviewUrl(url)
     } catch (err) {
-      message.error('预览失败')
+      messageApi.error('预览失败')
       console.error(err)
     }
   }
@@ -88,9 +96,9 @@ function FilesPage() {
   const handleDownload = async (record: FileItem) => {
     try {
       await downloadFile(record.id, record.originalName)
-      message.success('下载已开始')
+      messageApi.success('下载已开始')
     } catch (err) {
-      message.error('下载失败')
+      messageApi.error('下载失败')
       console.error(err)
     }
   }
@@ -114,7 +122,10 @@ function FilesPage() {
       title: '类型',
       dataIndex: 'mimeType',
       width: 140,
-      render: (v: string) => <Tag>{v}</Tag>,
+      ellipsis: true,
+      render: (v: string) => (
+        <Tag style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v}</Tag>
+      ),
     },
     {
       title: '大小',
@@ -125,8 +136,9 @@ function FilesPage() {
     {
       title: '上传者',
       dataIndex: 'uploadedBy',
-      width: 80,
-      render: (v: number | null) => v ?? '-',
+      width: 120,
+      render: (v: number | null, record: FileItem) =>
+        v ? `${record.uploadedByUsername ?? '-'}(${v})` : '-',
     },
     {
       title: '上传时间',
@@ -136,30 +148,60 @@ function FilesPage() {
     },
     {
       title: '操作',
-      width: 200,
-      render: (_: unknown, record: FileItem) => (
-        <Space>
-          {isImage(record.mimeType) && (
-            <Button size="small" onClick={() => handlePreview(record)}>
-              预览
+      width: 220,
+      render: (_: unknown, record: FileItem) => {
+        const actions: { key: string; node: ReactNode }[] = []
+        if (isImage(record.mimeType)) {
+          actions.push({
+            key: 'preview',
+            node: (
+              <Button type="link" size="small" onClick={() => handlePreview(record)}>
+                预览
+              </Button>
+            ),
+          })
+        }
+        actions.push({
+          key: 'download',
+          node: (
+            <Button type="link" size="small" onClick={() => handleDownload(record)}>
+              下载
             </Button>
-          )}
-          <Button size="small" onClick={() => handleDownload(record)}>
-            下载
-          </Button>
-          <Popconfirm title="确认删除该文件？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button size="small" danger>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+          ),
+        })
+        actions.push({
+          key: 'delete',
+          node: (
+            <Popconfirm title="确认删除该文件？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button type="link" size="small" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          ),
+        })
+        return (
+          <Space size={0}>
+            {actions.map((item, i) => (
+              <span key={item.key} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                {i > 0 && <Divider type="vertical" style={{ margin: '0 4px' }} />}
+                {item.node}
+              </span>
+            ))}
+          </Space>
+        )
+      },
     },
   ]
 
   return (
     <AuthenticatedLayout>
-      <Title level={3}>文件管理</Title>
+      {contextHolder}
+      <div className="flex justify-between items-center mb-4">
+        <Title level={3}>文件管理</Title>
+        <Upload {...uploadProps}>
+          <Button type="primary">上传文件</Button>
+        </Upload>
+      </div>
 
       <Alert
         title="支持上传图片（jpg/png/gif/webp）、文档（pdf/doc/xls）、文本、压缩包等，单文件最大 10MB"
@@ -168,42 +210,25 @@ function FilesPage() {
         style={{ marginBottom: 16 }}
       />
 
-      {isError && (
-        <Alert
-          title="加载失败"
-          description={(error as Error)?.message ?? '未知错误'}
-          type="error"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
-
-      <Card>
-        <Space style={{ marginBottom: 16 }}>
-          <Upload {...uploadProps}>
-            <Button type="primary">上传文件</Button>
-          </Upload>
-        </Space>
-
-        <Table<FileItem>
-          rowKey="id"
-          columns={columns}
-          dataSource={data?.list ?? []}
-          loading={isLoading}
-          locale={{ emptyText: <Empty description="暂无文件" /> }}
-          pagination={{
-            current: page,
-            pageSize,
-            total: data?.total ?? 0,
-            showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 个文件`,
-            onChange: (p, s) => {
-              setPage(p)
-              setPageSize(s)
-            },
-          }}
-        />
-      </Card>
+      <Table<FileItem>
+        rowKey="id"
+        bordered
+        columns={columns}
+        dataSource={data?.list ?? []}
+        loading={isLoading}
+        locale={{ emptyText: <Empty description="暂无文件" /> }}
+        pagination={{
+          current: page,
+          pageSize,
+          total: data?.total ?? 0,
+          showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 个文件`,
+          onChange: (p, s) => {
+            setPage(p)
+            setPageSize(s)
+          },
+        }}
+      />
 
       {previewUrl && (
         <Image

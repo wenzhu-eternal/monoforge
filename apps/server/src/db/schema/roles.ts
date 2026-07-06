@@ -6,6 +6,7 @@ export const roles = pgTable('roles', {
   description: text('description'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at'),
 })
 
 export type Role = typeof roles.$inferSelect

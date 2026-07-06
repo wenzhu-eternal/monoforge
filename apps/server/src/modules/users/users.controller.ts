@@ -15,8 +15,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
-import { Roles } from '@/common/decorators/roles.decorator'
-import { RolesGuard } from '@/common/guards/roles.guard'
+import { Permissions } from '@/common/decorators/permissions.decorator'
+import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { AuthGuard } from '@/modules/auth/auth.guard'
 import { CacheInterceptor } from '@/modules/cache/cache.interceptor'
 import { CreateUserDto } from './dto/create-user.dto'
@@ -25,12 +25,13 @@ import { UsersService } from './users.service'
 
 @ApiTags('Users')
 @Controller('users')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @Permissions('user:view')
   @ApiOperation({ summary: '分页查询用户' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -48,12 +49,14 @@ export class UsersController {
   }
 
   @Get('stats')
+  @Permissions('user:view')
   @ApiOperation({ summary: '用户统计（仪表盘用）' })
   async getStats() {
     return this.usersService.getStats()
   }
 
   @Get(':id')
+  @Permissions('user:view')
   @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: '按ID查询用户（带缓存）' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
@@ -62,23 +65,23 @@ export class UsersController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Roles('admin')
-  @ApiOperation({ summary: '创建用户（仅管理员）' })
+  @Permissions('user:create')
+  @ApiOperation({ summary: '创建用户' })
   async create(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto)
   }
 
   @Patch(':id')
-  @Roles('admin')
-  @ApiOperation({ summary: '更新用户（仅管理员）' })
+  @Permissions('user:update')
+  @ApiOperation({ summary: '更新用户' })
   async update(@Param('id', ParseIntPipe) id: number, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(id, updateUserDto)
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @Roles('admin')
-  @ApiOperation({ summary: '删除用户（仅管理员）' })
+  @Permissions('user:delete')
+  @ApiOperation({ summary: '删除用户' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.remove(id)
   }

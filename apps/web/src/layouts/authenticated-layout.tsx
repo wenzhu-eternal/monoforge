@@ -3,6 +3,8 @@ import {
   FileOutlined,
   FileTextOutlined,
   LogoutOutlined,
+  MailOutlined,
+  SettingOutlined,
   ThunderboltOutlined,
   UserOutlined,
   WarningOutlined,
@@ -12,7 +14,8 @@ import type { MenuProps } from 'antd'
 import { Avatar, Dropdown, Layout, Menu, Space, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { useLogout } from '@/hooks/use-auth'
+import { useCurrentUser, useLogout } from '@/hooks/use-auth'
+import { Permissions } from '@/lib/permissions'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Sider, Header, Content } = Layout
@@ -44,17 +47,96 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   const user = useAuthStore((state) => state.user)
   const [collapsed, setCollapsed] = useState(false)
 
-  const menuItems = [
+  // 自动刷新用户信息（包括 roles 字段）
+  const { isLoading } = useCurrentUser()
+
+  // 等待用户信息加载完成后再判断权限
+  if (isLoading) {
+    return null
+  }
+
+  // 权限判断函数
+  const hasPermission = (permission: string) => {
+    return user?.permissions?.includes(permission) ?? false
+  }
+
+  // 构建内容管理子菜单
+  const contentChildren = [
+    hasPermission(Permissions.USER_VIEW) && {
+      key: '/users',
+      icon: <UserOutlined />,
+      label: '用户管理',
+    },
+    hasPermission(Permissions.FILE_VIEW) && {
+      key: '/files',
+      icon: <FileOutlined />,
+      label: '文件管理',
+    },
+  ].filter(Boolean) as MenuProps['items']
+
+  // 构建系统配置子菜单
+  const systemChildren = [
+    hasPermission(Permissions.ROLE_VIEW) && {
+      key: '/roles',
+      icon: <UserOutlined />,
+      label: '角色管理',
+    },
+    hasPermission(Permissions.PERMISSION_VIEW) && {
+      key: '/permissions',
+      icon: <SettingOutlined />,
+      label: '权限管理',
+    },
+  ].filter(Boolean) as MenuProps['items']
+
+  // 构建日志审计子菜单
+  const logChildren = [
+    hasPermission(Permissions.AUDIT_VIEW) && {
+      key: '/audit-logs',
+      icon: <FileTextOutlined />,
+      label: '审计日志',
+    },
+    hasPermission(Permissions.ERROR_LOG_VIEW) && {
+      key: '/error-logs',
+      icon: <WarningOutlined />,
+      label: '错误日志',
+    },
+  ].filter(Boolean) as MenuProps['items']
+
+  const menuItems: MenuProps['items'] = [
     { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
-    { key: '/users', icon: <UserOutlined />, label: '用户管理' },
-    { key: '/files', icon: <FileOutlined />, label: '文件管理' },
-    { key: '/audit-logs', icon: <FileTextOutlined />, label: '审计日志' },
-    { key: '/error-logs', icon: <WarningOutlined />, label: '错误日志' },
     { key: '/websocket', icon: <ThunderboltOutlined />, label: 'WebSocket 演示' },
-  ]
+    // 邮件发送仅对 admin 角色开放
+    ...(user?.roles?.some((r) => r.name === 'admin')
+      ? [{ key: '/mail', icon: <MailOutlined />, label: '邮件发送' }]
+      : []),
+    contentChildren &&
+      contentChildren.length > 0 && {
+        key: 'content',
+        icon: <UserOutlined />,
+        label: '内容管理',
+        children: contentChildren,
+      },
+    systemChildren &&
+      systemChildren.length > 0 && {
+        key: 'system',
+        icon: <SettingOutlined />,
+        label: '系统配置',
+        children: systemChildren,
+      },
+    logChildren &&
+      logChildren.length > 0 && {
+        key: 'log',
+        icon: <FileTextOutlined />,
+        label: '日志审计',
+        children: logChildren,
+      },
+  ].filter(Boolean) as MenuProps['items']
 
   const handleMenuClick = ({ key }: { key: string }) => {
-    navigate({ to: key })
+    // 仅叶子节点（以 / 开头的路由路径）才跳转，分组节点 key（如 'system'/'log'）不跳转
+    if (key.startsWith('/')) {
+      navigate({ to: key })
+    }
   }
 
   const handleLogout = () => {
@@ -70,6 +152,36 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
       onClick: handleLogout,
     },
   ]
+
+  const getSelectedKeys = () => {
+    const pathname = location.pathname
+    if (
+      pathname.startsWith('/audit-logs') ||
+      pathname.startsWith('/error-logs') ||
+      pathname.startsWith('/roles') ||
+      pathname.startsWith('/permissions')
+    ) {
+      return [pathname]
+    }
+    return [pathname]
+  }
+
+  const getOpenKeys = () => {
+    const pathname = location.pathname
+    // 内容管理分组
+    if (pathname === '/users' || pathname === '/files') {
+      return ['content']
+    }
+    // 系统配置分组
+    if (pathname === '/roles' || pathname === '/permissions') {
+      return ['system']
+    }
+    // 日志审计分组
+    if (pathname.startsWith('/audit-logs') || pathname.startsWith('/error-logs')) {
+      return ['log']
+    }
+    return []
+  }
 
   return (
     <Layout className="h-screen">
@@ -97,7 +209,8 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
         <Menu
           theme="dark"
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={getSelectedKeys()}
+          defaultOpenKeys={getOpenKeys()}
           items={menuItems}
           onClick={handleMenuClick}
         />

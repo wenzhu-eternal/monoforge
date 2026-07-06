@@ -30,7 +30,8 @@ function LoginPage() {
     } catch (err: unknown) {
       const msg =
         err instanceof Error && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message || err.message
+          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message ||
+            err.message
           : '登录失败，请检查账号密码'
       messageApi.error(msg)
     }

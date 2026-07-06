@@ -1,4 +1,4 @@
-import { mkdir, unlink } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { count, desc, eq } from 'drizzle-orm'
@@ -13,7 +13,7 @@ import {
   validateMimeType,
 } from '@/common/file-validator'
 import { db } from '@/db'
-import { files } from '@/db/schema'
+import { files, users } from '@/db/schema'
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
 
@@ -25,6 +25,7 @@ export interface PaginatedFiles {
     mimeType: string
     size: number
     uploadedBy: number | null
+    uploadedByUsername: string | null
     createdAt: Date
   }>
   total: number
@@ -110,9 +111,11 @@ export class FilesService {
           mimeType: files.mimeType,
           size: files.size,
           uploadedBy: files.uploadedBy,
+          uploadedByUsername: users.username,
           createdAt: files.createdAt,
         })
         .from(files)
+        .leftJoin(users, eq(files.uploadedBy, users.id))
         .orderBy(desc(files.createdAt))
         .limit(safePageSize)
         .offset(offset),
@@ -150,14 +153,9 @@ export class FilesService {
       throw new ForbiddenException('无权删除他人上传的文件')
     }
 
-    // 先删磁盘文件，再删记录
-    try {
-      await unlink(file.path)
-    } catch {
-      // 磁盘文件已不存在，忽略
-    }
+    // 软删除: 设置 deletedAt 时间戳，不删除磁盘文件
+    await db.update(files).set({ deletedAt: new Date() }).where(eq(files.id, id))
 
-    await db.delete(files).where(eq(files.id, id))
     return { message: `文件 ID ${id} 已删除` }
   }
 

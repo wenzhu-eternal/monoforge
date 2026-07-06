@@ -8,6 +8,7 @@ export const errorWhitelist = pgTable('error_whitelist', {
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at'),
 })
 
 export type ErrorWhitelistItem = typeof errorWhitelist.$inferSelect

@@ -64,12 +64,17 @@ export class AuthService {
     await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)
 
     const permissions = await this.getPermissionsByUserId(user.id)
+    const role = await this.getRoleByUserId(user.id)
     const { password: _, ...userWithoutPassword } = user
 
     return {
       ...tokens,
-      user: { ...userWithoutPassword, permissions } as Omit<User, 'password'> & {
+      user: { ...userWithoutPassword, permissions, roles: role ? [role] : [] } as Omit<
+        User,
+        'password'
+      > & {
         permissions: string[]
+        roles: { id: number; name: string; description?: string }[]
       },
     }
   }
@@ -120,7 +125,12 @@ export class AuthService {
     return { message: '退出登录成功' }
   }
 
-  async getProfile(userId: number): Promise<Omit<User, 'password'> & { permissions: string[] }> {
+  async getProfile(userId: number): Promise<
+    Omit<User, 'password'> & {
+      permissions: string[]
+      roles: { id: number; name: string; description?: string }[]
+    }
+  > {
     const user = await db.query.users.findFirst({
       where: eq(users.id, userId),
     })
@@ -130,8 +140,9 @@ export class AuthService {
     }
 
     const permissions = await this.getPermissionsByUserId(userId)
+    const role = await this.getRoleByUserId(userId)
     const { password: _, ...userWithoutPassword } = user
-    return { ...userWithoutPassword, permissions }
+    return { ...userWithoutPassword, permissions, roles: role ? [role] : [] }
   }
 
   async register(
@@ -238,5 +249,24 @@ export class AuthService {
       .where(eq(rolePermissions.roleId, userRecord.roleId))
 
     return perms.map((p) => p.permission)
+  }
+
+  /**
+   * 根据用户 ID 查询角色信息
+   */
+  private async getRoleByUserId(
+    userId: number,
+  ): Promise<{ id: number; name: string; description?: string } | null> {
+    const userRecord = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    })
+    if (!userRecord?.roleId) return null
+
+    const role = await db.query.roles.findFirst({
+      where: eq(roles.id, userRecord.roleId),
+    })
+    return role
+      ? { id: role.id, name: role.name, description: role.description ?? undefined }
+      : null
   }
 }

@@ -12,7 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WebsocketRouteImport } from './routes/websocket'
 import { Route as UsersRouteImport } from './routes/users'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as RolesRouteImport } from './routes/roles'
+import { Route as PermissionsRouteImport } from './routes/permissions'
 import { Route as NotFoundRouteImport } from './routes/not-found'
+import { Route as MailRouteImport } from './routes/mail'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as ErrorLogsRouteImport } from './routes/error-logs'
@@ -36,9 +39,24 @@ const SetupRoute = SetupRouteImport.update({
   path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RolesRoute = RolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PermissionsRoute = PermissionsRouteImport.update({
+  id: '/permissions',
+  path: '/permissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NotFoundRoute = NotFoundRouteImport.update({
   id: '/not-found',
   path: '/not-found',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MailRoute = MailRouteImport.update({
+  id: '/mail',
+  path: '/mail',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -85,7 +103,10 @@ export interface FileRoutesByFullPath {
   '/error-logs': typeof ErrorLogsRoute
   '/files': typeof FilesRoute
   '/login': typeof LoginRoute
+  '/mail': typeof MailRoute
   '/not-found': typeof NotFoundRoute
+  '/permissions': typeof PermissionsRoute
+  '/roles': typeof RolesRoute
   '/setup': typeof SetupRoute
   '/users': typeof UsersRoute
   '/websocket': typeof WebsocketRoute
@@ -98,7 +119,10 @@ export interface FileRoutesByTo {
   '/error-logs': typeof ErrorLogsRoute
   '/files': typeof FilesRoute
   '/login': typeof LoginRoute
+  '/mail': typeof MailRoute
   '/not-found': typeof NotFoundRoute
+  '/permissions': typeof PermissionsRoute
+  '/roles': typeof RolesRoute
   '/setup': typeof SetupRoute
   '/users': typeof UsersRoute
   '/websocket': typeof WebsocketRoute
@@ -112,7 +136,10 @@ export interface FileRoutesById {
   '/error-logs': typeof ErrorLogsRoute
   '/files': typeof FilesRoute
   '/login': typeof LoginRoute
+  '/mail': typeof MailRoute
   '/not-found': typeof NotFoundRoute
+  '/permissions': typeof PermissionsRoute
+  '/roles': typeof RolesRoute
   '/setup': typeof SetupRoute
   '/users': typeof UsersRoute
   '/websocket': typeof WebsocketRoute
@@ -127,7 +154,10 @@ export interface FileRouteTypes {
     | '/error-logs'
     | '/files'
     | '/login'
+    | '/mail'
     | '/not-found'
+    | '/permissions'
+    | '/roles'
     | '/setup'
     | '/users'
     | '/websocket'
@@ -140,7 +170,10 @@ export interface FileRouteTypes {
     | '/error-logs'
     | '/files'
     | '/login'
+    | '/mail'
     | '/not-found'
+    | '/permissions'
+    | '/roles'
     | '/setup'
     | '/users'
     | '/websocket'
@@ -153,7 +186,10 @@ export interface FileRouteTypes {
     | '/error-logs'
     | '/files'
     | '/login'
+    | '/mail'
     | '/not-found'
+    | '/permissions'
+    | '/roles'
     | '/setup'
     | '/users'
     | '/websocket'
@@ -167,7 +203,10 @@ export interface RootRouteChildren {
   ErrorLogsRoute: typeof ErrorLogsRoute
   FilesRoute: typeof FilesRoute
   LoginRoute: typeof LoginRoute
+  MailRoute: typeof MailRoute
   NotFoundRoute: typeof NotFoundRoute
+  PermissionsRoute: typeof PermissionsRoute
+  RolesRoute: typeof RolesRoute
   SetupRoute: typeof SetupRoute
   UsersRoute: typeof UsersRoute
   WebsocketRoute: typeof WebsocketRoute
@@ -196,11 +235,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/roles': {
+      id: '/roles'
+      path: '/roles'
+      fullPath: '/roles'
+      preLoaderRoute: typeof RolesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/permissions': {
+      id: '/permissions'
+      path: '/permissions'
+      fullPath: '/permissions'
+      preLoaderRoute: typeof PermissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/not-found': {
       id: '/not-found'
       path: '/not-found'
       fullPath: '/not-found'
       preLoaderRoute: typeof NotFoundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mail': {
+      id: '/mail'
+      path: '/mail'
+      fullPath: '/mail'
+      preLoaderRoute: typeof MailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -263,7 +323,10 @@ const rootRouteChildren: RootRouteChildren = {
   ErrorLogsRoute: ErrorLogsRoute,
   FilesRoute: FilesRoute,
   LoginRoute: LoginRoute,
+  MailRoute: MailRoute,
   NotFoundRoute: NotFoundRoute,
+  PermissionsRoute: PermissionsRoute,
+  RolesRoute: RolesRoute,
   SetupRoute: SetupRoute,
   UsersRoute: UsersRoute,
   WebsocketRoute: WebsocketRoute,

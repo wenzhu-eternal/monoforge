@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import type { Role } from '@/db/schema'
 import { roles, users } from '@/db/schema'
 
@@ -21,11 +22,15 @@ export class RolesService {
 
     const [items, countResult] = await Promise.all([
       db.query.roles.findMany({
+        where: notDeleted(roles.deletedAt),
         limit: safePageSize,
         offset,
         orderBy: [desc(roles.createdAt)],
       }),
-      db.select({ count: sql<number>`count(*)::int` }).from(roles),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(roles)
+        .where(notDeleted(roles.deletedAt)),
     ])
 
     const total = countResult[0]?.count ?? 0
@@ -40,7 +45,9 @@ export class RolesService {
   }
 
   async findById(id: number): Promise<Role> {
-    const role = await db.query.roles.findFirst({ where: eq(roles.id, id) })
+    const role = await db.query.roles.findFirst({
+      where: and(eq(roles.id, id), notDeleted(roles.deletedAt)),
+    })
     if (!role) {
       throw new NotFoundException(`角色 ID ${id} 不存在`)
     }
@@ -48,7 +55,9 @@ export class RolesService {
   }
 
   async create(data: { name: string; description?: string }): Promise<Role> {
-    const existing = await db.query.roles.findFirst({ where: eq(roles.name, data.name) })
+    const existing = await db.query.roles.findFirst({
+      where: and(eq(roles.name, data.name), notDeleted(roles.deletedAt)),
+    })
     if (existing) {
       throw new ConflictException('角色名已存在')
     }
@@ -61,13 +70,17 @@ export class RolesService {
   }
 
   async update(id: number, data: { name?: string; description?: string }): Promise<Role> {
-    const existing = await db.query.roles.findFirst({ where: eq(roles.id, id) })
+    const existing = await db.query.roles.findFirst({
+      where: and(eq(roles.id, id), notDeleted(roles.deletedAt)),
+    })
     if (!existing) {
       throw new NotFoundException(`角色 ID ${id} 不存在`)
     }
 
     if (data.name && data.name !== existing.name) {
-      const dup = await db.query.roles.findFirst({ where: eq(roles.name, data.name) })
+      const dup = await db.query.roles.findFirst({
+        where: and(eq(roles.name, data.name), notDeleted(roles.deletedAt)),
+      })
       if (dup) {
         throw new ConflictException('角色名已存在')
       }
@@ -86,22 +99,26 @@ export class RolesService {
   }
 
   async remove(id: number): Promise<{ message: string }> {
-    const existing = await db.query.roles.findFirst({ where: eq(roles.id, id) })
+    const existing = await db.query.roles.findFirst({
+      where: and(eq(roles.id, id), notDeleted(roles.deletedAt)),
+    })
     if (!existing) {
       throw new NotFoundException(`角色 ID ${id} 不存在`)
     }
 
-    // 防止删除仍被用户引用的角色
+    // 绑定校验: 检查是否被用户引用
     const userCount = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(users)
-      .where(eq(users.roleId, id))
+      .where(and(eq(users.roleId, id), notDeleted(users.deletedAt)))
     const count = userCount[0]?.count ?? 0
     if (count > 0) {
       throw new ConflictException(`该角色仍被 ${count} 个用户使用，无法删除`)
     }
 
-    await db.delete(roles).where(eq(roles.id, id))
+    // 软删除: 设置 deletedAt 时间戳
+    await db.update(roles).set({ deletedAt: new Date() }).where(eq(roles.id, id))
+
     return { message: `角色 ID ${id} 已删除` }
   }
 }

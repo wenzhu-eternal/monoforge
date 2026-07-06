@@ -17,6 +17,7 @@ import { HealthModule } from './modules/health/health.module'
 import { HttpClientModule } from './modules/http-client/http-client.module'
 import { MailModule } from './modules/mail/mail.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
+import { PermissionsModule } from './modules/permissions/permissions.module'
 import { RedisModule } from './modules/redis/redis.module'
 import { RolesModule } from './modules/roles/roles.module'
 import { RoutesModule } from './modules/routes/routes.module'
@@ -63,6 +64,7 @@ import { WechatModule } from './modules/wechat/wechat.module'
     FilesModule,
     MailModule,
     NotificationsModule,
+    PermissionsModule,
     ScheduleTasksModule,
     WechatModule,
     WebSocketModule,

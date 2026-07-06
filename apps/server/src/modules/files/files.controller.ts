@@ -19,18 +19,20 @@ import { FileInterceptor } from '@nestjs/platform-express'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import type { Response } from 'express'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
-import { RolesGuard } from '@/common/guards/roles.guard'
+import { Permissions } from '@/common/decorators/permissions.decorator'
+import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { AuthGuard } from '@/modules/auth/auth.guard'
 import { FilesService, UPLOAD_DIR } from './files.service'
 
 @ApiTags('Files')
 @Controller('files')
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Post('upload')
+  @Permissions('file:upload')
   @ApiOperation({ summary: '上传文件（单文件，字段名 file）' })
   @UseInterceptors(
     FileInterceptor('file', {
@@ -47,6 +49,7 @@ export class FilesController {
   }
 
   @Get()
+  @Permissions('file:view')
   @ApiOperation({ summary: '分页查询文件列表' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -63,6 +66,7 @@ export class FilesController {
   }
 
   @Get(':id/preview')
+  @Permissions('file:view')
   @ApiOperation({ summary: '预览文件（支持 Range 请求）' })
   async preview(@Param('id', ParseIntPipe) id: number, @Res() response: Response) {
     const file = await this.filesService.findById(id)
@@ -93,6 +97,7 @@ export class FilesController {
   }
 
   @Get(':id/download')
+  @Permissions('file:view')
   @ApiOperation({ summary: '下载文件' })
   async download(@Param('id', ParseIntPipe) id: number, @Res() response: Response) {
     const file = await this.filesService.findById(id)
@@ -109,13 +114,12 @@ export class FilesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '删除文件（管理员或上传者本人）' })
+  @Permissions('file:delete')
+  @ApiOperation({ summary: '删除文件' })
   async remove(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { sub: number; username: string },
   ) {
-    // admin 用户名兜底判断
-    const isAdmin = user.username === 'admin'
-    return this.filesService.remove(id, user.sub, isAdmin)
+    return this.filesService.remove(id, user.sub, user.username === 'admin')
   }
 }

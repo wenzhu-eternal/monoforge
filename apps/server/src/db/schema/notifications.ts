@@ -22,6 +22,7 @@ export const notifications = pgTable(
     content: text('content'),
     read: boolean('read').default(false).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at'),
   },
   (table) => ({
     userIdx: index('idx_notifications_user_created').on(table.userId, table.createdAt),

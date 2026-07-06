@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { and, count, desc, eq, ilike, sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import { errorLogs } from '@/db/schema'
 import { errorWhitelist } from '@/db/schema/error-whitelist'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -55,6 +56,15 @@ export interface ErrorStats {
   unresolved: number
   bySource: Record<string, number>
   byType: Record<string, number>
+}
+
+export interface ErrorLogGroup {
+  message: string
+  source: string
+  count: number
+  firstCreatedAt: Date
+  lastCreatedAt: Date
+  sampleId: number
 }
 
 // 白名单缓存 key 与 TTL
@@ -136,7 +146,7 @@ export class ErrorLogsService {
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
 
-    const conditions = []
+    const conditions = [notDeleted(errorLogs.deletedAt)]
     if (keyword) {
       conditions.push(ilike(errorLogs.message, `%${keyword}%`))
     }
@@ -146,7 +156,7 @@ export class ErrorLogsService {
     if (isResolved !== undefined) {
       conditions.push(eq(errorLogs.isResolved, isResolved === 'true'))
     }
-    const where = conditions.length > 0 ? and(...conditions) : undefined
+    const where = and(...conditions)
 
     const [items, countResult] = await Promise.all([
       db
@@ -180,23 +190,60 @@ export class ErrorLogsService {
   }
 
   /**
+   * 相同报错聚合: 按 message+source 分组，返回出现次数最高的 Top N
+   */
+  async findGrouped(limit = 10): Promise<ErrorLogGroup[]> {
+    const safeLimit = Math.min(Math.max(1, limit), 50)
+
+    // 子查询: 按 message+source 分组取每组最新记录 id
+    const groups = await db
+      .select({
+        message: errorLogs.message,
+        source: errorLogs.source,
+        count: sql<number>`count(*)::int`,
+        lastCreatedAt: sql<Date>`max(${errorLogs.createdAt})`,
+        firstCreatedAt: sql<Date>`min(${errorLogs.createdAt})`,
+        sampleId: sql<number>`(array_agg(${errorLogs.id} ORDER BY ${errorLogs.createdAt} DESC))[1]`,
+      })
+      .from(errorLogs)
+      .where(and(eq(errorLogs.isResolved, false), notDeleted(errorLogs.deletedAt)))
+      .groupBy(errorLogs.message, errorLogs.source)
+      .orderBy(sql`count(*) DESC`)
+      .limit(safeLimit)
+
+    return groups.map((g) => ({
+      message: g.message,
+      source: g.source ?? 'unknown',
+      count: g.count,
+      firstCreatedAt: g.firstCreatedAt,
+      lastCreatedAt: g.lastCreatedAt,
+      sampleId: g.sampleId,
+    }))
+  }
+
+  /**
    * 获取错误统计
    */
   async getStats(): Promise<ErrorStats> {
-    const [totalResult] = await db.select({ value: count() }).from(errorLogs)
+    const [totalResult] = await db
+      .select({ value: count() })
+      .from(errorLogs)
+      .where(notDeleted(errorLogs.deletedAt))
     const [unresolvedResult] = await db
       .select({ value: count() })
       .from(errorLogs)
-      .where(eq(errorLogs.isResolved, false))
+      .where(and(eq(errorLogs.isResolved, false), notDeleted(errorLogs.deletedAt)))
 
     const sourceRows = await db
       .select({ source: errorLogs.source, value: count() })
       .from(errorLogs)
+      .where(notDeleted(errorLogs.deletedAt))
       .groupBy(errorLogs.source)
 
     const typeRows = await db
       .select({ errorType: errorLogs.errorType, value: count() })
       .from(errorLogs)
+      .where(notDeleted(errorLogs.deletedAt))
       .groupBy(errorLogs.errorType)
 
     const bySource: Record<string, number> = {}
@@ -240,6 +287,36 @@ export class ErrorLogsService {
     return { message: `错误日志 ID ${id} 已标记为已处理` }
   }
 
+  /**
+   * 批量标记相同报错已处理: 按 message+source 匹配
+   */
+  async batchResolve(
+    message: string,
+    source: string,
+    resolvedBy: number,
+  ): Promise<{ message: string; affected: number }> {
+    const result = await db
+      .update(errorLogs)
+      .set({
+        isResolved: true,
+        resolvedAt: new Date(),
+        resolvedBy,
+      })
+      .where(
+        and(
+          eq(errorLogs.message, message),
+          eq(errorLogs.source, source),
+          notDeleted(errorLogs.deletedAt),
+        ),
+      )
+      .returning({ id: errorLogs.id })
+
+    return {
+      message: `已批量处理 ${result.length} 条相同错误`,
+      affected: result.length,
+    }
+  }
+
   async remove(id: number): Promise<{ message: string }> {
     const log = await db.query.errorLogs.findFirst({
       where: eq(errorLogs.id, id),
@@ -247,7 +324,10 @@ export class ErrorLogsService {
     if (!log) {
       throw new NotFoundException(`错误日志 ID ${id} 不存在`)
     }
-    await db.delete(errorLogs).where(eq(errorLogs.id, id))
+
+    // 软删除: 设置 deletedAt 时间戳
+    await db.update(errorLogs).set({ deletedAt: new Date() }).where(eq(errorLogs.id, id))
+
     return { message: `错误日志 ID ${id} 已删除` }
   }
 
@@ -298,7 +378,11 @@ export class ErrorLogsService {
       // 缓存查询失败不影响主流程
     }
 
-    const list = await db.select().from(errorWhitelist).orderBy(desc(errorWhitelist.createdAt))
+    const list = await db
+      .select()
+      .from(errorWhitelist)
+      .where(notDeleted(errorWhitelist.deletedAt))
+      .orderBy(desc(errorWhitelist.createdAt))
 
     try {
       await this.redisService.set(WHITELIST_CACHE_KEY, JSON.stringify(list), WHITELIST_CACHE_TTL)
@@ -373,7 +457,9 @@ export class ErrorLogsService {
       throw new NotFoundException(`白名单 ID ${id} 不存在`)
     }
 
-    await db.delete(errorWhitelist).where(eq(errorWhitelist.id, id))
+    // 软删除: 设置 deletedAt 时间戳
+    await db.update(errorWhitelist).set({ deletedAt: new Date() }).where(eq(errorWhitelist.id, id))
+
     await this.invalidateWhitelistCache()
     return { message: `白名单 ID ${id} 已删除` }
   }

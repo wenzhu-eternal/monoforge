@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { SkipThrottle } from '@nestjs/throttler'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Roles } from '@/common/decorators/roles.decorator'
 import { RolesGuard } from '@/common/guards/roles.guard'
@@ -24,6 +25,7 @@ import { ErrorLogsService } from './error-logs.service'
 
 @ApiTags('ErrorLogs')
 @Controller('error-logs')
+@SkipThrottle()
 export class ErrorLogsController {
   constructor(private readonly errorLogsService: ErrorLogsService) {}
 
@@ -90,6 +92,20 @@ export class ErrorLogsController {
     return this.errorLogsService.getStats()
   }
 
+  @Get('grouped')
+  @UseGuards(AuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles('admin')
+  @ApiOperation({ summary: '相同报错聚合 Top N（仅管理员）' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  async findGrouped(@Query('limit') limit?: string) {
+    const n = limit ? Number.parseInt(limit, 10) : 10
+    if (Number.isNaN(n) || n < 1) {
+      throw new BadRequestException('limit 必须为正整数')
+    }
+    return this.errorLogsService.findGrouped(n)
+  }
+
   @Get('whitelist')
   @UseGuards(AuthGuard, RolesGuard)
   @ApiBearerAuth()
@@ -116,6 +132,22 @@ export class ErrorLogsController {
   @ApiOperation({ summary: '标记错误已处理（仅管理员）' })
   async resolve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: { sub: number }) {
     return this.errorLogsService.resolve(id, user.sub)
+  }
+
+  @Post('batch-resolve')
+  @UseGuards(AuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '批量标记相同报错已处理（仅管理员）' })
+  async batchResolve(
+    @Body() body: { message: string; source: string },
+    @CurrentUser() user: { sub: number },
+  ) {
+    if (!body?.message || !body?.source) {
+      throw new BadRequestException('message 与 source 必填')
+    }
+    return this.errorLogsService.batchResolve(body.message, body.source, user.sub)
   }
 
   @Delete(':id')

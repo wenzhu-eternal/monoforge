@@ -14,6 +14,7 @@ export const UserSchema = z.object({
   nickname: z.string().max(50).optional(),
   avatar: z.string().url().optional(),
   phone: PhoneSchema,
+  roleId: z.number().int().positive().nullable().optional(),
   status: z.boolean(),
   roles: z.array(RoleSchema).optional(),
   permissions: z.array(z.string()).optional(),
@@ -27,15 +28,17 @@ export const CreateUserSchema = z.object({
   password: z.string().min(6).max(100),
   nickname: z.string().max(50).optional(),
   phone: PhoneSchema,
+  roleId: z.number().int().positive(),
 })
 
 export const UpdateUserSchema = z.object({
-  email: z.string().email().optional(),
+  email: z.string().email(),
   nickname: z.string().max(50).optional(),
   avatar: z.string().url().optional(),
   phone: PhoneSchema,
   status: z.boolean().optional(),
   password: z.string().min(6).max(100).optional(),
+  roleId: z.number().int().positive(),
 })
 
 export const LoginSchema = z.object({
