@@ -4,10 +4,11 @@ import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import * as argon2 from 'argon2'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import type { User } from '@/db/schema'
-import { rolePermissions, roles, users } from '@/db/schema'
+import { permissions, rolePermissions, roles, users } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
 
 export interface TokenPayload {
@@ -37,7 +38,7 @@ export class AuthService {
     password: string,
   ): Promise<TokenPair & { user: Omit<User, 'password'> }> {
     const user = await db.query.users.findFirst({
-      where: eq(users.username, username),
+      where: and(eq(users.username, username), notDeleted(users.deletedAt)),
     })
 
     if (!user) {
@@ -95,7 +96,7 @@ export class AuthService {
     }
 
     const user = await db.query.users.findFirst({
-      where: eq(users.id, payload.sub),
+      where: and(eq(users.id, payload.sub), notDeleted(users.deletedAt)),
     })
 
     if (!user) {
@@ -132,7 +133,7 @@ export class AuthService {
     }
   > {
     const user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
+      where: and(eq(users.id, userId), notDeleted(users.deletedAt)),
     })
 
     if (!user) {
@@ -152,7 +153,7 @@ export class AuthService {
     nickname?: string,
   ): Promise<Omit<User, 'password'>> {
     const existingUser = await db.query.users.findFirst({
-      where: eq(users.username, username),
+      where: and(eq(users.username, username), notDeleted(users.deletedAt)),
     })
 
     if (existingUser) {
@@ -160,7 +161,7 @@ export class AuthService {
     }
 
     const existingEmail = await db.query.users.findFirst({
-      where: eq(users.email, email),
+      where: and(eq(users.email, email), notDeleted(users.deletedAt)),
     })
 
     if (existingEmail) {
@@ -239,13 +240,17 @@ export class AuthService {
    */
   private async getPermissionsByUserId(userId: number): Promise<string[]> {
     const userRecord = await db.query.users.findFirst({
-      where: eq(users.id, userId),
+      where: and(eq(users.id, userId), notDeleted(users.deletedAt)),
     })
     if (!userRecord?.roleId) return []
 
     const perms = await db
       .select({ permission: rolePermissions.permission })
       .from(rolePermissions)
+      .innerJoin(
+        permissions,
+        and(eq(rolePermissions.permission, permissions.code), notDeleted(permissions.deletedAt)),
+      )
       .where(eq(rolePermissions.roleId, userRecord.roleId))
 
     return perms.map((p) => p.permission)
@@ -258,12 +263,12 @@ export class AuthService {
     userId: number,
   ): Promise<{ id: number; name: string; description?: string } | null> {
     const userRecord = await db.query.users.findFirst({
-      where: eq(users.id, userId),
+      where: and(eq(users.id, userId), notDeleted(users.deletedAt)),
     })
     if (!userRecord?.roleId) return null
 
     const role = await db.query.roles.findFirst({
-      where: eq(roles.id, userRecord.roleId),
+      where: and(eq(roles.id, userRecord.roleId), notDeleted(roles.deletedAt)),
     })
     return role
       ? { id: role.id, name: role.name, description: role.description ?? undefined }

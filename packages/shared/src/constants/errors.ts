@@ -15,6 +15,7 @@ export const ErrorCodes = {
   INVALID_TOKEN: 1005,
   TOKEN_EXPIRED: 1006,
   REFRESH_TOKEN_INVALID: 1007,
+  INITIAL_ADMIN_CANNOT_DELETE: 1008,
 
   // 角色相关
   ROLE_NOT_FOUND: 2001,
@@ -45,6 +46,7 @@ export const ErrorMessages = {
   [ErrorCodes.INVALID_TOKEN]: '令牌无效',
   [ErrorCodes.TOKEN_EXPIRED]: '令牌已过期',
   [ErrorCodes.REFRESH_TOKEN_INVALID]: '刷新令牌无效',
+  [ErrorCodes.INITIAL_ADMIN_CANNOT_DELETE]: '初始管理员账号不可删除',
   [ErrorCodes.ROLE_NOT_FOUND]: '角色不存在',
   [ErrorCodes.ROLE_ALREADY_EXISTS]: '角色已存在',
   [ErrorCodes.FILE_NOT_FOUND]: '文件不存在',

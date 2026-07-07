@@ -16,6 +16,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { AuthGuard } from '@/modules/auth/auth.guard'
+import { CreatePermissionDto, UpdatePermissionDto } from './dto/permission.dto'
 import { PermissionsService } from './permissions.service'
 
 @ApiTags('Permissions')
@@ -54,20 +55,15 @@ export class PermissionsController {
   @HttpCode(HttpStatus.CREATED)
   @Permissions('permission:create')
   @ApiOperation({ summary: '创建权限' })
-  async create(
-    @Body() data: { code: string; name: string; description?: string; routes?: string[] },
-  ) {
-    return this.permissionsService.create(data)
+  async create(@Body() dto: CreatePermissionDto) {
+    return this.permissionsService.create(dto)
   }
 
   @Patch(':id')
   @Permissions('permission:update')
   @ApiOperation({ summary: '更新权限' })
-  async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() data: { code?: string; name?: string; description?: string; routes?: string[] },
-  ) {
-    return this.permissionsService.update(id, data)
+  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePermissionDto) {
+    return this.permissionsService.update(id, dto)
   }
 
   @Delete(':id')

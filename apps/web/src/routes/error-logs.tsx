@@ -42,6 +42,7 @@ import {
   useWhitelist,
 } from '@/hooks/use-logs'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -111,8 +112,8 @@ function LogsTab() {
         onSuccess: (res) => {
           messageApi.success(`已批量处理 ${res.affected} 条相同错误`)
         },
-        onError: () => {
-          messageApi.error('批量处理失败')
+        onError: (err) => {
+          messageApi.error(extractErrorMessage(err, '批量处理失败'))
         },
       },
     )
@@ -554,8 +555,8 @@ function WhitelistTab() {
         messageApi.success('创建成功')
       }
       setModalOpen(false)
-    } catch (err) {
-      messageApi.error(`操作失败: ${(err as Error)?.message ?? '未知错误'}`)
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '操作失败'))
     }
   }
 
@@ -563,8 +564,17 @@ function WhitelistTab() {
     try {
       await updateMutation.mutateAsync({ id: record.id, data: { isActive: checked } })
       messageApi.success(checked ? '已启用' : '已禁用')
-    } catch (err) {
-      messageApi.error(`操作失败: ${(err as Error)?.message ?? '未知错误'}`)
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '操作失败'))
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteMutation.mutateAsync(id)
+      messageApi.success('删除成功')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '删除失败'))
     }
   }
 
@@ -623,10 +633,7 @@ function WhitelistTab() {
           {
             key: 'delete',
             node: (
-              <Popconfirm
-                title="确认删除该白名单规则？"
-                onConfirm={() => deleteMutation.mutate(record.id)}
-              >
+              <Popconfirm title="确认删除该白名单规则？" onConfirm={() => handleDelete(record.id)}>
                 <Button type="link" size="small" danger>
                   删除
                 </Button>

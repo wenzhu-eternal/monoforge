@@ -181,7 +181,7 @@ export class ErrorLogsService {
 
   async findById(id: number) {
     const log = await db.query.errorLogs.findFirst({
-      where: eq(errorLogs.id, id),
+      where: and(eq(errorLogs.id, id), notDeleted(errorLogs.deletedAt)),
     })
     if (!log) {
       throw new NotFoundException(`错误日志 ID ${id} 不存在`)
@@ -269,7 +269,7 @@ export class ErrorLogsService {
    */
   async resolve(id: number, resolvedBy: number): Promise<{ message: string }> {
     const log = await db.query.errorLogs.findFirst({
-      where: eq(errorLogs.id, id),
+      where: and(eq(errorLogs.id, id), notDeleted(errorLogs.deletedAt)),
     })
     if (!log) {
       throw new NotFoundException(`错误日志 ID ${id} 不存在`)
@@ -319,7 +319,7 @@ export class ErrorLogsService {
 
   async remove(id: number): Promise<{ message: string }> {
     const log = await db.query.errorLogs.findFirst({
-      where: eq(errorLogs.id, id),
+      where: and(eq(errorLogs.id, id), notDeleted(errorLogs.deletedAt)),
     })
     if (!log) {
       throw new NotFoundException(`错误日志 ID ${id} 不存在`)
@@ -348,7 +348,10 @@ export class ErrorLogsService {
       // 缓存查询失败，直接查库
     }
 
-    const list = await db.select().from(errorWhitelist).where(eq(errorWhitelist.isActive, true))
+    const list = await db
+      .select()
+      .from(errorWhitelist)
+      .where(and(eq(errorWhitelist.isActive, true), notDeleted(errorWhitelist.deletedAt)))
     return this.matchWhitelist(list, message, url)
   }
 
@@ -382,7 +385,7 @@ export class ErrorLogsService {
       .select()
       .from(errorWhitelist)
       .where(notDeleted(errorWhitelist.deletedAt))
-      .orderBy(desc(errorWhitelist.createdAt))
+      .orderBy(desc(errorWhitelist.createdAt), desc(errorWhitelist.id))
 
     try {
       await this.redisService.set(WHITELIST_CACHE_KEY, JSON.stringify(list), WHITELIST_CACHE_TTL)
@@ -423,7 +426,7 @@ export class ErrorLogsService {
     },
   ) {
     const existing = await db.query.errorWhitelist.findFirst({
-      where: eq(errorWhitelist.id, id),
+      where: and(eq(errorWhitelist.id, id), notDeleted(errorWhitelist.deletedAt)),
     })
     if (!existing) {
       throw new NotFoundException(`白名单 ID ${id} 不存在`)
@@ -451,7 +454,7 @@ export class ErrorLogsService {
 
   async removeWhitelist(id: number): Promise<{ message: string }> {
     const existing = await db.query.errorWhitelist.findFirst({
-      where: eq(errorWhitelist.id, id),
+      where: and(eq(errorWhitelist.id, id), notDeleted(errorWhitelist.deletedAt)),
     })
     if (!existing) {
       throw new NotFoundException(`白名单 ID ${id} 不存在`)

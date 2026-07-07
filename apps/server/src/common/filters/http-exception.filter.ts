@@ -33,7 +33,28 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = exceptionResponse
       } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const responseObj = exceptionResponse as Record<string, unknown>
-        message = (responseObj.message as string) || exception.message
+        // 兼容 nestjs-zod v5: issues 在 responseObj.issues 字段
+        // （v4 及更早版本可能放在 message 数组里）
+        if (Array.isArray(responseObj.issues)) {
+          const issues = responseObj.issues as Array<{ message?: string; path?: unknown[] }>
+          message =
+            issues
+              .map((i) => {
+                const field = i.path?.length ? `${String(i.path[i.path.length - 1])}: ` : ''
+                return field + (i.message ?? '')
+              })
+              .filter(Boolean)
+              .join('; ') || exception.message
+        } else if (Array.isArray(responseObj.message)) {
+          const issues = responseObj.message as Array<{ message?: string }>
+          message =
+            issues
+              .map((i) => i.message)
+              .filter(Boolean)
+              .join('; ') || exception.message
+        } else {
+          message = (responseObj.message as string) || exception.message
+        }
       } else {
         message = exception.message
       }

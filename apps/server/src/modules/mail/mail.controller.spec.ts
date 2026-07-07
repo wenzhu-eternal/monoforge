@@ -43,32 +43,28 @@ describe('MailController', () => {
 
   describe('sendVerificationCode', () => {
     it('发送验证码邮件成功', async () => {
-      const dto = { to: 'user@test.com', code: '123456', name: '文竹' }
+      const dto = { to: 'user@test.com', name: '文竹' }
 
       const result = await controller.sendVerificationCode(dto)
 
       expect(result).toEqual({ message: '验证码邮件已发送至 user@test.com' })
-      expect(service.sendVerificationCode).toHaveBeenCalledWith('user@test.com', '123456', '文竹')
+      expect(service.sendVerificationCode).toHaveBeenCalledWith('user@test.com', '文竹')
     })
 
     it('未传 name 时使用 undefined', async () => {
-      const dto = { to: 'user@test.com', code: '123456' }
+      const dto = { to: 'user@test.com' }
 
       await controller.sendVerificationCode(dto)
 
-      expect(service.sendVerificationCode).toHaveBeenCalledWith(
-        'user@test.com',
-        '123456',
-        undefined,
-      )
+      expect(service.sendVerificationCode).toHaveBeenCalledWith('user@test.com', undefined)
     })
 
     it('邮件服务未配置时抛 BadRequestException', async () => {
       vi.mocked(service.isConfigured).mockReturnValue(false)
 
-      await expect(
-        controller.sendVerificationCode({ to: 'a@b.com', code: '123456' }),
-      ).rejects.toThrow(BadRequestException)
+      await expect(controller.sendVerificationCode({ to: 'a@b.com' })).rejects.toThrow(
+        BadRequestException,
+      )
       expect(service.sendVerificationCode).not.toHaveBeenCalled()
     })
   })

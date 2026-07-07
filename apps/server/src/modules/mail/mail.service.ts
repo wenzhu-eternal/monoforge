@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Injectable, Logger } from '@nestjs/common'
@@ -14,7 +15,8 @@ export class MailService {
 
   constructor(private readonly configService: ConfigService) {
     const host = this.configService.get<string>('MAIL_HOST')
-    const port = this.configService.get<number>('MAIL_PORT')
+    const portRaw = this.configService.get<string>('MAIL_PORT')
+    const port = portRaw ? Number(portRaw) : undefined
     const user = this.configService.get<string>('MAIL_USER')
     const password = this.configService.get<string>('MAIL_PASSWORD')
     this.fromAddress = this.configService.get<string>('MAIL_FROM') ?? user ?? ''
@@ -65,9 +67,10 @@ export class MailService {
   }
 
   /**
-   * 发送验证码邮件（HTML 模板）
+   * 发送验证码邮件（HTML 模板），验证码由后端随机生成
    */
-  async sendVerificationCode(to: string, code: string, name?: string): Promise<void> {
+  async sendVerificationCode(to: string, name?: string): Promise<void> {
+    const code = randomInt(0, 999999).toString().padStart(6, '0')
     const template = this.templates.get('verification')
     if (template) {
       await this.sendHtml(
@@ -135,6 +138,7 @@ export class MailService {
       this.logger.log(`邮件已发送: ${subject} -> ${to}`)
     } catch (err) {
       this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
+      throw new Error(`邮件发送失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -157,6 +161,7 @@ export class MailService {
       this.logger.log(`邮件已发送: ${subject} -> ${to}`)
     } catch (err) {
       this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
+      throw new Error(`邮件发送失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 }

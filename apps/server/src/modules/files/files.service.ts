@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
-import { count, desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq } from 'drizzle-orm'
 import {
   generateSafeFilename,
   isPathSafe,
@@ -13,6 +13,7 @@ import {
   validateMimeType,
 } from '@/common/file-validator'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import { files, users } from '@/db/schema'
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
@@ -116,10 +117,11 @@ export class FilesService {
         })
         .from(files)
         .leftJoin(users, eq(files.uploadedBy, users.id))
+        .where(notDeleted(files.deletedAt))
         .orderBy(desc(files.createdAt))
         .limit(safePageSize)
         .offset(offset),
-      db.select({ value: count() }).from(files),
+      db.select({ value: count() }).from(files).where(notDeleted(files.deletedAt)),
     ])
 
     const total = countResult[0]?.value ?? 0
@@ -133,7 +135,9 @@ export class FilesService {
   }
 
   async findById(id: number) {
-    const file = await db.query.files.findFirst({ where: eq(files.id, id) })
+    const file = await db.query.files.findFirst({
+      where: and(eq(files.id, id), notDeleted(files.deletedAt)),
+    })
     if (!file) {
       throw new NotFoundException(`文件 ID ${id} 不存在`)
     }
@@ -144,7 +148,9 @@ export class FilesService {
    * 删除文件: 仅管理员或上传者本人
    */
   async remove(id: number, currentUserId: number, isAdmin: boolean): Promise<{ message: string }> {
-    const file = await db.query.files.findFirst({ where: eq(files.id, id) })
+    const file = await db.query.files.findFirst({
+      where: and(eq(files.id, id), notDeleted(files.deletedAt)),
+    })
     if (!file) {
       throw new NotFoundException(`文件 ID ${id} 不存在`)
     }

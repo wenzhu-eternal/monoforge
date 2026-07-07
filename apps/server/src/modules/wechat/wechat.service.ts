@@ -9,8 +9,9 @@ import {
 import { ConfigService } from '@nestjs/config'
 import type { WechatLoginType } from '@shared/schemas/wechat'
 import type { AxiosInstance } from 'axios'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import { users } from '@/db/schema'
 import { AuthService, type TokenPayload } from '@/modules/auth/auth.service'
 import { HttpClientService } from '@/modules/http-client/http-client.service'
@@ -218,7 +219,7 @@ export class WechatService {
    */
   private async findOrCreateUser(openId: string, nickname?: string, avatar?: string) {
     const existing = await db.query.users.findFirst({
-      where: eq(users.wechatOpenId, openId),
+      where: and(eq(users.wechatOpenId, openId), notDeleted(users.deletedAt)),
     })
 
     if (existing) {

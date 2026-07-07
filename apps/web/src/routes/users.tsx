@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import { useRoles } from '@/hooks/use-roles'
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers } from '@/hooks/use-users'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title } = Typography
 
@@ -34,8 +35,16 @@ function UsersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error } = useUsers({ page, pageSize, order: 'desc' })
-  const { data: rolesData } = useRoles({ page: 1, pageSize: 100, order: 'desc' })
+  const { data, isLoading, isError, error } = useUsers({
+    page,
+    pageSize,
+    order: 'desc',
+  })
+  const { data: rolesData } = useRoles({
+    page: 1,
+    pageSize: 100,
+    order: 'desc',
+  })
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
@@ -76,6 +85,7 @@ function UsersPage() {
       key: 'actions',
       width: 160,
       render: (_, record) => {
+        const isAdmin = record.username === 'admin'
         const actions: { key: string; node: ReactNode }[] = [
           {
             key: 'edit',
@@ -88,7 +98,11 @@ function UsersPage() {
           {
             key: 'delete',
             node: (
-              <Popconfirm title="确定要删除该用户吗？" onConfirm={() => handleDelete(record.id)}>
+              <Popconfirm
+                title={isAdmin ? '初始管理员账号不可删除' : '确定要删除该用户吗？'}
+                disabled={isAdmin}
+                onConfirm={() => handleDelete(record.id)}
+              >
                 <Button type="link" danger>
                   删除
                 </Button>
@@ -123,20 +137,28 @@ function UsersPage() {
     try {
       await deleteUser.mutateAsync(id)
       messageApi.success('删除成功')
-    } catch {
-      messageApi.error('删除失败')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '删除失败'))
     }
   }
 
   const handleSubmit = async (values: CreateUser & UpdateUser & { roleId?: number }) => {
     try {
       if (editingUser) {
-        // 编辑时若密码为空则不传
-        const updateData = { ...values }
-        if (!updateData.password) {
-          delete (updateData as { password?: string }).password
+        // 编辑时仅提交 schema 允许的字段，避免携带 avatar/roleName/roles 等
+        // 额外字段触发 Zod 校验失败（avatar 必须是合法 URL）
+        const updateData: UpdateUser = {
+          email: values.email,
+          nickname: values.nickname,
+          phone: values.phone,
+          roleId: values.roleId,
+          status: values.status,
         }
-        await updateUser.mutateAsync({ id: editingUser.id, data: updateData as UpdateUser })
+        // 密码留空则不传
+        if (values.password) {
+          updateData.password = values.password
+        }
+        await updateUser.mutateAsync({ id: editingUser.id, data: updateData })
         messageApi.success('更新成功')
       } else {
         await createUser.mutateAsync(values as CreateUser)
@@ -145,8 +167,8 @@ function UsersPage() {
       setIsModalOpen(false)
       form.resetFields()
       setEditingUser(null)
-    } catch {
-      messageApi.error('操作失败')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '操作失败'))
     }
   }
 

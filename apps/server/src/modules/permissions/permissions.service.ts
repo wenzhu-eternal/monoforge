@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions } from '@/db/schema'
 
 export interface PaginatedPermissions {
@@ -89,11 +89,18 @@ export class PermissionsService {
       throw new ConflictException('权限码已存在')
     }
 
-    const [created] = await db.insert(permissions).values(data).returning()
-    if (!created) {
-      throw new ConflictException('创建权限失败')
+    try {
+      const [created] = await db.insert(permissions).values(data).returning()
+      if (!created) {
+        throw new ConflictException('创建权限失败')
+      }
+      return created
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('权限码已存在')
+      }
+      throw error
     }
-    return created
   }
 
   async update(

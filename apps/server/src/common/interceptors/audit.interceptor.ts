@@ -39,7 +39,7 @@ const RESOURCE_MAP: Record<string, string> = {
 }
 
 // Controller 类名到数据库表和ID字段的映射（用于查询旧值）
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: Drizzle Column 泛型推导过于复杂，运行时 eq 接受任意 Column
 const TABLE_MAP: Record<string, { table: Table; idField: any }> = {
   UsersController: { table: users, idField: users.id },
   RolesController: { table: roles, idField: roles.id },

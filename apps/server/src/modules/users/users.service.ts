@@ -1,23 +1,13 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import * as argon2 from 'argon2'
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import type { User } from '@/db/schema'
 import { roles, users } from '@/db/schema'
 import { Cacheable } from '@/modules/cache/cache.decorator'
 import { CacheService } from '@/modules/cache/cache.service'
-
-// PostgreSQL 唯一约束违反错误码
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code: string }).code === '23505'
-  )
-}
 
 export interface PaginatedUsers {
   list: Record<string, unknown>[]
@@ -85,8 +75,14 @@ export class UsersService {
   async getStats(): Promise<{ totalUsers: number; activeUsers: number }> {
     // 使用聚合查询避免全表扫描，正确统计超过 100 人场景
     const [totalResult, activeResult] = await Promise.all([
-      db.select({ count: sql<number>`count(*)::int` }).from(users),
-      db.select({ count: sql<number>`count(*)::int` }).from(users).where(eq(users.status, true)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(notDeleted(users.deletedAt)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(eq(users.status, true), notDeleted(users.deletedAt))),
     ])
 
     return {
@@ -98,7 +94,7 @@ export class UsersService {
   @Cacheable('user:id', 300)
   async findById(id: number): Promise<Omit<User, 'password'>> {
     const user = await db.query.users.findFirst({
-      where: eq(users.id, id),
+      where: and(eq(users.id, id), notDeleted(users.deletedAt)),
     })
 
     if (!user) {
@@ -118,7 +114,7 @@ export class UsersService {
     roleId?: number | null
   }): Promise<Omit<User, 'password'>> {
     const existingUsername = await db.query.users.findFirst({
-      where: eq(users.username, data.username),
+      where: and(eq(users.username, data.username), notDeleted(users.deletedAt)),
     })
 
     if (existingUsername) {
@@ -126,7 +122,7 @@ export class UsersService {
     }
 
     const existingEmail = await db.query.users.findFirst({
-      where: eq(users.email, data.email),
+      where: and(eq(users.email, data.email), notDeleted(users.deletedAt)),
     })
 
     if (existingEmail) {
@@ -172,17 +168,17 @@ export class UsersService {
     },
   ): Promise<Omit<User, 'password'>> {
     const existingUser = await db.query.users.findFirst({
-      where: eq(users.id, id),
+      where: and(eq(users.id, id), notDeleted(users.deletedAt)),
     })
 
     if (!existingUser) {
       throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
     }
 
-    // email 唯一性校验（排除自身）
+    // email 唯一性校验（排除自身，仅查未软删用户）
     if (data.email && data.email !== existingUser.email) {
       const duplicateEmail = await db.query.users.findFirst({
-        where: eq(users.email, data.email),
+        where: and(eq(users.email, data.email), notDeleted(users.deletedAt)),
       })
       if (duplicateEmail) {
         throw new ConflictException(ErrorMessages[ErrorCodes.USER_ALREADY_EXISTS])
@@ -222,11 +218,16 @@ export class UsersService {
 
   async remove(id: number): Promise<{ message: string }> {
     const existingUser = await db.query.users.findFirst({
-      where: eq(users.id, id),
+      where: and(eq(users.id, id), notDeleted(users.deletedAt)),
     })
 
     if (!existingUser) {
       throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
+    }
+
+    // 保护初始管理员账号
+    if (existingUser.username === 'admin') {
+      throw new ConflictException(ErrorMessages[ErrorCodes.INITIAL_ADMIN_CANNOT_DELETE])
     }
 
     // 软删除: 设置 deletedAt 时间戳

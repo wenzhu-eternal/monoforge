@@ -2,7 +2,7 @@ import { json, pgTable, serial, text, timestamp, varchar } from 'drizzle-orm/pg-
 
 export const permissions = pgTable('permissions', {
   id: serial('id').primaryKey(),
-  code: varchar('code', { length: 50 }).notNull().unique(),
+  code: varchar('code', { length: 50 }).notNull(),
   name: varchar('name', { length: 100 }).notNull(),
   description: text('description'),
   routes: json('routes').$type<string[]>().default([]),

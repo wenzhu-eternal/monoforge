@@ -64,6 +64,13 @@
       "when": 1783256721586,
       "tag": "0008_loud_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783423530957,
+      "tag": "0009_late_shocker",
+      "breakpoints": true
     }
   ]
 }

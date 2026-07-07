@@ -45,15 +45,15 @@ services:
     container_name: mb-app
     restart: unless-stopped
     ports:
-      - '80:80'
+      - '9000:9000'
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER:-mb_user}:${POSTGRES_PASSWORD:-mb_password}@postgres:5432/${POSTGRES_DB:-mb_database}
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret-key-change-in-production-16chars}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev-jwt-refresh-secret-key-change-in-production-16chars}
-      - API_PORT=80
-      - ALLOW_ORIGIN=http://localhost
+      - API_PORT=9000
+      - ALLOW_ORIGIN=http://localhost:9000
       - COOKIE_SECURE=false
     volumes:
       - uploads_data:/app/uploads

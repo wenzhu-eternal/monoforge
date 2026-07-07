@@ -7,11 +7,6 @@ export const SendWelcomeMailSchema = z.object({
 
 export const SendVerificationCodeMailSchema = z.object({
   to: z.string().email('请输入有效邮箱'),
-  code: z
-    .string()
-    .min(4, '验证码至少 4 位')
-    .max(8, '验证码最多 8 位')
-    .regex(/^\d+$/, '验证码只能为数字'),
   name: z.string().min(1).max(50).optional(),
 })
 

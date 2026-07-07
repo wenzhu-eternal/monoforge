@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { Cron } from '@nestjs/schedule'
+import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { MailService } from '@/modules/mail/mail.service'
 
 const execAsync = promisify(exec)
@@ -19,6 +20,7 @@ export class ScheduleService {
   constructor(
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
+    private readonly errorLogsService: ErrorLogsService,
   ) {}
 
   /**
@@ -56,6 +58,12 @@ export class ScheduleService {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       this.logger.error(`数据库备份失败: ${errorMsg}`)
+      // 入库记录异常
+      await this.errorLogsService.record({
+        message: `数据库备份失败: ${errorMsg}`,
+        stack: err instanceof Error ? err.stack : undefined,
+        context: { task: 'dailyBackup' },
+      })
       await this.mailService.sendBackupNotification(false, errorMsg)
     }
   }

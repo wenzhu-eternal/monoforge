@@ -9,7 +9,6 @@ export interface SendWelcomeMailInput {
 
 export interface SendVerificationCodeMailInput {
   to: string
-  code: string
   name?: string
 }
 

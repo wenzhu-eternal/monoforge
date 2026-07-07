@@ -57,11 +57,10 @@ describe('use-mail hooks', () => {
 
       const { result } = renderHookWithQuery(() => useSendVerificationCodeMail())
 
-      const res = await result.current.mutateAsync({ to: 'a@b.com', code: '123456', name: '文竹' })
+      const res = await result.current.mutateAsync({ to: 'a@b.com', name: '文竹' })
 
       expect(apiMock.post).toHaveBeenCalledWith('/api/v1/mail/verification-code', {
         to: 'a@b.com',
-        code: '123456',
         name: '文竹',
       })
       expect(res.message).toContain('验证码')
@@ -74,11 +73,10 @@ describe('use-mail hooks', () => {
 
       const { result } = renderHookWithQuery(() => useSendVerificationCodeMail())
 
-      await result.current.mutateAsync({ to: 'a@b.com', code: '123456' })
+      await result.current.mutateAsync({ to: 'a@b.com' })
 
       expect(apiMock.post).toHaveBeenCalledWith('/api/v1/mail/verification-code', {
         to: 'a@b.com',
-        code: '123456',
       })
     })
   })

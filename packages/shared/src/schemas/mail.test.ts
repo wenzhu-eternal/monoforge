@@ -31,44 +31,29 @@ describe('SendWelcomeMailSchema', () => {
 })
 
 describe('SendVerificationCodeMailSchema', () => {
-  it('合法数据通过', () => {
-    expect(
-      SendVerificationCodeMailSchema.safeParse({ to: 'user@example.com', code: '123456' }).success,
-    ).toBe(true)
+  it('合法数据通过（仅 to）', () => {
+    expect(SendVerificationCodeMailSchema.safeParse({ to: 'user@example.com' }).success).toBe(true)
   })
 
   it('带 name 通过', () => {
     expect(
       SendVerificationCodeMailSchema.safeParse({
         to: 'user@example.com',
-        code: '123456',
         name: 'Alice',
       }).success,
     ).toBe(true)
   })
 
-  it('code 短于 4 位失败', () => {
-    expect(
-      SendVerificationCodeMailSchema.safeParse({ to: 'user@example.com', code: '123' }).success,
-    ).toBe(false)
-  })
-
-  it('code 长于 8 位失败', () => {
-    expect(
-      SendVerificationCodeMailSchema.safeParse({ to: 'user@example.com', code: '123456789' })
-        .success,
-    ).toBe(false)
-  })
-
-  it('code 包含非数字失败', () => {
-    expect(
-      SendVerificationCodeMailSchema.safeParse({ to: 'user@example.com', code: 'abcdef' }).success,
-    ).toBe(false)
-  })
-
   it('邮箱非法失败', () => {
-    expect(SendVerificationCodeMailSchema.safeParse({ to: 'nope', code: '123456' }).success).toBe(
-      false,
-    )
+    expect(SendVerificationCodeMailSchema.safeParse({ to: 'nope' }).success).toBe(false)
+  })
+
+  it('name 超过 50 字符失败', () => {
+    expect(
+      SendVerificationCodeMailSchema.safeParse({
+        to: 'user@example.com',
+        name: 'a'.repeat(51),
+      }).success,
+    ).toBe(false)
   })
 })

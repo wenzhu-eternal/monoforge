@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import type { Role } from '@/db/schema'
 import { roles, users } from '@/db/schema'
 
@@ -62,11 +62,18 @@ export class RolesService {
       throw new ConflictException('角色名已存在')
     }
 
-    const [created] = await db.insert(roles).values(data).returning()
-    if (!created) {
-      throw new ConflictException('创建角色失败')
+    try {
+      const [created] = await db.insert(roles).values(data).returning()
+      if (!created) {
+        throw new ConflictException('创建角色失败')
+      }
+      return created
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('角色名已存在')
+      }
+      throw error
     }
-    return created
   }
 
   async update(id: number, data: { name?: string; description?: string }): Promise<Role> {

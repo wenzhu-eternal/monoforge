@@ -27,6 +27,7 @@ import {
 } from '@/hooks/use-files'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { api } from '@/lib/api'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title, Text } = Typography
 
@@ -69,9 +70,9 @@ function FilesPage() {
         onSuccess?.({})
         queryClient.invalidateQueries({ queryKey: ['files'] })
         messageApi.success('上传成功')
-      } catch (err: any) {
-        onError?.(err)
-        messageApi.error(`上传失败: ${err?.response?.data?.message ?? err?.message ?? '未知错误'}`)
+      } catch (err) {
+        onError?.(err as never)
+        messageApi.error(extractErrorMessage(err, '上传失败'))
       }
     },
   }
@@ -81,8 +82,7 @@ function FilesPage() {
       const url = await previewFile(record.id)
       setPreviewUrl(url)
     } catch (err) {
-      messageApi.error('预览失败')
-      console.error(err)
+      messageApi.error(extractErrorMessage(err, '预览失败'))
     }
   }
 
@@ -98,8 +98,16 @@ function FilesPage() {
       await downloadFile(record.id, record.originalName)
       messageApi.success('下载已开始')
     } catch (err) {
-      messageApi.error('下载失败')
-      console.error(err)
+      messageApi.error(extractErrorMessage(err, '下载失败'))
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteMutation.mutateAsync(id)
+      messageApi.success('删除成功')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '删除失败'))
     }
   }
 
@@ -172,7 +180,7 @@ function FilesPage() {
         actions.push({
           key: 'delete',
           node: (
-            <Popconfirm title="确认删除该文件？" onConfirm={() => deleteMutation.mutate(record.id)}>
+            <Popconfirm title="确认删除该文件？" onConfirm={() => handleDelete(record.id)}>
               <Button type="link" size="small" danger>
                 删除
               </Button>

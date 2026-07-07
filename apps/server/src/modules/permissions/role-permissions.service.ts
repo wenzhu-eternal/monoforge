@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions, roles } from '@/db/schema'
 
 export interface RolePermission {
@@ -13,9 +14,15 @@ export interface RolePermission {
 @Injectable()
 export class RolePermissionsService {
   async findByRoleId(roleId: number): Promise<string[]> {
-    const result = await db.query.rolePermissions.findMany({
-      where: eq(rolePermissions.roleId, roleId),
-    })
+    const result = await db
+      .select({ permission: rolePermissions.permission })
+      .from(rolePermissions)
+      .innerJoin(
+        permissions,
+        and(eq(rolePermissions.permission, permissions.code), notDeleted(permissions.deletedAt)),
+      )
+      .where(eq(rolePermissions.roleId, roleId))
+
     return result.map((p) => p.permission)
   }
 
@@ -28,7 +35,7 @@ export class RolePermissionsService {
       })
       .from(rolePermissions)
       .leftJoin(permissions, eq(rolePermissions.permission, permissions.code))
-      .where(eq(rolePermissions.roleId, roleId))
+      .where(and(eq(rolePermissions.roleId, roleId), notDeleted(permissions.deletedAt)))
 
     return result
   }
@@ -44,6 +51,7 @@ export class RolePermissionsService {
       .from(rolePermissions)
       .leftJoin(permissions, eq(rolePermissions.permission, permissions.code))
       .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
+      .where(and(notDeleted(permissions.deletedAt), notDeleted(roles.deletedAt)))
 
     return allPermissions
   }
@@ -52,18 +60,30 @@ export class RolePermissionsService {
     roleId: number,
     permissionCodes: string[],
   ): Promise<{ message: string }> {
-    const role = await db.query.roles.findFirst({ where: eq(roles.id, roleId) })
+    const role = await db.query.roles.findFirst({
+      where: and(eq(roles.id, roleId), notDeleted(roles.deletedAt)),
+    })
     if (!role) {
       throw new NotFoundException(`角色 ID ${roleId} 不存在`)
+    }
+
+    // 静默过滤掉指向已软删权限的 code，避免幽灵权限
+    let validCodes: string[] = []
+    if (permissionCodes.length > 0) {
+      const valid = await db
+        .select({ code: permissions.code })
+        .from(permissions)
+        .where(and(inArray(permissions.code, permissionCodes), notDeleted(permissions.deletedAt)))
+      validCodes = valid.map((p) => p.code)
     }
 
     // 删除旧权限
     await db.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId))
 
     // 插入新权限
-    if (permissionCodes.length > 0) {
+    if (validCodes.length > 0) {
       await db.insert(rolePermissions).values(
-        permissionCodes.map((permission) => ({
+        validCodes.map((permission) => ({
           roleId,
           permission,
         })),

@@ -1,4 +1,6 @@
-# MB 全栈 Monorepo 项目指引
+# AI 协作规则
+
+> 本文件仅保留 AI 协作流程铁律与文档索引。所有技术规范已拆分到 `docs/` 下独立文件。
 
 ## 项目概览
 
@@ -15,33 +17,12 @@ mb-monorepo/
 │   └── server/       # 后端 (NestJS 11 + Drizzle + PostgreSQL)
 ├── packages/
 │   ├── shared/       # zod schemas + 派生类型 + 常量/错误码
-│   └── config/       # 共享 biome/tsconfig
+├── docs/             # 技术规范文档（见下方索引）
 ├── docker-compose.yml
 ├── pnpm-workspace.yaml
 ├── turbo.json
 └── biome.json
 ```
-
-## 契约铁律
-
-1. **改 API 必须先改 `packages/shared/schemas`**
-2. **禁止前端手抄类型** - 所有类型从 shared 导出
-3. **禁止后端绕过 zod 自定义 DTO** - 使用 nestjs-zod 桥接
-4. **错误码集中到 shared** - 前后端共享
-
-## 数据库铁律
-
-1. **禁止 `synchronize`** - 所有表结构变更走 `drizzle-kit generate` 迁移
-2. **表名使用 snake_case 复数** - `users` / `roles` / `error_logs`
-3. **使用 PostgreSQL** - JSONB 存可变结构
-4. **软删除** - 所有表添加 `deleted_at` 字段，删除操作仅设置时间戳，查询时过滤 `deleted_at IS NULL`
-
-## 命名规范
-
-- **文件**: 模块单文件 `{module}.ts`; drizzle 表定义用 `*.schema.ts`; TanStack Router 路由用 `*.route.ts`
-- **类**: `{Resource}{Type}` 驼峰后缀 - `UserController` / `UserService`
-- **DTO**: `{Action}{Resource}Dto` - `CreateUserDto` / `LoginDto` (全部命名导出)
-- **Provider/Module**: 命名导出 + 模块聚合 (`index.module.ts`)
 
 ## 命令速查
 
@@ -53,14 +34,17 @@ pnpm dev --filter=server    # 只启动后端
 
 # 构建
 pnpm build                  # 构建所有包
+pnpm --filter=shared build  # 单独构建 shared（schema 改动后必须执行）
 
 # 测试
-pnpm test                   # 运行所有测试
+pnpm test                   # 运行所有单元测试
+pnpm --filter=server test:e2e  # 运行 e2e 冒烟测试（需真实 DB）
 
-# Lint
-pnpm lint                   # 检查所有包
+# 质量检测
+pnpm lint                   # Biome lint 检查所有包
 pnpm lint:fix               # 自动修复
 pnpm format                 # 格式化代码
+pnpm security               # 安全 + 兼容性 + 规范检测（详见 docs/TESTING.md）
 
 # 数据库
 pnpm db:generate            # 生成迁移文件
@@ -73,19 +57,6 @@ docker compose up postgres  # 只启动数据库
 docker compose up redis     # 只启动 Redis
 ```
 
-## 测试要求
-
-1. **新增 service/controller 必须配套单测**
-2. **bug 修复先写复现测试**
-3. **所有 AI 改动须经 `pnpm test` + Biome 通过方可提交**
-
-## 开发流程
-
-1. **先描述后编码**: 编写任何代码前，先描述方案并等待批准
-2. **需求模糊时先澄清**: 提出澄清问题，确认后再动手
-3. **任务拆分**: 修改超过 3 个文件时，先停止并拆分成更小的任务
-4. **被纠正即反思**: 反思错误原因并制定永不再犯的对策
-
 ## 环境要求
 
 - **包管理器**: pnpm (优先)
@@ -95,29 +66,41 @@ docker compose up redis     # 只启动 Redis
 - **PostgreSQL**: 16
 - **Redis**: 7
 
-## 参考文档
+## 开发流程铁律
 
-- [架构设计](./docs/ARCHITECTURE.md)
+1. **先描述后编码**: 编写任何代码前，先描述方案并等待批准，不得直接动手
+2. **需求模糊时先澄清**: 提出澄清问题，确认后再动手
+3. **任务拆分**: 一项任务需修改超过 3 个文件时，先停止并拆分成更小的任务
+4. **被纠正即反思**: 每次被纠正时，反思错误原因并制定永不再犯的对策
+5. **完成代码后列边缘场景**: 列出边缘 case 并建议覆盖它们的测试用例
+6. **Bug 修复先写复现测试**: 出现 bug 时，先写能复现的测试，再修复，直到测试通过
+7. **不主动 push**: 不主动执行 `git push`，等待用户确认后再执行
+8. **避免过度优化**: 不滥用 `useCallback`/`useMemo`，仅在确有性能问题时使用，默认写简单清晰的代码
+
+## 测试要求
+
+1. **新增 service/controller 必须配套单测**
+2. **bug 修复先写复现测试**
+3. **所有 AI 改动须经 `pnpm test` + Biome 通过方可提交**
+
+## 文档索引
+
+所有技术规范已拆分到 `docs/` 下，按职责分文件维护：
+
+| 文档 | 职责 |
+|---|---|
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 架构设计（技术栈/目录/DB schema/API/认证/部署） |
+| [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) | 部署规范（对外单一入口/ngrok/Docker/生产检查清单） |
+| [docs/CONVENTIONS.md](./docs/CONVENTIONS.md) | 编码规范（契约铁律/命名/前端交互/表单/Zod DTO 桥接/提交规范） |
+| [docs/DATABASE.md](./docs/DATABASE.md) | 数据库规范（表结构铁律/软删除过滤/helpers/迁移） |
+| [docs/ERROR-HANDLING.md](./docs/ERROR-HANDLING.md) | 异常处理（错误日志入库/HttpExceptionFilter/前端 catch） |
+| [docs/SECURITY.md](./docs/SECURITY.md) | 安全规范（认证链路/admin 保护/文件上传/限流/CORS） |
+| [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) | 配置规范（环境变量/陷阱/邮件服务/ngrok 部署） |
+| [docs/TESTING.md](./docs/TESTING.md) | 测试规范（单测/e2e 冒烟/安全检测/覆盖率要求） |
+| [docs/EDITOR-SETUP.md](./docs/EDITOR-SETUP.md) | 编辑器配置（VSCode/Biome/husky/EditorConfig） |
+
+## 外部参考文档
+
 - [antd v6 迁移指南](https://ant.design/docs/react/migration-v6/)
 - [Drizzle ORM 文档](https://orm.drizzle.team/docs)
 - [TanStack Router](https://tanstack.com/router/latest)
-
-## 前端交互规范
-
-1. **Table 样式**：所有 `<Table>` 必须加 `bordered`，多操作按钮用 `<Divider type="vertical" style={{ margin: '0 4px' }} />` 分隔，操作按钮统一 `type="link" size="small"`
-2. **错误提示**：加载失败用 `message.useMessage()` + `useEffect` 监听 `isError` 弹 toast，不再用 `<Alert>` 常驻；`contextHolder` 紧跟外层组件
-3. **布局**：顶部不再用 `<Card>` 包裹 Table，标题行右侧放主操作按钮（如"新建"/"上传"）
-4. **antd 中文化**：`__root.tsx` 的 `ConfigProvider` 必须配 `locale={zhCN}`，所有 Modal/Popconfirm 默认显示"确定/取消"，不再为每个弹窗单独写 `okText/cancelText`
-5. **菜单跳转**：`handleMenuClick` 必须判断 `key.startsWith('/')` 才跳转，分组节点 key（如 `'system'`/`'log'`/`'content'`）不触发 `navigate`
-6. **菜单可见性**：admin 专属菜单（如邮件发送）基于 `user?.roles?.some(r => r.name === 'admin')` 判断；普通业务菜单基于 `hasPermission(Permissions.XXX)`
-
-## 错误日志规范
-
-1. **入库链路**：所有后端错误必须经 `ErrorLogsService.record()` 入库，禁止在 ExceptionFilter 或其他位置直接 `db.insert(errorLogs)`，以确保 `errorType` 与白名单缓存一致
-2. **聚合查询**：`findGrouped` 必须 `where eq(isResolved=false)`，全处理后聚合列表自动隐藏
-3. **限流豁免**：error-logs 模块的只读接口（findAll/stats/grouped/whitelist）必须 `@SkipThrottle()`，避免 429
-
-## 数据库 helpers 规范
-
-1. **`notDeleted(deletedAt)` 仅传单列**：正确用法 `and(eq(col, val), notDeleted(deletedAt))`；错误用法 `notDeleted(id, deletedAt)` 会把所有传入列都判 `IS NULL` → 永远查不到记录
-2. **删除绑定校验**：删除实体前必须检查外键引用（如 rolePermissions / users.roleId），存在未软删的引用则抛 `ConflictException`

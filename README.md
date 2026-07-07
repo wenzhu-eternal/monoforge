@@ -111,7 +111,7 @@ mb-monorepo/
 │   └── server/       # 后端 (NestJS 11 + Drizzle + PostgreSQL)
 ├── packages/
 │   ├── shared/       # zod schemas + 派生类型 + 常量/错误码
-│   └── config/       # 共享 biome/tsconfig
+├── docs/             # 技术规范文档
 ├── docker-compose.yml
 ├── pnpm-workspace.yaml
 ├── turbo.json
@@ -134,6 +134,11 @@ mb-monorepo/
 ## 相关文档
 
 - [架构设计](./docs/ARCHITECTURE.md)
+- [编码规范](./docs/CONVENTIONS.md)
+- [数据库规范](./docs/DATABASE.md)
+- [异常处理规范](./docs/ERROR-HANDLING.md)
+- [安全规范](./docs/SECURITY.md)
+- [配置规范](./docs/CONFIGURATION.md)
 - [antd v6 迁移指南](https://ant.design/docs/react/migration-v6/)
 - [Drizzle ORM 文档](https://orm.drizzle.team/docs)
 - [TanStack Router](https://tanstack.com/router/latest)

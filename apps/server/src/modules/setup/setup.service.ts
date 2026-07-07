@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common'
 import * as argon2 from 'argon2'
-import { sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import { roles, users } from '@/db/schema'
 
 // 默认角色: admin 全部权限，editor 编辑权限，viewer 只读
@@ -23,8 +24,14 @@ export class SetupService {
 
   async getStatus(): Promise<SetupStatus> {
     const [userCountResult, roleCountResult] = await Promise.all([
-      db.select({ count: sql<number>`count(*)::int` }).from(users),
-      db.select({ count: sql<number>`count(*)::int` }).from(roles),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(notDeleted(users.deletedAt)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(roles)
+        .where(notDeleted(roles.deletedAt)),
     ])
 
     const userCount = userCountResult[0]?.count ?? 0
@@ -62,7 +69,9 @@ export class SetupService {
 
         const adminRole =
           createdRoles.find((r) => r.name === 'admin') ??
-          (await tx.query.roles.findFirst({ where: (roles, { eq }) => eq(roles.name, 'admin') }))
+          (await tx.query.roles.findFirst({
+            where: and(eq(roles.name, 'admin'), notDeleted(roles.deletedAt)),
+          }))
 
         if (!adminRole) {
           throw new BadRequestException('默认角色创建失败')

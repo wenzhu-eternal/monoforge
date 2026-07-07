@@ -44,3 +44,7 @@ temp/
 
 # uploads
 uploads/
+
+# Database backups（本地临时数据，不进版本库）
+apps/server/backups/
+*.sql.bak

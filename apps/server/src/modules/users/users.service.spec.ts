@@ -37,6 +37,7 @@ vi.mock('@/db', () => ({
 
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
+  isUniqueViolation: vi.fn(() => false),
 }))
 
 const { db: mockDb } = await import('@/db')
@@ -203,7 +204,9 @@ describe('UsersService', () => {
     it('返回总用户数和活跃用户数', async () => {
       vi.mocked(mockDb.select)
         .mockReturnValueOnce({
-          from: vi.fn().mockResolvedValue([{ count: 100 }]),
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ count: 100 }]),
+          }),
         } as never)
         .mockReturnValueOnce({
           from: vi.fn().mockReturnValue({

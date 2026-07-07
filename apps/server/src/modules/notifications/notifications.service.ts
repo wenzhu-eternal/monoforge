@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import { notifications } from '@/db/schema'
 import { EventsService } from '@/modules/websocket/events.service'
 
@@ -13,8 +14,12 @@ export class NotificationsService {
    */
   async list(userId: number, unreadOnly = false) {
     const where = unreadOnly
-      ? and(eq(notifications.userId, userId), eq(notifications.read, false))
-      : eq(notifications.userId, userId)
+      ? and(
+          eq(notifications.userId, userId),
+          eq(notifications.read, false),
+          notDeleted(notifications.deletedAt),
+        )
+      : and(eq(notifications.userId, userId), notDeleted(notifications.deletedAt))
 
     return db.query.notifications.findMany({
       where,
@@ -30,7 +35,13 @@ export class NotificationsService {
     const [result] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
-      .where(and(eq(notifications.userId, userId), eq(notifications.read, false)))
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          eq(notifications.read, false),
+          notDeleted(notifications.deletedAt),
+        ),
+      )
     return result?.count ?? 0
   }
 
@@ -65,7 +76,13 @@ export class NotificationsService {
     const [updated] = await db
       .update(notifications)
       .set({ read: true })
-      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .where(
+        and(
+          eq(notifications.id, id),
+          eq(notifications.userId, userId),
+          notDeleted(notifications.deletedAt),
+        ),
+      )
       .returning()
 
     if (!updated) {
@@ -81,18 +98,31 @@ export class NotificationsService {
     const result = await db
       .update(notifications)
       .set({ read: true })
-      .where(and(eq(notifications.userId, userId), eq(notifications.read, false)))
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          eq(notifications.read, false),
+          notDeleted(notifications.deletedAt),
+        ),
+      )
       .returning()
     return { updated: result.length }
   }
 
   /**
-   * 删除单条通知
+   * 删除单条通知（软删除）
    */
   async remove(userId: number, id: number) {
     const [deleted] = await db
-      .delete(notifications)
-      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .update(notifications)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(notifications.id, id),
+          eq(notifications.userId, userId),
+          notDeleted(notifications.deletedAt),
+        ),
+      )
       .returning()
     if (!deleted) {
       throw new NotFoundException(`通知 ID ${id} 不存在`)

@@ -1,4 +1,4 @@
-# 架构与规范
+# 架构设计
 
 ---
 
@@ -296,37 +296,6 @@ type CreateUser = z.infer<typeof CreateUserSchema>;
 
 ---
 
-## 开发规范
-
-### 命名约定
-
-| 类型 | 约定 | 示例 |
-|---|---|---|
-| 文件 | 模块单文件 `{module}.ts` | `users.service.ts` |
-| Schema 文件 | `*.schema.ts` | `user.schema.ts` |
-| 路由文件 | `*.route.ts` | `users.route.ts` |
-| 类(后端) | `{Resource}{Type}` | `UserController` / `UserService` |
-| DTO | `{Action}{Resource}Dto` | `CreateUserDto` / `LoginDto` |
-| 表名 | snake_case 复数 | `users` / `error_logs` |
-| 导出 | 全部命名导出 | `export class ...` |
-
-### 提交规范
-
-使用 [Conventional Commits](https://www.conventionalcommits.org/) 格式:
-
-```
-<type>(<scope>): <description>
-
-# 示例
-feat(auth): add refresh token rotation
-fix(users): fix user list pagination
-docs(architecture): update API design section
-```
-
-类型: `feat` / `fix` / `docs` / `refactor` / `test` / `chore` / `ci`
-
----
-
 ## 部署架构
 
 ### Docker Compose 服务
@@ -335,14 +304,24 @@ docs(architecture): update API design section
 |---|---|---|
 | postgres | 5432 | PostgreSQL 16 |
 | redis | 6379 | Redis 7 |
-| server | 3000 | NestJS 后端 |
-| web | 80 (nginx) | React 前端 |
+| app | 9000 | NestJS 后端（含前端 dist，单一入口） |
 
 ### Dockerfile 策略
 
-- **server**: 多阶段构建 builder → production (Node.js 运行时)
-- **web**: 多阶段构建 builder → nginx (静态文件服务)
+- **单一入口**：根 `Dockerfile` 多阶段构建，同时编译 shared → server → web，最终运行 `node apps/server/dist/main.js`
+- 前端 `dist` 由后端 `ServeStaticModule` 托管，无需独立 nginx 容器
+- 详见 [DEPLOYMENT.md](./DEPLOYMENT.md)
 
 ### 环境变量
 
-所有环境变量通过 `.env` 文件管理，关键变量缺失时服务启动即失败。详见 `.env.example`。
+所有环境变量通过 `.env` 文件管理，关键变量缺失时服务启动即失败。详见 `.env.example` 和 [CONFIGURATION.md](./CONFIGURATION.md)。
+
+---
+
+## 相关文档
+
+- [编码规范](./CONVENTIONS.md)
+- [数据库规范](./DATABASE.md)
+- [异常处理规范](./ERROR-HANDLING.md)
+- [安全规范](./SECURITY.md)
+- [配置规范](./CONFIGURATION.md)

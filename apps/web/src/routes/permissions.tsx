@@ -26,6 +26,7 @@ import {
   useUpdatePermission,
 } from '@/hooks/use-permissions'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title } = Typography
 
@@ -148,8 +149,8 @@ function PermissionsPage() {
     try {
       await deletePermission.mutateAsync(id)
       messageApi.success('删除成功')
-    } catch {
-      messageApi.error('删除失败')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '删除失败'))
     }
   }
 
@@ -165,8 +166,8 @@ function PermissionsPage() {
       setIsModalOpen(false)
       form.resetFields()
       setEditingPermission(null)
-    } catch {
-      messageApi.error('操作失败')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '操作失败'))
     }
   }
 
@@ -181,8 +182,8 @@ function PermissionsPage() {
       setIsRouteModalOpen(false)
       setSelectedRoutes([])
       setEditingPermission(null)
-    } catch {
-      messageApi.error('路由配置更新失败')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '路由配置更新失败'))
     }
   }
 

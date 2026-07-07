@@ -3,6 +3,7 @@ import { Button, Divider, Form, Input, message, Radio, Space, Typography } from 
 import { useState } from 'react'
 import { useSendVerificationCodeMail, useSendWelcomeMail } from '@/hooks/use-mail'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title, Text } = Typography
 
@@ -19,7 +20,6 @@ interface WelcomeFormValues {
 
 interface VerificationCodeFormValues {
   to: string
-  code: string
   name?: string
 }
 
@@ -37,8 +37,8 @@ function MailPage() {
       const res = await welcomeMutation.mutateAsync(values)
       messageApi.success(res.message)
       welcomeForm.resetFields()
-    } catch (err) {
-      messageApi.error(`发送失败: ${(err as Error)?.message ?? '未知错误'}`)
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '发送失败'))
     }
   }
 
@@ -47,8 +47,8 @@ function MailPage() {
       const res = await verificationMutation.mutateAsync(values)
       messageApi.success(res.message)
       verificationForm.resetFields()
-    } catch (err) {
-      messageApi.error(`发送失败: ${(err as Error)?.message ?? '未知错误'}`)
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '发送失败'))
     }
   }
 
@@ -115,17 +115,6 @@ function MailPage() {
               rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
             >
               <Input placeholder="user@example.com" />
-            </Form.Item>
-            <Form.Item
-              name="code"
-              label="验证码"
-              rules={[
-                { required: true, message: '请输入验证码' },
-                { len: 6, message: '验证码必须 6 位' },
-                { pattern: /^\d+$/, message: '验证码只能为数字' },
-              ]}
-            >
-              <Input maxLength={6} placeholder="6 位数字验证码" />
             </Form.Item>
             <Form.Item name="name" label="称呼（可选）">
               <Input placeholder="如：张三" />

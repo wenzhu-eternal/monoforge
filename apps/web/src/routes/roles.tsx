@@ -16,7 +16,7 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   useAllPermissions,
   useRolePermissions,
@@ -24,6 +24,7 @@ import {
 } from '@/hooks/use-permissions'
 import { useCreateRole, useDeleteRole, useRoles, useUpdateRole } from '@/hooks/use-roles'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title } = Typography
 
@@ -74,6 +75,9 @@ function RolesPage() {
 
   const [roleForm] = Form.useForm<CreateRole & UpdateRole>()
 
+  // 仅在切换到新角色时同步 server data，避免 invalidateQueries 后覆盖用户本地修改
+  const initializedForRoleId = useRef<number | null>(null)
+
   useEffect(() => {
     if (isError) {
       messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
@@ -81,10 +85,15 @@ function RolesPage() {
   }, [isError, error, messageApi])
 
   useEffect(() => {
-    if (currentPermissions) {
+    if (
+      selectedRoleId !== null &&
+      initializedForRoleId.current !== selectedRoleId &&
+      currentPermissions
+    ) {
       setSelectedPermissions(currentPermissions)
+      initializedForRoleId.current = selectedRoleId
     }
-  }, [currentPermissions])
+  }, [currentPermissions, selectedRoleId])
 
   const columns: ColumnsType<Role> = [
     { title: 'ID', dataIndex: 'id', key: 'id' },
@@ -161,8 +170,8 @@ function RolesPage() {
     try {
       await deleteRole.mutateAsync(id)
       messageApi.success('删除成功')
-    } catch {
-      messageApi.error('删除失败')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '删除失败'))
     }
   }
 
@@ -178,8 +187,8 @@ function RolesPage() {
       setIsRoleModalOpen(false)
       roleForm.resetFields()
       setEditingRole(null)
-    } catch {
-      messageApi.error('操作失败')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '操作失败'))
     }
   }
 
@@ -199,8 +208,8 @@ function RolesPage() {
       })
       messageApi.success('权限更新成功')
       setIsPermissionModalOpen(false)
-    } catch {
-      messageApi.error('权限更新失败')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '权限更新失败'))
     }
   }
 
