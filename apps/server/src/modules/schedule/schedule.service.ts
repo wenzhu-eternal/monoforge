@@ -36,13 +36,19 @@ export class ScheduleService {
 
     try {
       await mkdir(BACKUP_DIR, { recursive: true })
-      const databaseUrl = this.configService.get<string>('DATABASE_URL')
-      if (!databaseUrl) {
-        throw new Error('DATABASE_URL 未配置')
-      }
 
-      // 使用 pg_dump 导出（需系统安装 postgresql-client）
-      await execAsync(`pg_dump "${databaseUrl}" > "${filepath}"`)
+      // 支持自定义备份命令（如本机无 pg_dump 时用 docker exec 调用容器内的）
+      const customCmd = this.configService.get<string>('BACKUP_CMD')
+      const cmd = customCmd
+        ? customCmd.replace('{filepath}', filepath)
+        : (() => {
+            const databaseUrl = this.configService.get<string>('DATABASE_URL')
+            if (!databaseUrl) {
+              throw new Error('DATABASE_URL 未配置')
+            }
+            return `pg_dump "${databaseUrl}" > "${filepath}"`
+          })()
+      await execAsync(cmd)
 
       const stats = await stat(filepath)
       this.logger.log(`数据库备份成功: ${filename} (${(stats.size / 1024).toFixed(2)} KB)`)
@@ -50,10 +56,12 @@ export class ScheduleService {
       // 清理旧备份，仅保留最近 MAX_BACKUPS 份
       await this.cleanOldBackups()
 
-      // 发送备份成功通知
+      // 发送备份成功通知（附带 .sql 附件）
       await this.mailService.sendBackupNotification(
         true,
         `${filename} (${(stats.size / 1024).toFixed(2)} KB)`,
+        undefined,
+        filepath,
       )
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)

@@ -25,6 +25,12 @@ export class AuthController {
     private readonly configService: ConfigService,
   ) {}
 
+  // ConfigService.get 运行时返回 string，需显式判断（"false" 字符串在 if 中为 truthy）
+  private get cookieSecure(): boolean {
+    const v = this.configService.get<string | boolean>('COOKIE_SECURE')
+    return v === true || v === 'true'
+  }
+
   @Post('login')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -34,7 +40,7 @@ export class AuthController {
 
     response.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: this.configService.get<boolean>('COOKIE_SECURE', false),
+      secure: this.cookieSecure,
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/api/v1/auth',
@@ -65,7 +71,7 @@ export class AuthController {
 
     response.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
-      secure: this.configService.get<boolean>('COOKIE_SECURE', false),
+      secure: this.cookieSecure,
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/api/v1/auth',

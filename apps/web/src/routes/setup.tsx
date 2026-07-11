@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Alert, Button, Form, Input, Typography } from 'antd'
+import { Alert, Button, Form, Input, message, Typography } from 'antd'
 import { useEffect } from 'react'
 import { useSetup, useSetupStatus } from '@/hooks/use-setup'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title, Paragraph } = Typography
 
@@ -13,6 +14,7 @@ function SetupPage() {
   const navigate = useNavigate()
   const { data: status, isLoading } = useSetupStatus()
   const setupMutation = useSetup()
+  const [messageApi, contextHolder] = message.useMessage()
   const [form] = Form.useForm<{
     username: string
     email: string
@@ -35,16 +37,17 @@ function SetupPage() {
   }) => {
     try {
       await setupMutation.mutateAsync(values)
+      messageApi.success('系统初始化成功，请登录')
       // 初始化成功后跳转登录
       navigate({ to: '/login', replace: true })
-    } catch (err: unknown) {
-      // 错误由全局响应拦截器处理，这里仅兜底
-      console.error(err)
+    } catch (error: unknown) {
+      messageApi.error(extractErrorMessage(error, '初始化失败'))
     }
   }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      {contextHolder}
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
         <Title level={2} className="text-center mb-2">
           系统初始化

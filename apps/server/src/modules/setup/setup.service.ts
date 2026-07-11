@@ -64,7 +64,7 @@ export class SetupService {
         const createdRoles = await tx
           .insert(roles)
           .values(DEFAULT_ROLES)
-          .onConflictDoNothing({ target: roles.name })
+          .onConflictDoNothing()
           .returning()
 
         const adminRole =

@@ -174,19 +174,7 @@ describe('ErrorLogsController', () => {
       expect(service.batchResolve).toHaveBeenCalledWith('ECONNRESET', 'backend', 99)
     })
 
-    it('缺少 message 时抛 BadRequestException', async () => {
-      await expect(
-        controller.batchResolve({ message: '', source: 'backend' }, { sub: 99 }),
-      ).rejects.toThrow(BadRequestException)
-      expect(service.batchResolve).not.toHaveBeenCalled()
-    })
-
-    it('缺少 source 时抛 BadRequestException', async () => {
-      await expect(
-        controller.batchResolve({ message: 'err', source: '' }, { sub: 99 }),
-      ).rejects.toThrow(BadRequestException)
-      expect(service.batchResolve).not.toHaveBeenCalled()
-    })
+    // message/source 的非空校验由 BatchResolveDto (Zod) 在管道层完成，单元测试不覆盖
   })
 
   describe('remove', () => {

@@ -1,6 +1,5 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { Logger } from '@nestjs/common'
 
 /**
  * 日轮转文件日志: 每天一个文件 logs/error-YYYY-MM-DD.log
@@ -35,30 +34,4 @@ export function appendErrorLog(message: string, stack?: string): void {
     // 文件写入失败不影响主流程，降级到控制台
     console.error('[FileLogger] 写入失败:', message)
   }
-}
-
-/**
- * 通用文件日志写入（非错误场景，如审计/调试）
- */
-export function appendLog(
-  level: 'INFO' | 'WARN' | 'ERROR',
-  message: string,
-  context?: unknown,
-): void {
-  try {
-    ensureLogDir()
-    const time = new Date().toISOString()
-    const ctxStr = context ? ` ${JSON.stringify(context)}` : ''
-    const line = `[${time}] [${level}] ${message}${ctxStr}\n`
-    appendFileSync(getTodayLogPath(), line, 'utf8')
-  } catch {
-    // 静默失败
-  }
-}
-
-/**
- * NestJS Logger 实例工厂（带文件兜底的命名日志）
- */
-export function createFileLogger(context: string): Logger {
-  return new Logger(context)
 }

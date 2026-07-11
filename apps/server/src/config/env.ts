@@ -19,8 +19,11 @@ const envSchema = z
     // CORS
     ALLOW_ORIGIN: z.string().default('http://localhost:3000'),
 
-    // Cookie
-    COOKIE_SECURE: z.coerce.boolean().default(false),
+    // Cookie: 字符串 "true"/"false" 正确转 boolean（z.coerce.boolean() 对非空字符串恒为 true，有 bug）
+    COOKIE_SECURE: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => v === true || v === 'true')
+      .default(false),
 
     // Mail (optional)
     MAIL_HOST: z.string().optional(),

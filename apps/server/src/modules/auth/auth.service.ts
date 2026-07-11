@@ -6,7 +6,7 @@ import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import * as argon2 from 'argon2'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import type { User } from '@/db/schema'
 import { permissions, rolePermissions, roles, users } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -172,22 +172,29 @@ export class AuthService {
 
     const hashedPassword = await argon2.hash(password)
 
-    const [newUser] = await db
-      .insert(users)
-      .values({
-        username,
-        email,
-        password: hashedPassword,
-        nickname,
-      })
-      .returning()
+    try {
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          username,
+          email,
+          password: hashedPassword,
+          nickname,
+        })
+        .returning()
 
-    if (!newUser) {
-      throw new ConflictException(ErrorMessages[ErrorCodes.OPERATION_FAILED])
+      if (!newUser) {
+        throw new ConflictException(ErrorMessages[ErrorCodes.OPERATION_FAILED])
+      }
+
+      const { password: _, ...userWithoutPassword } = newUser
+      return userWithoutPassword
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(ErrorMessages[ErrorCodes.USER_ALREADY_EXISTS])
+      }
+      throw error
     }
-
-    const { password: _, ...userWithoutPassword } = newUser
-    return userWithoutPassword
   }
 
   /**

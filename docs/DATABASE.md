@@ -6,9 +6,10 @@
 2. **表名使用 snake_case 复数** - `users` / `roles` / `error_logs`
 3. **使用 PostgreSQL** - JSONB 存可变结构
 4. **软删除** - 所有业务表添加 `deleted_at` 字段，删除操作仅设置时间戳，查询时过滤 `deleted_at IS NULL`；审计日志（`audit_logs`）等 append-only 表例外
-5. **部分唯一索引** - 唯一字段（username/email/role.name/permission.code）必须用 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，禁止使用列级 `.unique()`。原因：列级 unique 会阻止软删后同名重建
-6. **唯一约束冲突兜底** - service 层 `create` 方法必须 `try/catch` 包裹 `db.insert`，捕获 23505 错误码转 `ConflictException`，防止 TOCTOU 竞态（先查询再插入之间被并发插入）
-7. **删除前外键校验** - 删除实体前必须检查未软删的外键引用（如 `users.roleId` → `roles`，`rolePermissions.roleId` → `roles`），存在引用则抛 `ConflictException`
+5. **部分唯一索引** - 唯一字段（username/email/wechatOpenId/role.name/permission.code）必须用 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，禁止使用列级 `.unique()`。原因：列级 unique 会阻止软删后同名重建
+6. **外键引用列用 `integer` 不用 `serial`** - `serial` 会创建多余的自增序列且无外键约束，引用列（如 `audit_logs.user_id` / `error_logs.user_id`）必须用 `integer`。可空的外键引用列不加 `.notNull()`（如 `error_logs.user_id` 允许未登录用户上报错误）
+7. **唯一约束冲突兜底** - service 层 `create` 方法必须 `try/catch` 包裹 `db.insert`，捕获 23505 错误码转 `ConflictException`，防止 TOCTOU 竞态（先查询再插入之间被并发插入）
+8. **删除前外键校验** - 删除实体前必须检查未软删的外键引用（如 `users.roleId` → `roles`，`rolePermissions.roleId` → `roles`），存在引用则抛 `ConflictException`
 
 ## 软删除过滤铁律
 

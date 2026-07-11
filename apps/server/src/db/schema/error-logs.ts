@@ -22,7 +22,7 @@ export const errorLogs = pgTable('error_logs', {
   method: varchar('method', { length: 10 }),
   statusCode: integer('status_code'),
   context: jsonb('context'),
-  userId: serial('user_id'),
+  userId: integer('user_id'),
   ip: varchar('ip', { length: 45 }),
   userAgent: text('user_agent'),
   isResolved: boolean('is_resolved').default(false).notNull(),

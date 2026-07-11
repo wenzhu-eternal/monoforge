@@ -1,11 +1,11 @@
-import { jsonb, pgTable, serial, text, timestamp, varchar } from 'drizzle-orm/pg-core'
+import { integer, jsonb, pgTable, serial, text, timestamp, varchar } from 'drizzle-orm/pg-core'
 
 export const auditLogs = pgTable('audit_logs', {
   id: serial('id').primaryKey(),
-  userId: serial('user_id'),
+  userId: integer('user_id').notNull(),
   action: varchar('action', { length: 50 }).notNull(),
   resource: varchar('resource', { length: 50 }).notNull(),
-  resourceId: serial('resource_id'),
+  resourceId: integer('resource_id'),
   oldValue: jsonb('old_value'),
   newValue: jsonb('new_value'),
   ip: varchar('ip', { length: 45 }),

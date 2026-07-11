@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseIntPipe, Put, UseGuards } from '@nes
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto'
 import { RolePermissionsService } from './role-permissions.service'
 
 @ApiTags('RolePermissions')
@@ -30,8 +31,8 @@ export class RolePermissionsController {
   @ApiOperation({ summary: '更新角色权限' })
   async updateRolePermissions(
     @Param('roleId', ParseIntPipe) roleId: number,
-    @Body() data: { permissions: string[] },
+    @Body() dto: UpdateRolePermissionsDto,
   ) {
-    return this.rolePermissionsService.updateRolePermissions(roleId, data.permissions)
+    return this.rolePermissionsService.updateRolePermissions(roleId, dto.permissions)
   }
 }

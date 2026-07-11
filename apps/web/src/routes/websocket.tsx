@@ -20,6 +20,7 @@ import {
 import dayjs from 'dayjs'
 import { useWebSocketDemo } from '@/hooks/use-websocket'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
+import { extractErrorMessage } from '@/lib/error'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Title, Paragraph, Text } = Typography
@@ -47,9 +48,8 @@ function WebSocketPage() {
           : `通知已持久化，用户 ${values.userId} 当前离线，上线后可见`,
       )
       form.resetFields()
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '发送失败'
-      messageApi.error(msg)
+    } catch (error: unknown) {
+      messageApi.error(extractErrorMessage(error, '发送失败'))
     }
   }
 

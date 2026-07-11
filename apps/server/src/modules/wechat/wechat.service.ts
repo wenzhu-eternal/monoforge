@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -11,7 +12,7 @@ import type { WechatLoginType } from '@shared/schemas/wechat'
 import type { AxiosInstance } from 'axios'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import { users } from '@/db/schema'
 import { AuthService, type TokenPayload } from '@/modules/auth/auth.service'
 import { HttpClientService } from '@/modules/http-client/http-client.service'
@@ -244,22 +245,29 @@ export class WechatService {
     // 新建微信用户
     const username = `wx_${openId.slice(0, 8)}`
     const email = `${username}@wechat.placeholder`
-    const [newUser] = await db
-      .insert(users)
-      .values({
-        username,
-        email,
-        password: randomUUID(), // 占位符，微信用户不可走密码登录
-        nickname: nickname ?? `微信用户_${openId.slice(0, 6)}`,
-        avatar,
-        wechatOpenId: openId,
-      })
-      .returning()
+    try {
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          username,
+          email,
+          password: randomUUID(), // 占位符，微信用户不可走密码登录
+          nickname: nickname ?? `微信用户_${openId.slice(0, 6)}`,
+          avatar,
+          wechatOpenId: openId,
+        })
+        .returning()
 
-    if (!newUser) {
-      throw new BadRequestException('微信用户创建失败')
+      if (!newUser) {
+        throw new BadRequestException('微信用户创建失败')
+      }
+      return newUser
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('微信账号已存在，请直接登录')
+      }
+      throw error
     }
-    return newUser
   }
 
   private requireEnabled(): void {

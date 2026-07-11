@@ -14,7 +14,9 @@
     "prepare": "husky",
     "db:generate": "turbo db:generate",
     "db:migrate": "turbo db:migrate",
-    "db:seed": "turbo db:seed"
+    "db:seed": "turbo db:seed",
+    "db:restore": "bash scripts/restore.sh",
+    "security": "bash scripts/security-check.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",

@@ -1,10 +1,12 @@
 import { randomInt } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import Handlebars from 'handlebars'
-import { createTransport, type Transporter } from 'nodemailer'
+import { createTransport, type SendMailOptions, type Transporter } from 'nodemailer'
+
+type Attachment = NonNullable<SendMailOptions['attachments']>[number]
 
 @Injectable()
 export class MailService {
@@ -88,27 +90,39 @@ export class MailService {
   }
 
   /**
-   * 发送备份通知邮件（HTML 模板）
+   * 发送备份通知邮件（成功时附带 .sql 备份文件作为附件）
    */
   async sendBackupNotification(
     success: boolean,
     detail: string,
     backupDate?: string,
+    filepath?: string,
   ): Promise<void> {
     const subject = success ? '【MB Admin】数据库备份成功' : '【MB Admin】数据库备份失败'
     const template = this.templates.get('backup')
-    if (template) {
-      await this.sendHtml(
-        this.fromAddress,
-        subject,
-        template({
+    const html = template
+      ? template({
           name: '管理员',
           backupDate: backupDate ?? new Date().toLocaleDateString('zh-CN'),
-        }),
-      )
+        })
+      : undefined
+
+    // 构建附件列表：仅成功且文件存在时附带
+    const attachments: Attachment[] = []
+    if (success && filepath && existsSync(filepath)) {
+      attachments.push({
+        filename: basename(filepath),
+        path: filepath,
+        contentType: 'application/sql',
+      })
+    }
+
+    const text = `数据库备份${success ? '成功' : '失败'}\n\n详情: ${detail}`
+
+    if (html) {
+      await this.sendWithAttachments(this.fromAddress, subject, html, text, attachments)
     } else {
-      const status = success ? '成功' : '失败'
-      await this.send(this.fromAddress, subject, `数据库备份${status}\n\n详情: ${detail}`)
+      await this.sendWithAttachments(this.fromAddress, subject, undefined, text, attachments)
     }
   }
 
@@ -117,6 +131,38 @@ export class MailService {
    */
   isConfigured(): boolean {
     return this.transporter !== null
+  }
+
+  /**
+   * 发送带附件的邮件（html 和 text 至少传一个）
+   */
+  private async sendWithAttachments(
+    to: string,
+    subject: string,
+    html: string | undefined,
+    text: string,
+    attachments: Attachment[] = [],
+  ): Promise<void> {
+    if (!this.transporter) {
+      this.logger.warn(`邮件服务未配置，跳过发送: ${subject} -> ${to}`)
+      return
+    }
+
+    try {
+      await this.transporter.sendMail({
+        from: this.fromAddress,
+        to,
+        subject,
+        html,
+        text,
+        attachments,
+      })
+      const attachInfo = attachments.length > 0 ? ` (${attachments.length} 个附件)` : ''
+      this.logger.log(`邮件已发送: ${subject} -> ${to}${attachInfo}`)
+    } catch (err) {
+      this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
+      throw new Error(`邮件发送失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   /**

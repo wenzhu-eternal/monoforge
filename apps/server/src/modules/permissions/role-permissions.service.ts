@@ -77,18 +77,19 @@ export class RolePermissionsService {
       validCodes = valid.map((p) => p.code)
     }
 
-    // 删除旧权限
-    await db.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId))
+    // 删除旧权限并插入新权限（事务保证原子性，避免 insert 失败导致权限丢失）
+    await db.transaction(async (tx) => {
+      await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId))
 
-    // 插入新权限
-    if (validCodes.length > 0) {
-      await db.insert(rolePermissions).values(
-        validCodes.map((permission) => ({
-          roleId,
-          permission,
-        })),
-      )
-    }
+      if (validCodes.length > 0) {
+        await tx.insert(rolePermissions).values(
+          validCodes.map((permission) => ({
+            roleId,
+            permission,
+          })),
+        )
+      }
+    })
 
     return { message: `角色 ${role.name} 的权限已更新` }
   }

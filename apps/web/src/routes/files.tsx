@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import type { UploadProps } from 'antd'
 import {
@@ -24,9 +23,9 @@ import {
   previewFile,
   useDeleteFile,
   useFiles,
+  useUploadFile,
 } from '@/hooks/use-files'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
-import { api } from '@/lib/api'
 import { extractErrorMessage } from '@/lib/error'
 
 const { Title, Text } = Typography
@@ -39,11 +38,11 @@ function FilesPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const queryClient = useQueryClient()
   const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error } = useFiles({ page, pageSize })
   const deleteMutation = useDeleteFile()
+  const uploadMutation = useUploadFile()
 
   useEffect(() => {
     if (isError) {
@@ -56,19 +55,8 @@ function FilesPage() {
     showUploadList: false,
     customRequest: async ({ file, onSuccess, onError }) => {
       try {
-        const formData = new FormData()
-        formData.append('file', file)
-        const token = localStorage.getItem('auth-storage')
-          ? JSON.parse(localStorage.getItem('auth-storage') || '{}').state?.token
-          : ''
-        await api.post('/api/v1/files/upload', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            Authorization: `Bearer ${token}`,
-          },
-        })
+        await uploadMutation.mutateAsync(file as File)
         onSuccess?.({})
-        queryClient.invalidateQueries({ queryKey: ['files'] })
         messageApi.success('上传成功')
       } catch (err) {
         onError?.(err as never)

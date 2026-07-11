@@ -5,10 +5,11 @@ import {
   Injectable,
 } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { Request } from 'express'
 import { ROLES_KEY } from '@/common/decorators/roles.decorator'
 import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
 import { roles, users } from '@/db/schema'
 
 interface AuthenticatedRequest extends Request {
@@ -50,16 +51,16 @@ export class RolesGuard implements CanActivate {
       return true
     }
 
-    // 查询用户角色
+    // 查询用户角色（过滤软删除）
     const userRecord = await db.query.users.findFirst({
-      where: eq(users.id, userPayload.sub),
+      where: and(eq(users.id, userPayload.sub), notDeleted(users.deletedAt)),
     })
     if (!userRecord?.roleId) {
       throw new ForbiddenException('权限不足，未分配角色')
     }
 
     const roleRecord = await db.query.roles.findFirst({
-      where: eq(roles.id, userRecord.roleId),
+      where: and(eq(roles.id, userRecord.roleId), notDeleted(roles.deletedAt)),
     })
     if (!roleRecord) {
       throw new ForbiddenException('权限不足，角色不存在')

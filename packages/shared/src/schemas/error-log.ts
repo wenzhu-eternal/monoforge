@@ -91,9 +91,16 @@ export const UpdateErrorWhitelistSchema = z.object({
   isActive: z.boolean().optional(),
 })
 
+// 批量标记错误已处理
+export const BatchResolveErrorSchema = z.object({
+  message: z.string().min(1),
+  source: z.string().min(1),
+})
+
 export type ErrorLog = z.infer<typeof ErrorLogSchema>
 export type ReportError = z.infer<typeof ReportErrorSchema>
 export type ErrorStats = z.infer<typeof ErrorStatsSchema>
 export type ErrorWhitelist = z.infer<typeof ErrorWhitelistSchema>
 export type CreateErrorWhitelist = z.infer<typeof CreateErrorWhitelistSchema>
 export type UpdateErrorWhitelist = z.infer<typeof UpdateErrorWhitelistSchema>
+export type BatchResolveError = z.infer<typeof BatchResolveErrorSchema>

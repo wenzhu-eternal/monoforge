@@ -24,6 +24,12 @@ export const UpdatePermissionSchema = z.object({
   routes: z.array(z.string()).optional(),
 })
 
+// 更新角色权限
+export const UpdateRolePermissionsSchema = z.object({
+  permissions: z.array(z.string().min(1)).min(0),
+})
+
 export type Permission = z.infer<typeof PermissionSchema>
 export type CreatePermission = z.infer<typeof CreatePermissionSchema>
 export type UpdatePermission = z.infer<typeof UpdatePermissionSchema>
+export type UpdateRolePermissions = z.infer<typeof UpdateRolePermissionsSchema>

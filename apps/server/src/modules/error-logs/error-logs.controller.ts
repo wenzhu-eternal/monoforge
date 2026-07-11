@@ -14,42 +14,29 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
-import { SkipThrottle } from '@nestjs/throttler'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { Public } from '@/common/decorators/public.decorator'
 import { Roles } from '@/common/decorators/roles.decorator'
 import { RolesGuard } from '@/common/guards/roles.guard'
+import { BatchResolveDto } from './dto/batch-resolve.dto'
 import { CreateWhitelistDto } from './dto/create-whitelist.dto'
+import { ReportErrorDto } from './dto/report-error.dto'
 import { UpdateWhitelistDto } from './dto/update-whitelist.dto'
 import { ErrorLogsService } from './error-logs.service'
 
 @ApiTags('ErrorLogs')
 @Controller('error-logs')
-@SkipThrottle()
 export class ErrorLogsController {
   constructor(private readonly errorLogsService: ErrorLogsService) {}
 
   // ===== 前端错误上报（公开，不需要 admin）=====
 
   @Post('report')
+  @Public()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '前端/后端错误上报（公开）' })
-  async reportError(
-    @Body()
-    body: {
-      source?: string
-      errorType?: string
-      message: string
-      stack?: string
-      file?: string
-      line?: number
-      column?: number
-      url?: string
-      method?: string
-      statusCode?: number
-      context?: Record<string, unknown>
-    },
-  ) {
-    return this.errorLogsService.report(body)
+  async reportError(@Body() dto: ReportErrorDto) {
+    return this.errorLogsService.report(dto)
   }
 
   // ===== 需要 admin 权限的接口 =====
@@ -139,14 +126,8 @@ export class ErrorLogsController {
   @Roles('admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '批量标记相同报错已处理（仅管理员）' })
-  async batchResolve(
-    @Body() body: { message: string; source: string },
-    @CurrentUser() user: { sub: number },
-  ) {
-    if (!body?.message || !body?.source) {
-      throw new BadRequestException('message 与 source 必填')
-    }
-    return this.errorLogsService.batchResolve(body.message, body.source, user.sub)
+  async batchResolve(@Body() dto: BatchResolveDto, @CurrentUser() user: { sub: number }) {
+    return this.errorLogsService.batchResolve(dto.message, dto.source, user.sub)
   }
 
   @Delete(':id')

@@ -119,6 +119,24 @@ function LogsTab() {
     )
   }
 
+  const handleResolve = async (id: number) => {
+    try {
+      await resolveMutation.mutateAsync(id)
+      messageApi.success('已标记为已处理')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '标记失败'))
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteMutation.mutateAsync(id)
+      messageApi.success('删除成功')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '删除失败'))
+    }
+  }
+
   // 联动筛选: 点击聚合项"查看详情"后，用 message 作为关键词筛选列表
   const handleViewGroupDetails = (item: ErrorLogGroup) => {
     setKeyword(item.message)
@@ -194,7 +212,7 @@ function LogsTab() {
                 type="link"
                 size="small"
                 loading={resolveMutation.isPending}
-                onClick={() => resolveMutation.mutate(record.id)}
+                onClick={() => handleResolve(record.id)}
               >
                 标记已处理
               </Button>
@@ -204,10 +222,7 @@ function LogsTab() {
         actions.push({
           key: 'delete',
           node: (
-            <Popconfirm
-              title="确认删除该错误日志？"
-              onConfirm={() => deleteMutation.mutate(record.id)}
-            >
+            <Popconfirm title="确认删除该错误日志？" onConfirm={() => handleDelete(record.id)}>
               <Button type="link" size="small" danger>
                 删除
               </Button>

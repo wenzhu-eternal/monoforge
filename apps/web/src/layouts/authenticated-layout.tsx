@@ -9,7 +9,7 @@ import {
   UserOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { useLocation, useNavigate } from '@tanstack/react-router'
+import { Navigate, useLocation, useNavigate } from '@tanstack/react-router'
 import type { MenuProps } from 'antd'
 import { Avatar, Dropdown, Layout, Menu, Space, Typography } from 'antd'
 import type { ReactNode } from 'react'
@@ -25,12 +25,10 @@ const { Text } = Typography
  * 外层守卫: 未认证直接 redirect 并返回 null，不挂任何业务 hook
  */
 export const AuthenticatedLayout = ({ children }: { children: ReactNode }) => {
-  const navigate = useNavigate()
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
 
   if (!isAuthenticated) {
-    navigate({ to: '/login', replace: true })
-    return null
+    return <Navigate to="/login" replace />
   }
 
   return <AuthenticatedLayoutInner>{children}</AuthenticatedLayoutInner>

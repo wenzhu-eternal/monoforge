@@ -117,15 +117,9 @@ const defaultPermissions = [
 async function seed() {
   console.log('Seeding database...')
 
-  // 创建默认权限（已存在则更新 routes）
+  // 创建默认权限（已存在则跳过，匹配部分唯一索引 permissions_code_active_uniq）
   for (const perm of defaultPermissions) {
-    await db
-      .insert(permissions)
-      .values(perm)
-      .onConflictDoUpdate({
-        target: permissions.code,
-        set: { routes: perm.routes, updatedAt: new Date() },
-      })
+    await db.insert(permissions).values(perm).onConflictDoNothing()
   }
   console.log('Default permissions seeded')
 

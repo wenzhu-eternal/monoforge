@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Button, Divider, Form, Input, Modal, message, Typography } from 'antd'
 import { useState } from 'react'
 import { useLogin, useWechatLogin, useWechatQrCode, useWechatStatus } from '@/hooks/use-auth'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title } = Typography
 
@@ -27,13 +28,8 @@ function LoginPage() {
       await loginMutation.mutateAsync(values)
       messageApi.success('登录成功')
       navigate({ to: '/dashboard' })
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message ||
-            err.message
-          : '登录失败，请检查账号密码'
-      messageApi.error(msg)
+    } catch (error: unknown) {
+      messageApi.error(extractErrorMessage(error, '登录失败，请检查账号密码'))
     }
   }
 
@@ -43,9 +39,8 @@ function LoginPage() {
       setQrUrl(data.qrCodeUrl)
       setQrModalOpen(true)
       messageApi.info('请使用微信扫码登录，扫完后请在跳转页面拿 code 回填')
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '获取二维码失败'
-      messageApi.error(msg)
+    } catch (error: unknown) {
+      messageApi.error(extractErrorMessage(error, '获取二维码失败'))
     }
   }
 
@@ -61,9 +56,8 @@ function LoginPage() {
       messageApi.success('微信登录成功')
       setQrModalOpen(false)
       navigate({ to: '/dashboard' })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '微信登录失败'
-      messageApi.error(msg)
+    } catch (error: unknown) {
+      messageApi.error(extractErrorMessage(error, '微信登录失败'))
     }
   }
 
