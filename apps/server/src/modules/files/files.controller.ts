@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { PermissionCodes } from '@shared/constants/permissions'
 import type { Response } from 'express'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
@@ -31,7 +32,7 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Post('upload')
-  @Permissions('file:upload')
+  @Permissions(PermissionCodes.FILE_UPLOAD)
   @ApiOperation({ summary: '上传文件（单文件，字段名 file）' })
   @UseInterceptors(
     FileInterceptor('file', {
@@ -48,7 +49,7 @@ export class FilesController {
   }
 
   @Get()
-  @Permissions('file:view')
+  @Permissions(PermissionCodes.FILE_VIEW)
   @ApiOperation({ summary: '分页查询文件列表' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -65,7 +66,7 @@ export class FilesController {
   }
 
   @Get(':id/preview')
-  @Permissions('file:view')
+  @Permissions(PermissionCodes.FILE_VIEW)
   @ApiOperation({ summary: '预览文件（支持 Range 请求）' })
   async preview(@Param('id', ParseIntPipe) id: number, @Res() response: Response) {
     const file = await this.filesService.findById(id)
@@ -96,7 +97,7 @@ export class FilesController {
   }
 
   @Get(':id/download')
-  @Permissions('file:view')
+  @Permissions(PermissionCodes.FILE_VIEW)
   @ApiOperation({ summary: '下载文件' })
   async download(@Param('id', ParseIntPipe) id: number, @Res() response: Response) {
     const file = await this.filesService.findById(id)
@@ -113,7 +114,7 @@ export class FilesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @Permissions('file:delete')
+  @Permissions(PermissionCodes.FILE_DELETE)
   @ApiOperation({ summary: '删除文件' })
   async remove(
     @Param('id', ParseIntPipe) id: number,

@@ -1,12 +1,7 @@
-import type { ApiResponse, RegisterWithCode, SendRegisterCode, User } from '@shared'
+import type { ApiResponse, AuthResponse, RegisterWithCode, SendRegisterCode } from '@shared'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/store/auth-store'
-
-interface RegisterResponse {
-  accessToken: string
-  user: User
-}
 
 export const useSendRegisterCode = () => {
   return useMutation({
@@ -25,7 +20,7 @@ export const useRegister = () => {
 
   return useMutation({
     mutationFn: async (data: RegisterWithCode) => {
-      const response = await api.post<ApiResponse<RegisterResponse>>('/api/v1/auth/register', data)
+      const response = await api.post<ApiResponse<AuthResponse>>('/api/v1/auth/register', data)
       return response.data.data!
     },
     onSuccess: (data) => {

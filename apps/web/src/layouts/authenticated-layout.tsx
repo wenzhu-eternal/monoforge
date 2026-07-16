@@ -16,7 +16,7 @@ import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME } from '@/config/brand'
 import { useCurrentUser, useLogout } from '@/hooks/use-auth'
-import { Permissions } from '@/lib/permissions'
+import { PermissionCodes } from '@/lib/permissions'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Sider, Header, Content } = Layout
@@ -59,12 +59,12 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   }
 
   const contentChildren = [
-    hasPermission(Permissions.USER_VIEW) && {
+    hasPermission(PermissionCodes.USER_VIEW) && {
       key: '/users',
       icon: <UserOutlined />,
       label: '用户管理',
     },
-    hasPermission(Permissions.FILE_VIEW) && {
+    hasPermission(PermissionCodes.FILE_VIEW) && {
       key: '/files',
       icon: <FileOutlined />,
       label: '文件管理',
@@ -72,12 +72,12 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   ].filter(Boolean) as MenuProps['items']
 
   const systemChildren = [
-    hasPermission(Permissions.ROLE_VIEW) && {
+    hasPermission(PermissionCodes.ROLE_VIEW) && {
       key: '/roles',
       icon: <UserOutlined />,
       label: '角色管理',
     },
-    hasPermission(Permissions.PERMISSION_VIEW) && {
+    hasPermission(PermissionCodes.PERMISSION_VIEW) && {
       key: '/permissions',
       icon: <SettingOutlined />,
       label: '权限管理',
@@ -85,12 +85,12 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   ].filter(Boolean) as MenuProps['items']
 
   const logChildren = [
-    hasPermission(Permissions.AUDIT_VIEW) && {
+    hasPermission(PermissionCodes.AUDIT_VIEW) && {
       key: '/audit-logs',
       icon: <FileTextOutlined />,
       label: '审计日志',
     },
-    hasPermission(Permissions.ERROR_LOG_VIEW) && {
+    hasPermission(PermissionCodes.ERROR_LOG_VIEW) && {
       key: '/error-logs',
       icon: <WarningOutlined />,
       label: '错误日志',
@@ -101,7 +101,7 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
     { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/websocket', icon: <ThunderboltOutlined />, label: 'WebSocket 演示' },
     // 邮件发送需要 mail:send 权限
-    hasPermission(Permissions.MAIL_SEND) && {
+    hasPermission(PermissionCodes.MAIL_SEND) && {
       key: '/mail',
       icon: <MailOutlined />,
       label: '邮件发送',

@@ -1,26 +1,25 @@
-import type { ApiResponse, PaginatedResponse } from '@shared'
+import type {
+  ApiResponse,
+  AuditLog,
+  CreateErrorWhitelist,
+  ErrorLog,
+  ErrorLogGroup,
+  ErrorStats,
+  ErrorWhitelist,
+  PaginatedResponse,
+  Role,
+  UpdateErrorWhitelist,
+} from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+
+export type { AuditLog, ErrorLog, ErrorLogGroup, ErrorWhitelist }
 
 // 日志查询参数（不使用 shared 的 PaginationQuery，避免 order 必填约束）
 export interface LogQuery {
   page: number
   pageSize: number
   keyword?: string
-}
-
-export interface AuditLog {
-  id: number
-  userId: number
-  username: string | null
-  action: string
-  resource: string
-  resourceId: number | null
-  oldValue: unknown
-  newValue: unknown
-  ip: string | null
-  userAgent: string | null
-  createdAt: string
 }
 
 export const useAuditLogs = (params: LogQuery) => {
@@ -34,44 +33,6 @@ export const useAuditLogs = (params: LogQuery) => {
       return response.data.data!
     },
   })
-}
-
-export interface ErrorLog {
-  id: number
-  source: string
-  errorType: string | null
-  message: string
-  stack: string | null
-  file: string | null
-  line: number | null
-  column: number | null
-  url: string | null
-  method: string | null
-  statusCode: number | null
-  context: unknown
-  userId: number | null
-  ip: string | null
-  userAgent: string | null
-  isResolved: boolean
-  resolvedAt: string | null
-  resolvedBy: number | null
-  createdAt: string
-}
-
-export interface ErrorStats {
-  total: number
-  unresolved: number
-  bySource: Record<string, number>
-  byType: Record<string, number>
-}
-
-export interface ErrorLogGroup {
-  message: string
-  source: string
-  count: number
-  firstCreatedAt: string
-  lastCreatedAt: string
-  sampleId: number
 }
 
 export interface ErrorLogQuery extends LogQuery {
@@ -158,30 +119,6 @@ export const useDeleteErrorLog = () => {
   })
 }
 
-export interface ErrorWhitelist {
-  id: number
-  pattern: string
-  matchType: 'message' | 'url'
-  description: string | null
-  isActive: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-export interface CreateWhitelistInput {
-  pattern: string
-  matchType: 'message' | 'url'
-  description?: string
-  isActive?: boolean
-}
-
-export interface UpdateWhitelistInput {
-  pattern?: string
-  matchType?: 'message' | 'url'
-  description?: string
-  isActive?: boolean
-}
-
 export const useWhitelist = () => {
   return useQuery({
     queryKey: ['error-whitelist'],
@@ -195,7 +132,7 @@ export const useWhitelist = () => {
 export const useCreateWhitelist = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (data: CreateWhitelistInput) => {
+    mutationFn: async (data: CreateErrorWhitelist) => {
       const response = await api.post<ApiResponse<ErrorWhitelist>>(
         '/api/v1/error-logs/whitelist',
         data,
@@ -211,7 +148,7 @@ export const useCreateWhitelist = () => {
 export const useUpdateWhitelist = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: UpdateWhitelistInput }) => {
+    mutationFn: async ({ id, data }: { id: number; data: UpdateErrorWhitelist }) => {
       const response = await api.patch<ApiResponse<ErrorWhitelist>>(
         `/api/v1/error-logs/whitelist/${id}`,
         data,
@@ -234,14 +171,6 @@ export const useDeleteWhitelist = () => {
       queryClient.invalidateQueries({ queryKey: ['error-whitelist'] })
     },
   })
-}
-
-export interface Role {
-  id: number
-  name: string
-  description?: string
-  createdAt: string
-  updatedAt: string
 }
 
 export const useRoles = (params: LogQuery) => {

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ErrorCodes } from '../constants/errors'
 
 export const ApiResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
   z.object({
@@ -7,18 +8,8 @@ export const ApiResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
     data: dataSchema.nullable(),
   })
 
-export const ErrorCodeSchema = z.enum([
-  'SUCCESS',
-  'BAD_REQUEST',
-  'UNAUTHORIZED',
-  'FORBIDDEN',
-  'NOT_FOUND',
-  'INTERNAL_SERVER_ERROR',
-  'USER_NOT_FOUND',
-  'USER_ALREADY_EXISTS',
-  'INVALID_PASSWORD',
-  'INVALID_TOKEN',
-  'TOKEN_EXPIRED',
-])
+export const ErrorCodeSchema = z.enum(
+  Object.keys(ErrorCodes) as [keyof typeof ErrorCodes, ...(keyof typeof ErrorCodes)[]],
+)
 
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>

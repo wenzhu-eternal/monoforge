@@ -3,9 +3,15 @@ import { z } from 'zod'
 export const RoleSchema = z.object({
   id: z.number().int().positive(),
   name: z.string().min(1).max(50),
-  description: z.string().optional(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
+  description: z.string().nullable().optional(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+})
+
+export const RoleBriefSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1).max(50),
+  description: z.string().nullable().optional(),
 })
 
 export const CreateRoleSchema = z.object({
@@ -19,5 +25,6 @@ export const UpdateRoleSchema = z.object({
 })
 
 export type Role = z.infer<typeof RoleSchema>
+export type RoleBrief = z.infer<typeof RoleBriefSchema>
 export type CreateRole = z.infer<typeof CreateRoleSchema>
 export type UpdateRole = z.infer<typeof UpdateRoleSchema>

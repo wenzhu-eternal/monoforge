@@ -1,11 +1,6 @@
-import type { ApiResponse } from '@shared'
+import type { ApiResponse, DashboardStats } from '@shared'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-
-export interface DashboardStats {
-  totalUsers: number
-  activeUsers: number
-}
 
 export const useDashboardStats = () => {
   return useQuery({

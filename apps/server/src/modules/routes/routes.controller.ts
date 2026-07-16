@@ -1,5 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { PermissionCodes } from '@shared/constants/permissions'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { RoutesService } from './routes.service'
@@ -8,7 +9,7 @@ import { RoutesService } from './routes.service'
 @ApiBearerAuth()
 @Controller('routes')
 @UseGuards(PermissionsGuard)
-@Permissions('permission:view')
+@Permissions(PermissionCodes.PERMISSION_VIEW)
 export class RoutesController {
   constructor(private readonly routesService: RoutesService) {}
 

@@ -1,30 +1,14 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import type { PaginatedResponse } from '@shared/schemas/pagination'
+import type { Permission } from '@shared/schemas/permission'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions } from '@/db/schema'
 
-export interface PaginatedPermissions {
-  list: Permission[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
-
-export interface Permission {
-  id: number
-  code: string
-  name: string
-  description: string | null
-  routes: string[] | null
-  createdAt: Date
-  updatedAt: Date
-}
-
 @Injectable()
 export class PermissionsService {
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedPermissions> {
+  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<Permission>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize

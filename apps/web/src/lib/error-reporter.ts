@@ -1,24 +1,11 @@
+import type { ReportError } from '@shared'
 import { api } from '@/lib/api'
-
-interface ReportErrorPayload {
-  source: 'frontend' | 'backend' | 'taro'
-  errorType?: 'js_error' | 'http_error' | 'unhandled_promise' | 'resource_error' | 'api_error'
-  message: string
-  stack?: string
-  file?: string
-  line?: number
-  column?: number
-  url?: string
-  method?: string
-  statusCode?: number
-  context?: Record<string, unknown>
-}
 
 /**
  * 上报前端错误到后端
  * 静默失败，不影响用户使用
  */
-export async function reportFrontendError(payload: ReportErrorPayload): Promise<void> {
+export async function reportFrontendError(payload: ReportError): Promise<void> {
   try {
     await api.post('/api/v1/error-logs/report', payload)
   } catch {}

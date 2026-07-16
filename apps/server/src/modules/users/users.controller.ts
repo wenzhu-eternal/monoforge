@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import { PermissionCodes } from '@shared/constants/permissions'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { CacheInterceptor } from '@/modules/cache/cache.interceptor'
@@ -31,7 +32,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Permissions('user:view')
+  @Permissions(PermissionCodes.USER_VIEW)
   @ApiOperation({ summary: '分页查询用户' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -49,7 +50,7 @@ export class UsersController {
   }
 
   @Get('stats')
-  @Permissions('user:view')
+  @Permissions(PermissionCodes.USER_VIEW)
   @ApiOperation({ summary: '用户统计（仪表盘用）' })
   async getStats() {
     return this.usersService.getStats()
@@ -57,7 +58,7 @@ export class UsersController {
 
   @Get(':id')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
-  @Permissions('user:view')
+  @Permissions(PermissionCodes.USER_VIEW)
   @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: '按ID查询用户（带缓存）' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
@@ -66,14 +67,14 @@ export class UsersController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Permissions('user:create')
+  @Permissions(PermissionCodes.USER_CREATE)
   @ApiOperation({ summary: '创建用户' })
   async create(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto)
   }
 
   @Patch(':id')
-  @Permissions('user:update')
+  @Permissions(PermissionCodes.USER_UPDATE)
   @ApiOperation({ summary: '更新用户' })
   async update(@Param('id', ParseIntPipe) id: number, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(id, updateUserDto)
@@ -81,7 +82,7 @@ export class UsersController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @Permissions('user:delete')
+  @Permissions(PermissionCodes.USER_DELETE)
   @ApiOperation({ summary: '删除用户' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.remove(id)

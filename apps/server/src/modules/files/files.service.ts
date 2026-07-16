@@ -1,6 +1,8 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import type { FileItem, UploadResult } from '@shared/schemas/file'
+import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq } from 'drizzle-orm'
 import {
   generateSafeFilename,
@@ -18,35 +20,9 @@ import { files, users } from '@/db/schema'
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
 
-export interface PaginatedFiles {
-  list: Array<{
-    id: number
-    filename: string
-    originalName: string
-    mimeType: string
-    size: number
-    uploadedBy: number | null
-    uploadedByUsername: string | null
-    createdAt: Date
-  }>
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
-
 @Injectable()
 export class FilesService {
-  async upload(
-    file: Express.Multer.File,
-    uploadedBy?: number,
-  ): Promise<{
-    id: number
-    filename: string
-    originalName: string
-    mimeType: string
-    size: number
-  }> {
+  async upload(file: Express.Multer.File, uploadedBy?: number): Promise<UploadResult> {
     if (!file) {
       throw new NotFoundException('文件未上传')
     }
@@ -92,7 +68,7 @@ export class FilesService {
     }
   }
 
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedFiles> {
+  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<FileItem>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize

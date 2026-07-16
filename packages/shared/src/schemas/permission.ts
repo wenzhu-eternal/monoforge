@@ -1,13 +1,13 @@
 import { z } from 'zod'
 
 export const PermissionSchema = z.object({
-  id: z.number(),
+  id: z.number().int().positive(),
   code: z.string(),
   name: z.string(),
   description: z.string().nullable().optional(),
   routes: z.array(z.string()).nullable().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
 })
 
 export const CreatePermissionSchema = z.object({
@@ -28,7 +28,15 @@ export const UpdateRolePermissionsSchema = z.object({
   permissions: z.array(z.string().min(1)).min(0),
 })
 
+export const RolePermissionSchema = z.object({
+  roleId: z.number().int().positive(),
+  permission: z.string(),
+  permissionName: z.string().nullable().optional(),
+  roleName: z.string().optional(),
+})
+
 export type Permission = z.infer<typeof PermissionSchema>
 export type CreatePermission = z.infer<typeof CreatePermissionSchema>
 export type UpdatePermission = z.infer<typeof UpdatePermissionSchema>
 export type UpdateRolePermissions = z.infer<typeof UpdateRolePermissionsSchema>
+export type RolePermission = z.infer<typeof RolePermissionSchema>

@@ -21,13 +21,13 @@ import { useRoles } from '@/hooks/use-roles'
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers } from '@/hooks/use-users'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { Permissions } from '@/lib/permissions'
+import { PermissionCodes } from '@/lib/permissions'
 import { requirePermission } from '@/lib/route-guards'
 
 const { Title } = Typography
 
 export const Route = createFileRoute('/users')({
-  beforeLoad: requirePermission(Permissions.USER_VIEW),
+  beforeLoad: requirePermission(PermissionCodes.USER_VIEW),
   component: UsersPage,
 })
 
@@ -133,8 +133,8 @@ function UsersPage() {
     form.setFieldsValue({
       username: user.username,
       email: user.email,
-      nickname: user.nickname,
-      phone: user.phone,
+      nickname: user.nickname ?? undefined,
+      phone: user.phone ?? undefined,
       roleId: user.roles?.[0]?.id,
       status: user.status,
     })

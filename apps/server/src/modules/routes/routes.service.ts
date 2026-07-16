@@ -1,13 +1,9 @@
 import { Injectable, RequestMethod } from '@nestjs/common'
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants'
 import { DiscoveryService, Reflector } from '@nestjs/core'
+import type { RouteMeta } from '@shared/schemas/setup'
 
-export interface RouteMeta {
-  path: string
-  method: string
-  controller: string
-  handlerName: string
-}
+export type { RouteMeta }
 
 // NestJS RequestMethod 是数字枚举，需映射为字符串
 const METHOD_NAMES: Record<number, string> = {

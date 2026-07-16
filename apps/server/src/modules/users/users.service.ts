@@ -1,27 +1,21 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
+import type { DashboardStats } from '@shared/schemas/dashboard'
+import type { PaginatedResponse } from '@shared/schemas/pagination'
+import type { User, UserListItem } from '@shared/schemas/user'
 import * as argon2 from 'argon2'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
-import type { User } from '@/db/schema'
 import { files, roles, users } from '@/db/schema'
 import { Cacheable } from '@/modules/cache/cache.decorator'
 import { CacheService } from '@/modules/cache/cache.service'
-
-export interface PaginatedUsers {
-  list: Record<string, unknown>[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
 
 @Injectable()
 export class UsersService {
   constructor(private readonly cacheService: CacheService) {}
 
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedUsers> {
+  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<UserListItem>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
@@ -56,8 +50,11 @@ export class UsersService {
     const total = countResult[0]?.count ?? 0
     const list = items.map((item) => {
       const { ...rest } = item
-      if (item.roleName) {
-        return { ...rest, roles: [{ id: item.roleId, name: item.roleName }] }
+      if (item.roleName && item.roleId) {
+        return {
+          ...rest,
+          roles: [{ id: item.roleId, name: item.roleName }],
+        }
       }
       return rest
     })
@@ -71,7 +68,7 @@ export class UsersService {
     }
   }
 
-  async getStats(): Promise<{ totalUsers: number; activeUsers: number }> {
+  async getStats(): Promise<DashboardStats> {
     // 使用聚合查询避免全表扫描，正确统计超过 100 人场景
     const [totalResult, activeResult] = await Promise.all([
       db

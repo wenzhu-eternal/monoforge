@@ -1,15 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
+import type { RolePermission } from '@shared/schemas/permission'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions, roles } from '@/db/schema'
-
-export interface RolePermission {
-  roleId: number
-  permission: string
-  permissionName?: string | null
-  roleName?: string
-}
 
 @Injectable()
 export class RolePermissionsService {

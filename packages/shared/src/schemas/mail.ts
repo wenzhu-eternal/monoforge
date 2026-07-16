@@ -10,5 +10,10 @@ export const SendVerificationCodeMailSchema = z.object({
   name: z.string().min(1).max(50).optional(),
 })
 
+export const MailSendResultSchema = z.object({
+  message: z.string(),
+})
+
 export type SendWelcomeMail = z.infer<typeof SendWelcomeMailSchema>
 export type SendVerificationCodeMail = z.infer<typeof SendVerificationCodeMailSchema>
+export type MailSendResult = z.infer<typeof MailSendResultSchema>

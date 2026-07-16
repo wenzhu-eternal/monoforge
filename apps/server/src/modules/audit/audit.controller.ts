@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import { PermissionCodes } from '@shared/constants/permissions'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { AuditService } from './audit.service'
@@ -21,7 +22,7 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  @Permissions('audit:view')
+  @Permissions(PermissionCodes.AUDIT_VIEW)
   @ApiOperation({ summary: '分页查询审计日志' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -39,7 +40,7 @@ export class AuditController {
 
   @Get(':id')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
-  @Permissions('audit:view')
+  @Permissions(PermissionCodes.AUDIT_VIEW)
   @ApiOperation({ summary: '按ID查询审计日志' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.auditService.findById(id)

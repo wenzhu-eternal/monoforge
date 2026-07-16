@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { SkipThrottle, Throttle } from '@nestjs/throttler'
+import { PermissionCodes } from '@shared/constants/permissions'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { Public } from '@/common/decorators/public.decorator'
@@ -46,7 +47,7 @@ export class ErrorLogsController {
   @SkipThrottle()
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:view')
+  @Permissions(PermissionCodes.ERROR_LOG_VIEW)
   @ApiOperation({ summary: '分页查询错误日志' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -75,7 +76,7 @@ export class ErrorLogsController {
   @SkipThrottle()
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:view')
+  @Permissions(PermissionCodes.ERROR_LOG_VIEW)
   @ApiOperation({ summary: '错误统计' })
   async getStats() {
     return this.errorLogsService.getStats()
@@ -85,7 +86,7 @@ export class ErrorLogsController {
   @SkipThrottle()
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:view')
+  @Permissions(PermissionCodes.ERROR_LOG_VIEW)
   @ApiOperation({ summary: '相同报错聚合 Top N' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async findGrouped(@Query('limit') limit?: string) {
@@ -100,7 +101,7 @@ export class ErrorLogsController {
   @SkipThrottle()
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:view')
+  @Permissions(PermissionCodes.ERROR_LOG_VIEW)
   @ApiOperation({ summary: '查询全部白名单' })
   async findWhitelist() {
     return this.errorLogsService.findWhitelist()
@@ -112,7 +113,7 @@ export class ErrorLogsController {
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:view')
+  @Permissions(PermissionCodes.ERROR_LOG_VIEW)
   @ApiOperation({ summary: '按ID查询错误日志' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.errorLogsService.findById(id)
@@ -123,7 +124,7 @@ export class ErrorLogsController {
   @Post(':id/resolve')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:manage')
+  @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '标记错误已处理' })
   async resolve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: { sub: number }) {
@@ -133,7 +134,7 @@ export class ErrorLogsController {
   @Post('batch-resolve')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:manage')
+  @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '批量标记相同报错已处理' })
   async batchResolve(@Body() dto: BatchResolveDto, @CurrentUser() user: { sub: number }) {
@@ -143,7 +144,7 @@ export class ErrorLogsController {
   @Delete(':id')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:manage')
+  @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '删除错误日志' })
   async remove(@Param('id', ParseIntPipe) id: number) {
@@ -155,7 +156,7 @@ export class ErrorLogsController {
   @Post('whitelist')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:manage')
+  @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '创建白名单规则' })
   async createWhitelist(@Body() dto: CreateWhitelistDto) {
@@ -165,7 +166,7 @@ export class ErrorLogsController {
   @Patch('whitelist/:id')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:manage')
+  @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @ApiOperation({ summary: '更新白名单规则' })
   async updateWhitelist(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateWhitelistDto) {
     return this.errorLogsService.updateWhitelist(id, dto)
@@ -174,7 +175,7 @@ export class ErrorLogsController {
   @Delete('whitelist/:id')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
-  @Permissions('error_log:manage')
+  @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '删除白名单规则' })
   async removeWhitelist(@Param('id', ParseIntPipe) id: number) {

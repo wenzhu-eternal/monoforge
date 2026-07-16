@@ -1,25 +1,16 @@
-import type { ApiResponse } from '@shared'
+import type {
+  ApiResponse,
+  MailSendResult,
+  SendVerificationCodeMail,
+  SendWelcomeMail,
+} from '@shared'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-
-export interface SendWelcomeMailInput {
-  to: string
-  username: string
-}
-
-export interface SendVerificationCodeMailInput {
-  to: string
-  name?: string
-}
-
-export interface MailSendResult {
-  message: string
-}
 
 export const useSendWelcomeMail = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (data: SendWelcomeMailInput) => {
+    mutationFn: async (data: SendWelcomeMail) => {
       const response = await api.post<ApiResponse<MailSendResult>>('/api/v1/mail/welcome', data)
       return response.data.data!
     },
@@ -32,7 +23,7 @@ export const useSendWelcomeMail = () => {
 export const useSendVerificationCodeMail = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (data: SendVerificationCodeMailInput) => {
+    mutationFn: async (data: SendVerificationCodeMail) => {
       const response = await api.post<ApiResponse<MailSendResult>>(
         '/api/v1/mail/verification-code',
         data,

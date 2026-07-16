@@ -42,13 +42,13 @@ import {
 } from '@/hooks/use-logs'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { Permissions } from '@/lib/permissions'
+import { PermissionCodes } from '@/lib/permissions'
 import { requirePermission } from '@/lib/route-guards'
 
 const { Title, Text, Paragraph } = Typography
 
 export const Route = createFileRoute('/error-logs')({
-  beforeLoad: requirePermission(Permissions.ERROR_LOG_VIEW),
+  beforeLoad: requirePermission(PermissionCodes.ERROR_LOG_VIEW),
   component: ErrorLogsPage,
 })
 

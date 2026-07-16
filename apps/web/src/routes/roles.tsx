@@ -25,17 +25,17 @@ import {
 import { useCreateRole, useDeleteRole, useRoles, useUpdateRole } from '@/hooks/use-roles'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { Permissions } from '@/lib/permissions'
+import { PermissionCodes } from '@/lib/permissions'
 import { requirePermission } from '@/lib/route-guards'
 
 const { Title } = Typography
 
 export const Route = createFileRoute('/roles')({
-  beforeLoad: requirePermission(Permissions.ROLE_VIEW),
+  beforeLoad: requirePermission(PermissionCodes.ROLE_VIEW),
   component: RolesPage,
 })
 
-function RolePermissions({ roleId }: { roleId: number }) {
+function RolePermissionCodes({ roleId }: { roleId: number }) {
   const { data: permissions } = useRolePermissions(roleId)
   const { data: allPermissions } = useAllPermissions()
 
@@ -64,7 +64,7 @@ function RolesPage() {
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false)
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false)
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null)
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([])
+  const [selectedPermissionCodes, setSelectedPermissionCodes] = useState<string[]>([])
   const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error } = useRoles({ page, pageSize, order: 'desc' })
@@ -93,7 +93,7 @@ function RolesPage() {
       initializedForRoleId.current !== selectedRoleId &&
       currentPermissions
     ) {
-      setSelectedPermissions(currentPermissions)
+      setSelectedPermissionCodes(currentPermissions)
       initializedForRoleId.current = selectedRoleId
     }
   }, [currentPermissions, selectedRoleId])
@@ -105,7 +105,7 @@ function RolesPage() {
     {
       title: '权限',
       key: 'permissions',
-      render: (_, record) => <RolePermissions roleId={record.id} />,
+      render: (_, record) => <RolePermissionCodes roleId={record.id} />,
     },
     {
       title: '创建时间',
@@ -165,7 +165,7 @@ function RolesPage() {
 
   const handleEditRole = (role: Role) => {
     setEditingRole(role)
-    roleForm.setFieldsValue(role)
+    roleForm.setFieldsValue({ ...role, description: role.description ?? undefined })
     setIsRoleModalOpen(true)
   }
 
@@ -199,7 +199,7 @@ function RolesPage() {
     // 重置 ref 让 useEffect 走首次同步分支，确保二次打开能回显
     initializedForRoleId.current = null
     setSelectedRoleId(role.id)
-    setSelectedPermissions([])
+    setSelectedPermissionCodes([])
     setIsPermissionModalOpen(true)
   }
 
@@ -209,7 +209,7 @@ function RolesPage() {
     try {
       await updateRolePermissions.mutateAsync({
         roleId: selectedRoleId,
-        permissions: selectedPermissions,
+        permissions: selectedPermissionCodes,
       })
       messageApi.success('权限更新成功')
       setIsPermissionModalOpen(false)
@@ -221,15 +221,17 @@ function RolesPage() {
   }
 
   const handlePermissionToggle = (code: string, checked: boolean) => {
-    setSelectedPermissions((prev) => (checked ? [...prev, code] : prev.filter((p) => p !== code)))
+    setSelectedPermissionCodes((prev) =>
+      checked ? [...prev, code] : prev.filter((p) => p !== code),
+    )
   }
 
   const handleToggleAll = (checked: boolean) => {
     if (!allPermissions) return
-    setSelectedPermissions(checked ? allPermissions.map((p) => p.code) : [])
+    setSelectedPermissionCodes(checked ? allPermissions.map((p) => p.code) : [])
   }
 
-  const allSelected = allPermissions && selectedPermissions.length === allPermissions.length
+  const allSelected = allPermissions && selectedPermissionCodes.length === allPermissions.length
 
   return (
     <AuthenticatedLayout>
@@ -314,14 +316,14 @@ function RolesPage() {
                   全选
                 </Checkbox>
                 <span className="text-xs text-gray-400">
-                  {selectedPermissions.length}/{allPermissions?.length ?? 0}
+                  {selectedPermissionCodes.length}/{allPermissions?.length ?? 0}
                 </span>
               </div>
               <div className="py-1">
                 {allPermissions?.map((p) => (
                   <div key={p.code} className="flex items-center px-2 py-2.5 hover:bg-gray-50">
                     <Checkbox
-                      checked={selectedPermissions.includes(p.code)}
+                      checked={selectedPermissionCodes.includes(p.code)}
                       onChange={(e) => handlePermissionToggle(p.code, e.target.checked)}
                     >
                       <span>{p.name}</span>

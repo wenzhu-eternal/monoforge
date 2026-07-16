@@ -1,29 +1,12 @@
-import type { ApiResponse, PaginatedResponse } from '@shared'
+import type { ApiResponse, FileItem, PaginatedResponse, UploadResult } from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
-export interface FileItem {
-  id: number
-  filename: string
-  originalName: string
-  mimeType: string
-  size: number
-  uploadedBy: number | null
-  uploadedByUsername: string | null
-  createdAt: string
-}
+export type { FileItem, UploadResult }
 
 export interface FileQuery {
   page: number
   pageSize: number
-}
-
-export interface UploadResult {
-  id: number
-  filename: string
-  originalName: string
-  mimeType: string
-  size: number
 }
 
 export const useFiles = (params: FileQuery) => {

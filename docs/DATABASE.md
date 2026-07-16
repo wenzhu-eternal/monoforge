@@ -5,7 +5,7 @@
 1. **禁止 `synchronize`** - 所有表结构变更走 `drizzle-kit generate` 迁移
 2. **表名使用 snake_case 复数** - `users` / `roles` / `error_logs`
 3. **使用 PostgreSQL** - JSONB 存可变结构
-4. **软删除** - 所有业务表添加 `deleted_at` 字段，删除操作仅设置时间戳，查询时过滤 `deleted_at IS NULL`；审计日志（`audit_logs`）等 append-only 表例外
+4. **软删除** - 所有业务表添加 `deleted_at` 字段，删除操作仅设置时间戳，查询时过滤 `deleted_at IS NULL`；审计日志（`audit_logs`）等 append-only 表例外。注意：`files` 表软删仅标记 DB 记录，不删除磁盘文件（已"删除"文件仍可凭 URL 访问），敏感上传场景需额外评估磁盘清理策略
 5. **部分唯一索引** - 唯一字段（username/email/wechatOpenId/role.name/permission.code）必须用 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，禁止使用列级 `.unique()`。原因：列级 unique 会阻止软删后同名重建
 6. **外键引用列用 `integer` 不用 `serial`** - `serial` 会创建多余的自增序列且无外键约束，引用列（如 `audit_logs.user_id` / `error_logs.user_id`）必须用 `integer`。可空的外键引用列不加 `.notNull()`（如 `error_logs.user_id` 允许未登录用户上报错误）
 7. **唯一约束冲突兜底** - service 层 `create` 方法必须 `try/catch` 包裹 `db.insert`，捕获 23505 错误码转 `ConflictException`，防止 TOCTOU 竞态（先查询再插入之间被并发插入）
@@ -26,9 +26,9 @@
 
 ## helpers 规范
 
-### `notDeleted(deletedAt)` 仅传单列
+### `notDeleted(deletedAt)` 仅接受单列
 
-正确用法 `and(eq(col, val), notDeleted(deletedAt))`；错误用法 `notDeleted(id, deletedAt)` 会把所有传入列都判 `IS NULL` → 永远查不到记录。
+签名 `notDeleted(column: Column)` 已收紧为单参数，编译期即阻止多列误用。正确用法 `and(eq(col, val), notDeleted(deletedAt))`。
 
 ### `isUniqueViolation(error)`
 

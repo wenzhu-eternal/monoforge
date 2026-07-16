@@ -49,6 +49,14 @@ const port = portRaw ? Number(portRaw) : 587
 
 必须由环境变量控制，不能硬编码。开发环境（HTTP）必须设为 `false`，生产环境（HTTPS）必须设为 `true`。
 
+### 前端 `@shared` alias split-brain
+
+`vite.config.ts` 的 alias 指向 `packages/shared/src`（源码，热更新即时生效），`tsconfig.json` 的 paths 指向 `packages/shared/dist`（编译产物，类型检查用）。两者不一致的根因是 TS 的 `rootDir` 规则：web 的 `rootDir` 限制为 `apps/web/src`，若 paths 指向 `packages/shared/src` 会报 `TS6059`（文件不在 rootDir 内）。统一到源码需要改用 TS project references，改动较大暂未实施。
+
+**缓解措施**：
+- `turbo.json` 的 `build`/`lint`/`test` 均配置 `dependsOn: ["^build"]`，确保 `shared` 先于 `web`/`server` 构建到 dist
+- 开发时改 shared schema 后需手动执行 `pnpm --filter=shared build` 刷新 dist，否则 `tsc` 类型检查会用旧产物（vite 打包不受影响，因 alias 指向源码）
+
 ## 前端环境变量
 
 | 变量 | 说明 | 默认值 |

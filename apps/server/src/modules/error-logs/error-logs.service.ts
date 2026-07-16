@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
+import type { ErrorLog, ErrorLogGroup, ErrorStats, ErrorWhitelist } from '@shared/schemas/error-log'
+import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq, ilike, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
@@ -23,50 +25,6 @@ export interface ReportErrorParams {
   userAgent?: string
 }
 
-export interface PaginatedErrorLogs {
-  list: Array<{
-    id: number
-    source: string
-    errorType: string | null
-    message: string
-    stack: string | null
-    file: string | null
-    line: number | null
-    column: number | null
-    url: string | null
-    method: string | null
-    statusCode: number | null
-    context: unknown
-    userId: number | null
-    ip: string | null
-    userAgent: string | null
-    isResolved: boolean
-    resolvedAt: Date | null
-    resolvedBy: number | null
-    createdAt: Date
-  }>
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
-
-export interface ErrorStats {
-  total: number
-  unresolved: number
-  bySource: Record<string, number>
-  byType: Record<string, number>
-}
-
-export interface ErrorLogGroup {
-  message: string
-  source: string
-  count: number
-  firstCreatedAt: Date
-  lastCreatedAt: Date
-  sampleId: number
-}
-
 const WHITELIST_CACHE_KEY = 'error:whitelist:all'
 const WHITELIST_CACHE_TTL = 60
 
@@ -74,9 +32,6 @@ const WHITELIST_CACHE_TTL = 60
 export class ErrorLogsService {
   constructor(private readonly redisService: RedisService) {}
 
-  /**
-   * 前端/后端上报错误（公开 API，不需要 admin 权限）
-   */
   async report(params: ReportErrorParams): Promise<{ id: number }> {
     // 白名单过滤
     const isWhitelisted = await this.checkWhitelist(params.message, params.url)
@@ -140,7 +95,7 @@ export class ErrorLogsService {
     keyword?: string,
     source?: string,
     isResolved?: string,
-  ): Promise<PaginatedErrorLogs> {
+  ): Promise<PaginatedResponse<ErrorLog>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
@@ -178,19 +133,16 @@ export class ErrorLogsService {
     }
   }
 
-  async findById(id: number) {
+  async findById(id: number): Promise<ErrorLog> {
     const log = await db.query.errorLogs.findFirst({
       where: and(eq(errorLogs.id, id), notDeleted(errorLogs.deletedAt)),
     })
     if (!log) {
       throw new NotFoundException(`错误日志 ID ${id} 不存在`)
     }
-    return log
+    return log as ErrorLog
   }
 
-  /**
-   * 相同报错聚合: 按 message+source 分组，返回出现次数最高的 Top N
-   */
   async findGrouped(limit = 10): Promise<ErrorLogGroup[]> {
     const safeLimit = Math.min(Math.max(1, limit), 50)
 
@@ -360,7 +312,7 @@ export class ErrorLogsService {
     return false
   }
 
-  async findWhitelist() {
+  async findWhitelist(): Promise<ErrorWhitelist[]> {
     try {
       const cached = await this.redisService.get(WHITELIST_CACHE_KEY)
       if (cached) {
@@ -382,7 +334,7 @@ export class ErrorLogsService {
       // 缓存写入失败忽略
     }
 
-    return list
+    return list as ErrorWhitelist[]
   }
 
   async createWhitelist(data: {
@@ -390,7 +342,7 @@ export class ErrorLogsService {
     matchType?: string
     description?: string
     isActive?: boolean
-  }) {
+  }): Promise<ErrorWhitelist> {
     const [created] = await db
       .insert(errorWhitelist)
       .values({
@@ -402,7 +354,7 @@ export class ErrorLogsService {
       .returning()
 
     await this.invalidateWhitelistCache()
-    return created
+    return created as ErrorWhitelist
   }
 
   async updateWhitelist(
@@ -413,7 +365,7 @@ export class ErrorLogsService {
       description?: string
       isActive?: boolean
     },
-  ) {
+  ): Promise<ErrorWhitelist> {
     const existing = await db.query.errorWhitelist.findFirst({
       where: and(eq(errorWhitelist.id, id), notDeleted(errorWhitelist.deletedAt)),
     })
@@ -438,7 +390,7 @@ export class ErrorLogsService {
     }
 
     await this.invalidateWhitelistCache()
-    return updated
+    return updated as ErrorWhitelist
   }
 
   async removeWhitelist(id: number): Promise<{ message: string }> {

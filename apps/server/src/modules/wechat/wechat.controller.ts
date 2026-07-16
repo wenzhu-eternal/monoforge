@@ -8,9 +8,11 @@ import {
   Res,
   ServiceUnavailableException,
 } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
 import type { Response } from 'express'
 import { Public } from '@/common/decorators/public.decorator'
+import { getRefreshTokenCookieOptions } from '@/common/utils/cookie-options'
 import { WechatLoginDto } from './dto/wechat-login.dto'
 import { WechatService } from './wechat.service'
 
@@ -18,7 +20,10 @@ import { WechatService } from './wechat.service'
 @Controller('wechat')
 @Public()
 export class WechatController {
-  constructor(private readonly wechatService: WechatService) {}
+  constructor(
+    private readonly wechatService: WechatService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Get('qrcode')
   @ApiOperation({ summary: '获取微信扫码登录二维码 URL' })
@@ -38,13 +43,11 @@ export class WechatController {
     }
     const result = await this.wechatService.login(dto.code, dto.loginType)
 
-    // 扫码/小程序登录的 refreshToken 也写入 httpOnly cookie，与账号密码登录一致
-    response.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/api/v1/auth',
-    })
+    response.cookie(
+      'refreshToken',
+      result.refreshToken,
+      getRefreshTokenCookieOptions(this.configService),
+    )
 
     return {
       accessToken: result.accessToken,

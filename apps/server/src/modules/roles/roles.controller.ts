@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import { PermissionCodes } from '@shared/constants/permissions'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { CreateRoleDto } from './dto/create-role.dto'
@@ -29,7 +30,7 @@ export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @Get()
-  @Permissions('role:view')
+  @Permissions(PermissionCodes.ROLE_VIEW)
   @ApiOperation({ summary: '分页查询角色' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -47,7 +48,7 @@ export class RolesController {
 
   @Get(':id')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
-  @Permissions('role:view')
+  @Permissions(PermissionCodes.ROLE_VIEW)
   @ApiOperation({ summary: '按ID查询角色' })
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.rolesService.findById(id)
@@ -55,14 +56,14 @@ export class RolesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @Permissions('role:create')
+  @Permissions(PermissionCodes.ROLE_CREATE)
   @ApiOperation({ summary: '创建角色' })
   async create(@Body() createRoleDto: CreateRoleDto) {
     return this.rolesService.create(createRoleDto)
   }
 
   @Patch(':id')
-  @Permissions('role:update')
+  @Permissions(PermissionCodes.ROLE_UPDATE)
   @ApiOperation({ summary: '更新角色' })
   async update(@Param('id', ParseIntPipe) id: number, @Body() updateRoleDto: UpdateRoleDto) {
     return this.rolesService.update(id, updateRoleDto)
@@ -70,7 +71,7 @@ export class RolesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @Permissions('role:delete')
+  @Permissions(PermissionCodes.ROLE_DELETE)
   @ApiOperation({ summary: '删除角色' })
   async remove(@Param('id', ParseIntPipe) id: number) {
     return this.rolesService.remove(id)

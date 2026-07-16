@@ -1,25 +1,12 @@
-import type { ApiResponse, Permission } from '@shared'
+import type { ApiResponse, PaginatedResponse, Permission, RouteMeta } from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
-interface PaginatedPermissions {
-  list: Permission[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
+export type { RouteMeta }
 
 interface UsePermissionsParams {
   page?: number
   pageSize?: number
-}
-
-export interface RouteMeta {
-  path: string
-  method: string
-  controller: string
-  handlerName: string
 }
 
 export function usePermissions(params: UsePermissionsParams = {}) {
@@ -27,7 +14,7 @@ export function usePermissions(params: UsePermissionsParams = {}) {
   return useQuery({
     queryKey: ['permissions', page, pageSize],
     queryFn: async () => {
-      const res = await api.get<ApiResponse<PaginatedPermissions>>('/api/v1/permissions', {
+      const res = await api.get<ApiResponse<PaginatedResponse<Permission>>>('/api/v1/permissions', {
         params: { page, pageSize },
       })
       return res.data.data

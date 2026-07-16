@@ -4,13 +4,13 @@ import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState } from 'react'
 import { type AuditLog, useAuditLogs } from '@/hooks/use-logs'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
-import { Permissions } from '@/lib/permissions'
+import { PermissionCodes } from '@/lib/permissions'
 import { requirePermission } from '@/lib/route-guards'
 
 const { Title, Text } = Typography
 
 export const Route = createFileRoute('/audit-logs')({
-  beforeLoad: requirePermission(Permissions.AUDIT_VIEW),
+  beforeLoad: requirePermission(PermissionCodes.AUDIT_VIEW),
   component: AuditLogsPage,
 })
 
@@ -123,7 +123,7 @@ function AuditLogsPage() {
       title: '客户端',
       width: 150,
       render: (_, record) => {
-        const { browser, os } = parseUserAgent(record.userAgent)
+        const { browser, os } = parseUserAgent(record.userAgent ?? null)
         return (
           <Tooltip title={record.userAgent}>
             <span>

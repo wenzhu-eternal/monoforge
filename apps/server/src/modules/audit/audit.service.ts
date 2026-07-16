@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
+import type { AuditLog } from '@shared/schemas/audit'
+import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { count, desc, eq } from 'drizzle-orm'
 import { db } from '@/db'
 import { auditLogs, users } from '@/db/schema'
@@ -12,28 +14,6 @@ export interface RecordAuditLogParams {
   newValue?: Record<string, unknown>
   ip?: string
   userAgent?: string
-}
-
-export interface AuditLogWithUser {
-  id: number
-  userId: number
-  username: string | null
-  action: string
-  resource: string
-  resourceId: number | null
-  oldValue: unknown
-  newValue: unknown
-  ip: string | null
-  userAgent: string | null
-  createdAt: Date
-}
-
-export interface PaginatedAuditLogs {
-  list: AuditLogWithUser[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
 }
 
 @Injectable()
@@ -51,7 +31,7 @@ export class AuditService {
     })
   }
 
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedAuditLogs> {
+  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<AuditLog>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
@@ -89,7 +69,7 @@ export class AuditService {
     }
   }
 
-  async findById(id: number): Promise<AuditLogWithUser> {
+  async findById(id: number): Promise<AuditLog> {
     const log = await db
       .select({
         id: auditLogs.id,
@@ -112,6 +92,6 @@ export class AuditService {
     if (log.length === 0) {
       throw new NotFoundException(`审计日志 ID ${id} 不存在`)
     }
-    return log[0] as AuditLogWithUser
+    return log[0] as AuditLog
   }
 }

@@ -3,7 +3,7 @@ import { NestFactory } from '@nestjs/core'
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import cookieParser from 'cookie-parser'
 import helmet from 'helmet'
-import { ZodValidationPipe } from 'nestjs-zod'
+import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod'
 import { AppModule } from './app.module'
 import { SanitizeBodyPipe } from './common/pipes/sanitize-body.pipe'
 import { XssPipe } from './common/pipes/xss.pipe'
@@ -54,6 +54,9 @@ async function bootstrap() {
 
   // 全局管道: 清洗 null/空字符串 → Zod 校验 → XSS 清洗
   app.useGlobalPipes(new SanitizeBodyPipe(), new ZodValidationPipe(), new XssPipe())
+
+  // 全局拦截器: Zod 序列化响应（配合 @ZodSerializerDto 在 controller 上声明输出 schema）
+  app.useGlobalInterceptors(app.get(ZodSerializerInterceptor))
 
   // Swagger 仅在非生产环境暴露，避免生产泄漏接口文档
   if (!isProduction) {

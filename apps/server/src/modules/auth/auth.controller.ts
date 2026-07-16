@@ -14,6 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import type { Request, Response } from 'express'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Public } from '@/common/decorators/public.decorator'
+import { getRefreshTokenCookieOptions } from '@/common/utils/cookie-options'
 import { AuthService, type TokenPayload } from './auth.service'
 import { LoginDto } from './dto/login.dto'
 import { RegisterDto } from './dto/register.dto'
@@ -27,12 +28,6 @@ export class AuthController {
     private readonly configService: ConfigService,
   ) {}
 
-  // ConfigService.get 运行时返回 string，需显式判断（"false" 字符串在 if 中为 truthy）
-  private get cookieSecure(): boolean {
-    const v = this.configService.get<string | boolean>('COOKIE_SECURE')
-    return v === true || v === 'true'
-  }
-
   @Post('login')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -40,13 +35,11 @@ export class AuthController {
   async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) response: Response) {
     const result = await this.authService.login(loginDto.username, loginDto.password)
 
-    response.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: this.cookieSecure,
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/api/v1/auth',
-    })
+    response.cookie(
+      'refreshToken',
+      result.refreshToken,
+      getRefreshTokenCookieOptions(this.configService),
+    )
 
     return {
       accessToken: result.accessToken,
@@ -74,13 +67,11 @@ export class AuthController {
       dto.code,
     )
 
-    response.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: this.cookieSecure,
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/api/v1/auth',
-    })
+    response.cookie(
+      'refreshToken',
+      result.refreshToken,
+      getRefreshTokenCookieOptions(this.configService),
+    )
 
     return {
       accessToken: result.accessToken,
@@ -97,7 +88,6 @@ export class AuthController {
     @Body('refreshToken') refreshTokenFromBody: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ) {
-    // 优先从 httpOnly cookie 读取，兜底 body（兼容旧客户端）
     const refreshToken = request.cookies?.refreshToken ?? refreshTokenFromBody
     if (!refreshToken) {
       throw new UnauthorizedException('缺少刷新令牌')
@@ -105,13 +95,11 @@ export class AuthController {
 
     const tokens = await this.authService.refresh(refreshToken)
 
-    response.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: this.cookieSecure,
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/api/v1/auth',
-    })
+    response.cookie(
+      'refreshToken',
+      tokens.refreshToken,
+      getRefreshTokenCookieOptions(this.configService),
+    )
 
     return {
       accessToken: tokens.accessToken,
@@ -124,7 +112,6 @@ export class AuthController {
   @ApiOperation({ summary: '用户登出' })
   async logout(@CurrentUser() user: TokenPayload, @Res({ passthrough: true }) response: Response) {
     response.clearCookie('refreshToken', { path: '/api/v1/auth' })
-    // 实现真正吊销
     return this.authService.logout(user.sub)
   }
 

@@ -1,21 +1,14 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import type { PaginatedResponse } from '@shared/schemas/pagination'
+import type { Role } from '@shared/schemas/role'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
-import type { Role } from '@/db/schema'
 import { roles, users } from '@/db/schema'
-
-export interface PaginatedRoles {
-  list: Role[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-}
 
 @Injectable()
 export class RolesService {
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedRoles> {
+  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<Role>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize

@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { PermissionCodes } from '@shared/constants/permissions'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { SendVerificationCodeMailDto, SendWelcomeMailDto } from './dto/mail.dto'
@@ -17,7 +18,7 @@ import { MailService } from './mail.service'
 @ApiBearerAuth()
 @Controller('mail')
 @UseGuards(PermissionsGuard)
-@Permissions('mail:send')
+@Permissions(PermissionCodes.MAIL_SEND)
 export class MailController {
   constructor(private readonly mailService: MailService) {}
 

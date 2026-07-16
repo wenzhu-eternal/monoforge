@@ -1,22 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common'
+import type { SetupResult, SetupStatus } from '@shared/schemas/setup'
 import * as argon2 from 'argon2'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
 import { roles, users } from '@/db/schema'
 
-// 默认角色: admin 全部权限，editor 编辑权限，viewer 只读
 const DEFAULT_ROLES = [
   { name: 'admin', description: '系统管理员，拥有全部权限' },
   { name: 'editor', description: '编辑者，可管理业务数据' },
   { name: 'viewer', description: '访客，仅可查看' },
 ]
-
-export interface SetupStatus {
-  initialized: boolean
-  userCount: number
-  roleCount: number
-}
 
 @Injectable()
 export class SetupService {
@@ -50,7 +44,7 @@ export class SetupService {
     email: string
     password: string
     nickname?: string
-  }): Promise<{ message: string; adminUsername: string }> {
+  }): Promise<SetupResult> {
     const status = await this.getStatus()
     if (status.initialized) {
       throw new ConflictException('系统已初始化，无法重复执行')

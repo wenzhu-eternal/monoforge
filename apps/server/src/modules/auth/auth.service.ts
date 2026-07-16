@@ -3,6 +3,7 @@ import { ConflictException, Injectable, Logger, UnauthorizedException } from '@n
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
+import type { RoleBrief } from '@shared/schemas/role'
 import * as argon2 from 'argon2'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
@@ -39,7 +40,9 @@ export class AuthService {
   async login(
     username: string,
     password: string,
-  ): Promise<TokenPair & { user: Omit<User, 'password'> }> {
+  ): Promise<
+    TokenPair & { user: Omit<User, 'password'> & { permissions: string[]; roles: RoleBrief[] } }
+  > {
     const user = await db.query.users.findFirst({
       where: and(eq(users.username, username), notDeleted(users.deletedAt)),
     })
@@ -63,7 +66,6 @@ export class AuthService {
       email: user.email,
     })
 
-    // 把 refreshToken 的 jti 存入 Redis，用于吊销校验
     await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)
 
     const permissions = await this.getPermissionsByUserId(user.id)
@@ -72,13 +74,7 @@ export class AuthService {
 
     return {
       ...tokens,
-      user: { ...userWithoutPassword, permissions, roles: role ? [role] : [] } as Omit<
-        User,
-        'password'
-      > & {
-        permissions: string[]
-        roles: { id: number; name: string; description?: string }[]
-      },
+      user: { ...userWithoutPassword, permissions, roles: role ? [role] : [] },
     }
   }
 
@@ -128,7 +124,7 @@ export class AuthService {
   async getProfile(userId: number): Promise<
     Omit<User, 'password'> & {
       permissions: string[]
-      roles: { id: number; name: string; description?: string }[]
+      roles: RoleBrief[]
     }
   > {
     const user = await db.query.users.findFirst({
@@ -317,9 +313,7 @@ export class AuthService {
     return perms.map((p) => p.permission)
   }
 
-  private async getRoleByUserId(
-    userId: number,
-  ): Promise<{ id: number; name: string; description?: string } | null> {
+  private async getRoleByUserId(userId: number): Promise<RoleBrief | null> {
     const userRecord = await db.query.users.findFirst({
       where: and(eq(users.id, userId), notDeleted(users.deletedAt)),
     })
@@ -328,8 +322,6 @@ export class AuthService {
     const role = await db.query.roles.findFirst({
       where: and(eq(roles.id, userRecord.roleId), notDeleted(roles.deletedAt)),
     })
-    return role
-      ? { id: role.id, name: role.name, description: role.description ?? undefined }
-      : null
+    return role ? { id: role.id, name: role.name, description: role.description ?? null } : null
   }
 }

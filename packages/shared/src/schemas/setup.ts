@@ -1,8 +1,5 @@
 import { z } from 'zod'
 
-/**
- * 系统初始化请求: 创建首个管理员账号 + 默认角色
- */
 export const SetupSchema = z.object({
   username: z
     .string()
@@ -16,10 +13,13 @@ export const SetupSchema = z.object({
 
 export const SetupStatusSchema = z.object({
   initialized: z.boolean(),
-  /** 已存在的用户数 */
   userCount: z.number().int(),
-  /** 已存在的角色数 */
   roleCount: z.number().int(),
+})
+
+export const SetupResultSchema = z.object({
+  message: z.string(),
+  adminUsername: z.string(),
 })
 
 export const RouteMetaSchema = z.object({
@@ -33,4 +33,5 @@ export const RouteListSchema = z.array(RouteMetaSchema)
 
 export type Setup = z.infer<typeof SetupSchema>
 export type SetupStatus = z.infer<typeof SetupStatusSchema>
+export type SetupResult = z.infer<typeof SetupResultSchema>
 export type RouteMeta = z.infer<typeof RouteMetaSchema>
