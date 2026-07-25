@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm'
 import {
-  boolean,
   integer,
   pgTable,
   serial,
@@ -23,7 +22,6 @@ export const users = pgTable(
     // 部分唯一索引：允许软删后用同一 openId 重新绑定
     wechatOpenId: varchar('wechat_open_id', { length: 64 }),
     roleId: integer('role_id'),
-    status: boolean('status').default(true).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),
