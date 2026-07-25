@@ -22,7 +22,13 @@ import {
   useRolePermissions,
   useUpdateRolePermissions,
 } from '@/hooks/use-permissions'
-import { useCreateRole, useDeleteRole, useRoles, useUpdateRole } from '@/hooks/use-roles'
+import {
+  useCreateRole,
+  useDeleteRole,
+  useRestoreRole,
+  useRoles,
+  useUpdateRole,
+} from '@/hooks/use-roles'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
 import { PermissionCodes } from '@/lib/permissions'
@@ -71,6 +77,7 @@ function RolesPage() {
   const createRole = useCreateRole()
   const updateRole = useUpdateRole()
   const deleteRole = useDeleteRole()
+  const restoreRole = useRestoreRole()
 
   const { data: allPermissions, isLoading: allPermissionsLoading } = useAllPermissions()
   const { data: currentPermissions } = useRolePermissions(selectedRoleId || 0)
@@ -108,6 +115,18 @@ function RolesPage() {
       render: (_, record) => <RolePermissionCodes roleId={record.id} />,
     },
     {
+      title: '删除状态',
+      key: 'deleteStatus',
+      render: (_, record) => {
+        const isDeleted = !!record.deletedAt
+        return (
+          <span className={isDeleted ? 'text-red-500' : 'text-green-500'}>
+            {isDeleted ? '已禁用' : '正常'}
+          </span>
+        )
+      },
+    },
+    {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
@@ -116,13 +135,14 @@ function RolesPage() {
     {
       title: '操作',
       key: 'actions',
-      width: 240,
+      width: 280,
       render: (_, record) => {
+        const isDeleted = !!record.deletedAt
         const actions: { key: string; node: ReactNode }[] = [
           {
             key: 'edit',
             node: (
-              <Button type="link" onClick={() => handleEditRole(record)}>
+              <Button type="link" onClick={() => handleEditRole(record)} disabled={isDeleted}>
                 编辑
               </Button>
             ),
@@ -130,20 +150,33 @@ function RolesPage() {
           {
             key: 'perm',
             node: (
-              <Button type="link" onClick={() => handleOpenPermission(record)}>
+              <Button type="link" onClick={() => handleOpenPermission(record)} disabled={isDeleted}>
                 配置权限
               </Button>
+            ),
+          },
+          {
+            key: 'restore',
+            node: (
+              <Popconfirm
+                title="确定要恢复该角色吗？"
+                onConfirm={() => handleRestoreRole(record.id)}
+              >
+                <Button type="link" disabled={!isDeleted}>
+                  恢复
+                </Button>
+              </Popconfirm>
             ),
           },
           {
             key: 'delete',
             node: (
               <Popconfirm
-                title="确定要删除该角色吗？"
+                title={isDeleted ? '角色已禁用' : '确定要禁用该角色吗？'}
                 onConfirm={() => handleDeleteRole(record.id)}
               >
                 <Button type="link" danger>
-                  删除
+                  禁用
                 </Button>
               </Popconfirm>
             ),
@@ -172,9 +205,18 @@ function RolesPage() {
   const handleDeleteRole = async (id: number) => {
     try {
       await deleteRole.mutateAsync(id)
-      messageApi.success('删除成功')
+      messageApi.success('禁用成功')
     } catch (error) {
-      messageApi.error(extractErrorMessage(error, '删除失败'))
+      messageApi.error(extractErrorMessage(error, '禁用失败'))
+    }
+  }
+
+  const handleRestoreRole = async (id: number) => {
+    try {
+      await restoreRole.mutateAsync(id)
+      messageApi.success('恢复成功')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '恢复失败'))
     }
   }
 

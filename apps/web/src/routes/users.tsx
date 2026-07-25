@@ -18,7 +18,13 @@ import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useRoles } from '@/hooks/use-roles'
-import { useCreateUser, useDeleteUser, useUpdateUser, useUsers } from '@/hooks/use-users'
+import {
+  useCreateUser,
+  useDeleteUser,
+  useRestoreUser,
+  useUpdateUser,
+  useUsers,
+} from '@/hooks/use-users'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
 import { PermissionCodes } from '@/lib/permissions'
@@ -51,6 +57,7 @@ function UsersPage() {
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
+  const restoreUser = useRestoreUser()
 
   const [form] = Form.useForm<CreateUser & UpdateUser & { roleId?: number }>()
 
@@ -84,30 +91,59 @@ function UsersPage() {
       ),
     },
     {
+      title: '删除状态',
+      key: 'deleteStatus',
+      render: (_, record) => {
+        const isDeleted = !!record.deletedAt
+        return (
+          <span className={isDeleted ? 'text-red-500' : 'text-green-500'}>
+            {isDeleted ? '已禁用' : '正常'}
+          </span>
+        )
+      },
+    },
+    {
       title: '操作',
       key: 'actions',
-      width: 160,
+      width: 200,
       render: (_, record) => {
         const isAdmin = record.username === 'admin'
+        const isDeleted = !!record.deletedAt
         const actions: { key: string; node: ReactNode }[] = [
           {
             key: 'edit',
             node: (
-              <Button type="link" onClick={() => handleEdit(record)}>
+              <Button type="link" onClick={() => handleEdit(record)} disabled={isDeleted}>
                 编辑
               </Button>
+            ),
+          },
+          {
+            key: 'restore',
+            node: (
+              <Popconfirm title="确定要恢复该用户吗？" onConfirm={() => handleRestore(record.id)}>
+                <Button type="link" disabled={!isDeleted}>
+                  恢复
+                </Button>
+              </Popconfirm>
             ),
           },
           {
             key: 'delete',
             node: (
               <Popconfirm
-                title={isAdmin ? '初始管理员账号不可删除' : '确定要删除该用户吗？'}
+                title={
+                  isAdmin
+                    ? '初始管理员账号不可删除'
+                    : isDeleted
+                      ? '用户已禁用'
+                      : '确定要禁用该用户吗？'
+                }
                 disabled={isAdmin}
                 onConfirm={() => handleDelete(record.id)}
               >
                 <Button type="link" danger disabled={isAdmin}>
-                  删除
+                  {isDeleted ? '禁用' : '禁用'}
                 </Button>
               </Popconfirm>
             ),
@@ -144,9 +180,18 @@ function UsersPage() {
   const handleDelete = async (id: number) => {
     try {
       await deleteUser.mutateAsync(id)
-      messageApi.success('删除成功')
+      messageApi.success('禁用成功')
     } catch (error) {
-      messageApi.error(extractErrorMessage(error, '删除失败'))
+      messageApi.error(extractErrorMessage(error, '禁用失败'))
+    }
+  }
+
+  const handleRestore = async (id: number) => {
+    try {
+      await restoreUser.mutateAsync(id)
+      messageApi.success('恢复成功')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '恢复失败'))
     }
   }
 

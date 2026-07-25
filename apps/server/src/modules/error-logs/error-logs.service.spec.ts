@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common'
+import { ConflictException, NotFoundException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock RedisService
@@ -53,6 +53,8 @@ vi.mock('@/db/schema/error-whitelist', () => ({
 
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
+  maybeDeleted: vi.fn(() => undefined),
+  isUniqueViolation: vi.fn(() => false),
 }))
 
 const { db: mockDb } = await import('@/db')
@@ -281,6 +283,41 @@ describe('ErrorLogsService', () => {
       vi.mocked(mockDb.query.errorWhitelist.findFirst).mockResolvedValue(undefined)
 
       await expect(service.removeWhitelist(999)).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  describe('restoreWhitelist', () => {
+    it('白名单不存在时抛 NotFoundException', async () => {
+      vi.mocked(mockDb.query.errorWhitelist.findFirst).mockResolvedValue(undefined)
+
+      await expect(service.restoreWhitelist(999)).rejects.toThrow(NotFoundException)
+    })
+
+    it('白名单未被删除时抛 ConflictException', async () => {
+      vi.mocked(mockDb.query.errorWhitelist.findFirst).mockResolvedValue({
+        id: 1,
+        deletedAt: null,
+      } as never)
+
+      await expect(service.restoreWhitelist(1)).rejects.toThrow(ConflictException)
+    })
+
+    it('恢复成功', async () => {
+      vi.mocked(mockDb.query.errorWhitelist.findFirst).mockResolvedValue({
+        id: 1,
+        deletedAt: new Date(),
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1, pattern: 'test', deletedAt: null }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.restoreWhitelist(1)
+      expect(result).toEqual({ id: 1, pattern: 'test', deletedAt: null })
+      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all')
     })
   })
 })

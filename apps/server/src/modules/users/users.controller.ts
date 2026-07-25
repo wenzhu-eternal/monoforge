@@ -44,7 +44,11 @@ export class UsersController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ZodSerializerDto(PaginatedResponseSchema(UserListItemSchema))
-  async findAll(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+  async findAll(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @CurrentUser() currentUser?: TokenPayload,
+  ) {
     // 防御 NaN: 非数字字符串 parseInt 后为 NaN，需回落到默认值
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
@@ -54,7 +58,8 @@ export class UsersController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    return this.usersService.findAll(pageNum, size)
+    const isAdmin = currentUser?.username === 'admin'
+    return this.usersService.findAll(pageNum, size, isAdmin)
   }
 
   @Get('stats')
@@ -71,8 +76,9 @@ export class UsersController {
   @UseInterceptors(CacheInterceptor)
   @ApiOperation({ summary: '按ID查询用户（带缓存）' })
   @ZodSerializerDto(UserSchema)
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.usersService.findById(id)
+  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
+    const isAdmin = currentUser.username === 'admin'
+    return this.usersService.findById(id, isAdmin)
   }
 
   @Post()
@@ -110,7 +116,16 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCodes.USER_DELETE)
   @ApiOperation({ summary: '删除用户' })
-  async remove(@Param('id', ParseIntPipe) id: number) {
+  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
     return this.usersService.remove(id)
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCodes.USER_UPDATE)
+  @ApiOperation({ summary: '恢复已删除用户' })
+  @ZodSerializerDto(UserSchema)
+  async restore(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
+    return this.usersService.restore(id)
   }
 }

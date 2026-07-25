@@ -66,6 +66,7 @@ export class ErrorLogsController {
     @Query('keyword') keyword?: string,
     @Query('source') source?: string,
     @Query('isResolved') isResolved?: string,
+    @CurrentUser() currentUser?: { username: string },
   ) {
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
@@ -75,7 +76,8 @@ export class ErrorLogsController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    return this.errorLogsService.findAll(pageNum, size, keyword, source, isResolved)
+    const isAdmin = currentUser?.username === 'admin'
+    return this.errorLogsService.findAll(pageNum, size, keyword, source, isResolved, isAdmin)
   }
 
   @Get('stats')
@@ -188,5 +190,16 @@ export class ErrorLogsController {
   @ApiOperation({ summary: '删除白名单规则' })
   async removeWhitelist(@Param('id', ParseIntPipe) id: number) {
     return this.errorLogsService.removeWhitelist(id)
+  }
+
+  @Post('whitelist/:id/restore')
+  @UseGuards(PermissionsGuard)
+  @ApiBearerAuth()
+  @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '恢复已删除白名单规则' })
+  @ZodSerializerDto(ErrorWhitelistSchema)
+  async restoreWhitelist(@Param('id', ParseIntPipe) id: number) {
+    return this.errorLogsService.restoreWhitelist(id)
   }
 }

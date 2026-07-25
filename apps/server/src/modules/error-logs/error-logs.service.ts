@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import type { ErrorLog, ErrorLogGroup, ErrorStats, ErrorWhitelist } from '@shared/schemas/error-log'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq, ilike, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { errorLogs } from '@/db/schema'
 import { errorWhitelist } from '@/db/schema/error-whitelist'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -94,12 +94,14 @@ export class ErrorLogsService {
     keyword?: string,
     source?: string,
     isResolved?: string,
+    includeDeleted = false,
   ): Promise<PaginatedResponse<ErrorLog>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
 
-    const conditions = [notDeleted(errorLogs.deletedAt)]
+    const deletedFilter = maybeDeleted(errorLogs.deletedAt, includeDeleted)
+    const conditions = [deletedFilter]
     if (keyword) {
       conditions.push(ilike(errorLogs.message, `%${keyword}%`))
     }
@@ -402,6 +404,32 @@ export class ErrorLogsService {
 
     await this.invalidateWhitelistCache()
     return { message: `白名单 ID ${id} 已删除` }
+  }
+
+  async restoreWhitelist(id: number): Promise<ErrorWhitelist> {
+    const existing = await db.query.errorWhitelist.findFirst({
+      where: eq(errorWhitelist.id, id),
+    })
+    if (!existing) {
+      throw new NotFoundException(`白名单 ID ${id} 不存在`)
+    }
+
+    if (!existing.deletedAt) {
+      throw new ConflictException('白名单未被删除，无需恢复')
+    }
+
+    const [restored] = await db
+      .update(errorWhitelist)
+      .set({ deletedAt: null })
+      .where(eq(errorWhitelist.id, id))
+      .returning()
+
+    if (!restored) {
+      throw new NotFoundException('恢复白名单失败')
+    }
+
+    await this.invalidateWhitelistCache()
+    return restored as ErrorWhitelist
   }
 
   private async invalidateWhitelistCache(): Promise<void> {

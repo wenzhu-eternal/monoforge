@@ -17,6 +17,8 @@ vi.mock('@/db', () => ({
 
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
+  maybeDeleted: vi.fn(() => undefined),
+  isUniqueViolation: vi.fn(() => false),
 }))
 
 const { db: mockDb } = await import('@/db')
@@ -176,6 +178,40 @@ describe('PermissionsService', () => {
       vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue(undefined)
 
       await expect(service.remove(999)).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  describe('restore', () => {
+    it('should throw NotFoundException for non-existent id', async () => {
+      vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue(undefined)
+
+      await expect(service.restore(999)).rejects.toThrow(NotFoundException)
+    })
+
+    it('should throw ConflictException when not soft-deleted', async () => {
+      vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue({
+        id: 1,
+        code: 'user:view',
+        deletedAt: null,
+      } as never)
+
+      await expect(service.restore(1)).rejects.toThrow(ConflictException)
+    })
+
+    it('should restore successfully', async () => {
+      vi.mocked(mockDb.query.permissions.findFirst)
+        .mockResolvedValueOnce({ id: 1, code: 'user:view', deletedAt: new Date() } as never)
+        .mockResolvedValueOnce(undefined) // duplicate check
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1, code: 'user:view', deletedAt: null }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.restore(1)
+      expect(result).toEqual({ id: 1, code: 'user:view', deletedAt: null })
     })
   })
 })

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { TokenPayload } from '@/modules/auth/auth.service'
 import { PermissionsController } from './permissions.controller'
 import type { PermissionsService } from './permissions.service'
 
@@ -14,6 +15,7 @@ describe('PermissionsController', () => {
       create: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
+      restore: vi.fn(),
     } as unknown as PermissionsService
 
     controller = new PermissionsController(service)
@@ -24,7 +26,10 @@ describe('PermissionsController', () => {
   })
 
   describe('findAll', () => {
-    it('should return paginated permissions', async () => {
+    const nonAdminUser = { sub: 2, username: 'user', email: 'user@test.com' } as TokenPayload
+    const adminUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+
+    it('should return paginated permissions (non-admin)', async () => {
       const mockResult = {
         list: [{ id: 1, code: 'user:view', name: '查看用户', routes: ['GET /users/'] }],
         total: 1,
@@ -35,10 +40,26 @@ describe('PermissionsController', () => {
 
       vi.mocked(service.findAll).mockResolvedValue(mockResult as never)
 
-      const result = await controller.findAll('1', '10')
+      const result = await controller.findAll('1', '10', nonAdminUser)
 
       expect(result).toEqual(mockResult)
-      expect(service.findAll).toHaveBeenCalledWith(1, 10)
+      expect(service.findAll).toHaveBeenCalledWith(1, 10, false)
+    })
+
+    it('should return all permissions for admin (including soft-deleted)', async () => {
+      const mockResult = {
+        list: [{ id: 1, code: 'user:view', name: '查看用户', routes: ['GET /users/'] }],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+        totalPages: 1,
+      }
+
+      vi.mocked(service.findAll).mockResolvedValue(mockResult as never)
+
+      await controller.findAll('1', '10', adminUser)
+
+      expect(service.findAll).toHaveBeenCalledWith(1, 10, true)
     })
 
     it('should use default values when no params provided', async () => {
@@ -50,9 +71,9 @@ describe('PermissionsController', () => {
         totalPages: 1,
       } as never)
 
-      await controller.findAll(undefined, undefined)
+      await controller.findAll(undefined, undefined, nonAdminUser)
 
-      expect(service.findAll).toHaveBeenCalledWith(1, 10)
+      expect(service.findAll).toHaveBeenCalledWith(1, 10, false)
     })
   })
 
@@ -76,11 +97,12 @@ describe('PermissionsController', () => {
     it('should return permission by id', async () => {
       const mockPermission = { id: 1, code: 'user:view', name: '查看用户' }
       vi.mocked(service.findById).mockResolvedValue(mockPermission as never)
+      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
 
-      const result = await controller.findOne(1)
+      const result = await controller.findOne(1, currentUser)
 
       expect(result).toEqual(mockPermission)
-      expect(service.findById).toHaveBeenCalledWith(1)
+      expect(service.findById).toHaveBeenCalledWith(1, true)
     })
   })
 
@@ -147,8 +169,9 @@ describe('PermissionsController', () => {
   describe('remove', () => {
     it('should soft delete permission', async () => {
       vi.mocked(service.remove).mockResolvedValue({ message: '权限 ID 1 已删除' })
+      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
 
-      const result = await controller.remove(1)
+      const result = await controller.remove(1, currentUser)
 
       expect(result).toEqual({ message: '权限 ID 1 已删除' })
       expect(service.remove).toHaveBeenCalledWith(1)

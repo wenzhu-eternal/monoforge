@@ -25,6 +25,7 @@ import { ZodSerializerDto } from 'nestjs-zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { type TokenPayload } from '@/modules/auth/auth.service'
 import { FilesService, UPLOAD_DIR } from './files.service'
 
 @ApiTags('Files')
@@ -58,7 +59,11 @@ export class FilesController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ZodSerializerDto(PaginatedResponseSchema(FileItemSchema))
-  async findAll(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+  async findAll(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @CurrentUser() currentUser?: TokenPayload,
+  ) {
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
     if (Number.isNaN(pageNum) || pageNum < 1) {
@@ -67,14 +72,37 @@ export class FilesController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    return this.filesService.findAll(pageNum, size)
+    const isAdmin = currentUser?.username === 'admin'
+    return this.filesService.findAll(pageNum, size, isAdmin)
   }
 
   @Get(':id/preview')
   @Permissions(PermissionCodes.FILE_VIEW)
   @ApiOperation({ summary: '预览文件（支持 Range 请求）' })
-  async preview(@Param('id', ParseIntPipe) id: number, @Res() response: Response) {
-    const file = await this.filesService.findById(id)
+  async preview(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() response: Response,
+    @CurrentUser() currentUser: TokenPayload,
+  ) {
+    const isAdmin = currentUser.username === 'admin'
+    const file = await this.filesService.findByIdRaw(id)
+
+    if (!file) {
+      response.status(404).json({ message: '文件不存在' })
+      return
+    }
+
+    // 软删文件返回 404
+    if (file.deletedAt) {
+      response.status(404).json({ message: '文件不存在' })
+      return
+    }
+
+    // 校验权限: 管理员或上传者本人
+    if (!isAdmin && file.uploadedBy !== currentUser.sub) {
+      response.status(403).json({ message: '无权访问该文件' })
+      return
+    }
 
     response.setHeader('Content-Type', file.mimeType)
     response.setHeader('Cache-Control', 'public, max-age=31536000')
@@ -126,5 +154,16 @@ export class FilesController {
     @CurrentUser() user: { sub: number; username: string },
   ) {
     return this.filesService.remove(id, user.sub, user.username === 'admin')
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCodes.FILE_DELETE)
+  @ApiOperation({ summary: '恢复已删除文件' })
+  async restore(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: { sub: number; username: string },
+  ) {
+    return this.filesService.restore(id, user.sub, user.username === 'admin')
   }
 }

@@ -22,6 +22,7 @@ import {
   useCreatePermission,
   useDeletePermission,
   usePermissions,
+  useRestorePermission,
   useRoutes,
   useUpdatePermission,
 } from '@/hooks/use-permissions'
@@ -56,6 +57,7 @@ function PermissionCodesPage() {
   const createPermission = useCreatePermission()
   const updatePermission = useUpdatePermission()
   const deletePermission = useDeletePermission()
+  const restorePermission = useRestorePermission()
 
   const [form] = Form.useForm()
 
@@ -95,6 +97,18 @@ function PermissionCodesPage() {
       ),
     },
     {
+      title: '删除状态',
+      key: 'deleteStatus',
+      render: (_, record) => {
+        const isDeleted = !!record.deletedAt
+        return (
+          <span className={isDeleted ? 'text-red-500' : 'text-green-500'}>
+            {isDeleted ? '已禁用' : '正常'}
+          </span>
+        )
+      },
+    },
+    {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
@@ -103,13 +117,14 @@ function PermissionCodesPage() {
     {
       title: '操作',
       key: 'actions',
-      width: 240,
+      width: 280,
       render: (_, record) => {
+        const isDeleted = !!record.deletedAt
         const actions: { key: string; node: ReactNode }[] = [
           {
             key: 'edit',
             node: (
-              <Button type="link" onClick={() => handleEdit(record)}>
+              <Button type="link" onClick={() => handleEdit(record)} disabled={isDeleted}>
                 编辑
               </Button>
             ),
@@ -117,17 +132,34 @@ function PermissionCodesPage() {
           {
             key: 'routes',
             node: (
-              <Button type="link" onClick={() => handleConfigureRoutes(record)}>
+              <Button
+                type="link"
+                onClick={() => handleConfigureRoutes(record)}
+                disabled={isDeleted}
+              >
                 配置路由
               </Button>
             ),
           },
           {
+            key: 'restore',
+            node: (
+              <Popconfirm title="确定要恢复该权限吗？" onConfirm={() => handleRestore(record.id)}>
+                <Button type="link" disabled={!isDeleted}>
+                  恢复
+                </Button>
+              </Popconfirm>
+            ),
+          },
+          {
             key: 'delete',
             node: (
-              <Popconfirm title="确定要删除该权限吗？" onConfirm={() => handleDelete(record.id)}>
+              <Popconfirm
+                title={isDeleted ? '权限已禁用' : '确定要禁用该权限吗？'}
+                onConfirm={() => handleDelete(record.id)}
+              >
                 <Button type="link" danger>
-                  删除
+                  禁用
                 </Button>
               </Popconfirm>
             ),
@@ -162,9 +194,18 @@ function PermissionCodesPage() {
   const handleDelete = async (id: number) => {
     try {
       await deletePermission.mutateAsync(id)
-      messageApi.success('删除成功')
+      messageApi.success('禁用成功')
     } catch (error) {
-      messageApi.error(extractErrorMessage(error, '删除失败'))
+      messageApi.error(extractErrorMessage(error, '禁用失败'))
+    }
+  }
+
+  const handleRestore = async (id: number) => {
+    try {
+      await restorePermission.mutateAsync(id)
+      messageApi.success('恢复成功')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '恢复失败'))
     }
   }
 

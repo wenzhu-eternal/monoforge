@@ -72,3 +72,17 @@ export const useDeleteRole = () => {
     },
   })
 }
+
+export const useRestoreRole = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const response = await api.post<ApiResponse<Role>>(`/api/v1/roles/${id}/restore`)
+      return response.data.data!
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] })
+    },
+  })
+}

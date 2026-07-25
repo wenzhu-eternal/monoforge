@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { TokenPayload } from '@/modules/auth/auth.service'
 import { ErrorLogsController } from './error-logs.controller'
 import type { ErrorLogsService } from './error-logs.service'
 
@@ -21,6 +22,7 @@ describe('ErrorLogsController', () => {
       createWhitelist: vi.fn(),
       updateWhitelist: vi.fn(),
       removeWhitelist: vi.fn(),
+      restoreWhitelist: vi.fn(),
     } as unknown as ErrorLogsService
 
     controller = new ErrorLogsController(service)
@@ -43,7 +45,10 @@ describe('ErrorLogsController', () => {
   })
 
   describe('findAll', () => {
-    it('返回分页错误日志', async () => {
+    const nonAdminUser = { sub: 2, username: 'user', email: 'user@test.com' } as TokenPayload
+    const adminUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+
+    it('返回分页错误日志（管理员）', async () => {
       const mockResult = {
         list: [],
         total: 0,
@@ -53,10 +58,10 @@ describe('ErrorLogsController', () => {
       }
       vi.mocked(service.findAll).mockResolvedValue(mockResult as never)
 
-      const result = await controller.findAll('1', '10', 'keyword', 'backend', 'false')
+      const result = await controller.findAll('1', '10', 'keyword', 'backend', 'false', adminUser)
 
       expect(result).toEqual(mockResult)
-      expect(service.findAll).toHaveBeenCalledWith(1, 10, 'keyword', 'backend', 'false')
+      expect(service.findAll).toHaveBeenCalledWith(1, 10, 'keyword', 'backend', 'false', true)
     })
 
     it('未传参时使用默认值', async () => {
@@ -68,9 +73,9 @@ describe('ErrorLogsController', () => {
         totalPages: 1,
       } as never)
 
-      await controller.findAll(undefined, undefined, undefined, undefined, undefined)
+      await controller.findAll(undefined, undefined, undefined, undefined, undefined, nonAdminUser)
 
-      expect(service.findAll).toHaveBeenCalledWith(1, 10, undefined, undefined, undefined)
+      expect(service.findAll).toHaveBeenCalledWith(1, 10, undefined, undefined, undefined, false)
     })
 
     it('page 非数字时抛 BadRequestException', async () => {

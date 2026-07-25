@@ -34,6 +34,7 @@ export const ErrorLogSchema = z.object({
   isResolved: z.boolean(),
   resolvedAt: z.coerce.date().nullable().optional(),
   resolvedBy: z.number().nullable().optional(),
+  deletedAt: z.coerce.date().nullable().optional(),
   createdAt: z.coerce.date(),
 })
 
@@ -73,6 +74,7 @@ export const ErrorWhitelistSchema = z.object({
   matchType: WhitelistMatchType,
   description: z.string().max(500).optional().nullable(),
   isActive: z.boolean(),
+  deletedAt: z.coerce.date().nullable().optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 })

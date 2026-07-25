@@ -37,6 +37,7 @@ vi.mock('@/db', () => ({
 
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
+  maybeDeleted: vi.fn(() => undefined),
   isUniqueViolation: vi.fn(() => false),
 }))
 

@@ -92,6 +92,19 @@ export function useDeletePermission() {
   })
 }
 
+export function useRestorePermission() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await api.post<ApiResponse<Permission>>(`/api/v1/permissions/${id}/restore`)
+      return res.data.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['permissions'] })
+    },
+  })
+}
+
 export function useRolePermissions(roleId: number) {
   return useQuery({
     queryKey: ['role-permissions', roleId],

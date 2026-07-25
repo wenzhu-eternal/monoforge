@@ -1,6 +1,12 @@
 import { mkdir, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common'
 import type { FileItem, UploadResult } from '@shared/schemas/file'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq } from 'drizzle-orm'
@@ -15,7 +21,7 @@ import {
   validateMimeType,
 } from '@/common/file-validator'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, users } from '@/db/schema'
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
@@ -71,10 +77,15 @@ export class FilesService {
     }
   }
 
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<FileItem>> {
+  async findAll(
+    page = 1,
+    pageSize = 10,
+    includeDeleted = false,
+  ): Promise<PaginatedResponse<FileItem>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
+    const deletedFilter = maybeDeleted(files.deletedAt, includeDeleted)
 
     const [items, countResult] = await Promise.all([
       db
@@ -86,15 +97,16 @@ export class FilesService {
           size: files.size,
           uploadedBy: files.uploadedBy,
           uploadedByUsername: users.username,
+          deletedAt: files.deletedAt,
           createdAt: files.createdAt,
         })
         .from(files)
         .leftJoin(users, eq(files.uploadedBy, users.id))
-        .where(notDeleted(files.deletedAt))
+        .where(and(deletedFilter))
         .orderBy(desc(files.createdAt))
         .limit(safePageSize)
         .offset(offset),
-      db.select({ value: count() }).from(files).where(notDeleted(files.deletedAt)),
+      db.select({ value: count() }).from(files).where(and(deletedFilter)),
     ])
 
     const total = countResult[0]?.value ?? 0
@@ -107,9 +119,10 @@ export class FilesService {
     }
   }
 
-  async findById(id: number) {
+  async findById(id: number, includeDeleted = false) {
+    const deletedFilter = maybeDeleted(files.deletedAt, includeDeleted)
     const file = await db.query.files.findFirst({
-      where: and(eq(files.id, id), notDeleted(files.deletedAt)),
+      where: and(eq(files.id, id), deletedFilter),
     })
     if (!file) {
       throw new NotFoundException(`文件 ID ${id} 不存在`)
@@ -118,7 +131,17 @@ export class FilesService {
   }
 
   /**
-   * 删除文件: 仅管理员或上传者本人，磁盘文件移到隔离目录
+   * 检查文件是否已被软删（不管 includeDeleted）
+   */
+  async findByIdRaw(id: number) {
+    const file = await db.query.files.findFirst({
+      where: eq(files.id, id),
+    })
+    return file
+  }
+
+  /**
+   * 删除文件: 仅管理员或上传者本人，磁盘文件移到隔离目录并记录 trash_path
    */
   async remove(id: number, currentUserId: number, isAdmin: boolean): Promise<{ message: string }> {
     const file = await db.query.files.findFirst({
@@ -132,25 +155,60 @@ export class FilesService {
       throw new ForbiddenException('无权删除他人上传的文件')
     }
 
-    // 磁盘文件移到隔离目录，静态托管不再服务，杜绝已删文件可访问
-    await this.moveToTrash(file.path, file.filename)
+    // 磁盘文件移到隔离目录，记录 trash_path
+    const trashPath = await this.moveToTrash(file.path, file.filename)
 
-    await db.update(files).set({ deletedAt: new Date() }).where(eq(files.id, id))
+    await db.update(files).set({ deletedAt: new Date(), trashPath }).where(eq(files.id, id))
 
     return { message: `文件 ID ${id} 已删除` }
   }
 
-  private async moveToTrash(filePath: string, filename: string): Promise<void> {
+  /**
+   * 恢复文件: 凭 trash_path 精确还原磁盘文件
+   */
+  async restore(id: number, currentUserId: number, isAdmin: boolean): Promise<{ message: string }> {
+    const file = await db.query.files.findFirst({
+      where: eq(files.id, id),
+    })
+    if (!file) {
+      throw new NotFoundException(`文件 ID ${id} 不存在`)
+    }
+
+    if (!file.deletedAt) {
+      throw new ConflictException('文件未被删除，无需恢复')
+    }
+
+    if (!isAdmin && file.uploadedBy !== currentUserId) {
+      throw new ForbiddenException('无权恢复他人上传的文件')
+    }
+
+    // 凭 trash_path 精确还原磁盘文件
+    if (file.trashPath) {
+      try {
+        await rename(file.trashPath, file.path)
+      } catch (err) {
+        this.logger.warn(`磁盘文件还原失败: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    await db.update(files).set({ deletedAt: null, trashPath: null }).where(eq(files.id, id))
+
+    return { message: `文件 ID ${id} 已恢复` }
+  }
+
+  private async moveToTrash(filePath: string, filename: string): Promise<string> {
     try {
       await mkdir(TRASH_DIR, { recursive: true })
       // 隔离目录内用 时间戳+原名 避免冲突
       const trashPath = join(TRASH_DIR, `${Date.now()}-${filename}`)
       await rename(filePath, trashPath)
+      return trashPath
     } catch (err) {
       // 文件可能已被外部删除，不阻塞软删流程
       this.logger.warn(
         `磁盘文件移到隔离目录失败: ${err instanceof Error ? err.message : String(err)}`,
       )
+      return ''
     }
   }
 

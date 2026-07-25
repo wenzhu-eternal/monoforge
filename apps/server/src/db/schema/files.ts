@@ -9,6 +9,7 @@ export const files = pgTable('files', {
   size: integer('size').notNull(), // 字节
   path: text('path').notNull(), // 磁盘绝对路径
   uploadedBy: integer('uploaded_by').references(() => users.id), // 上传者
+  trashPath: varchar('trash_path'), // 软删时隔离文件路径
   createdAt: timestamp('created_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
 })

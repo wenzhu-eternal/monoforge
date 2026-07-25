@@ -72,3 +72,17 @@ export const useDeleteUser = () => {
     },
   })
 }
+
+export const useRestoreUser = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const response = await api.post<ApiResponse<User>>(`/api/v1/users/${id}/restore`)
+      return response.data.data!
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+    },
+  })
+}

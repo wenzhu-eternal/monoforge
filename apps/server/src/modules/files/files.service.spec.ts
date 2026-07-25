@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common'
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock db（files.service 直接 import，需提供 query.files.findFirst + update）
@@ -18,6 +18,7 @@ vi.mock('@/db', () => ({
 // Mock helpers（notDeleted 在 service 内组合 where，mock 成透传函数即可）
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(),
+  maybeDeleted: vi.fn(),
 }))
 
 // Mock fs/promises（capture mkdir + rename 调用）
@@ -124,6 +125,78 @@ describe('FilesService', () => {
       const result = await service.remove(1, 5, false)
 
       expect(result.message).toContain('1')
+      expect(mockUpdate).toHaveBeenCalled()
+    })
+  })
+
+  describe('restore', () => {
+    it('文件不存在 → 抛 NotFoundException', async () => {
+      mockFindFirst.mockResolvedValue(undefined)
+
+      await expect(service.restore(999, 1, false)).rejects.toThrow(NotFoundException)
+      expect(mockRename).not.toHaveBeenCalled()
+    })
+
+    it('文件未被删除 → 抛 ConflictException', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        deletedAt: null,
+      })
+
+      await expect(service.restore(1, 1, false)).rejects.toThrow(ConflictException)
+    })
+
+    it('非上传者非 admin → 抛 ForbiddenException', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        deletedAt: new Date(),
+        uploadedBy: 2,
+        trashPath: '/uploads-trash/123-a.png',
+        path: '/uploads/a.png',
+      })
+
+      await expect(service.restore(1, 3, false)).rejects.toThrow(ForbiddenException)
+    })
+
+    it('恢复成功 → 磁盘文件还原 + DB 恢复', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        deletedAt: new Date(),
+        uploadedBy: 5,
+        trashPath: '/uploads-trash/123-a.png',
+        path: '/uploads/a.png',
+      })
+      mockUpdate.mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      } as never)
+
+      const result = await service.restore(1, 5, false)
+
+      expect(result.message).toContain('1')
+      expect(mockRename).toHaveBeenCalledWith('/uploads-trash/123-a.png', '/uploads/a.png')
+      expect(mockUpdate).toHaveBeenCalled()
+    })
+
+    it('trashPath 为空 → 仅恢复 DB，不还原磁盘', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        deletedAt: new Date(),
+        uploadedBy: 5,
+        trashPath: null,
+        path: '/uploads/a.png',
+      })
+      mockUpdate.mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      } as never)
+
+      const result = await service.restore(1, 5, false)
+
+      expect(result.message).toContain('1')
+      expect(mockRename).not.toHaveBeenCalled()
       expect(mockUpdate).toHaveBeenCalled()
     })
   })

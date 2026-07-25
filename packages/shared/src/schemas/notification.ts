@@ -8,6 +8,7 @@ export const NotificationSchema = z.object({
   content: z.string().nullable(),
   read: z.boolean(),
   createdAt: z.coerce.date(),
+  deletedAt: z.coerce.date().nullable(),
 })
 
 export type Notification = z.infer<typeof NotificationSchema>

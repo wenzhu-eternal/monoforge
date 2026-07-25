@@ -6,7 +6,7 @@ import type { User, UserListItem } from '@shared/schemas/user'
 import * as argon2 from 'argon2'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { isUniqueViolation, notDeleted } from '@/db/helpers'
+import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, rolePermissions, roles, users } from '@/db/schema'
 import { Cacheable } from '@/modules/cache/cache.decorator'
 import { CacheService } from '@/modules/cache/cache.service'
@@ -15,10 +15,15 @@ import { CacheService } from '@/modules/cache/cache.service'
 export class UsersService {
   constructor(private readonly cacheService: CacheService) {}
 
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<UserListItem>> {
+  async findAll(
+    page = 1,
+    pageSize = 10,
+    includeDeleted = false,
+  ): Promise<PaginatedResponse<UserListItem>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
+    const deletedFilter = maybeDeleted(users.deletedAt, includeDeleted)
 
     const [items, countResult] = await Promise.all([
       db
@@ -31,20 +36,18 @@ export class UsersService {
           phone: users.phone,
           roleId: users.roleId,
           status: users.status,
+          deletedAt: users.deletedAt,
           createdAt: users.createdAt,
           updatedAt: users.updatedAt,
           roleName: roles.name,
         })
         .from(users)
         .leftJoin(roles, eq(users.roleId, roles.id))
-        .where(notDeleted(users.deletedAt))
+        .where(and(deletedFilter))
         .limit(safePageSize)
         .offset(offset)
         .orderBy(desc(users.createdAt)),
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(users)
-        .where(notDeleted(users.deletedAt)),
+      db.select({ count: sql<number>`count(*)::int` }).from(users).where(and(deletedFilter)),
     ])
 
     const total = countResult[0]?.count ?? 0
@@ -88,9 +91,10 @@ export class UsersService {
   }
 
   @Cacheable('user:id', 300)
-  async findById(id: number): Promise<Omit<User, 'password'>> {
+  async findById(id: number, includeDeleted = false): Promise<Omit<User, 'password'>> {
+    const deletedFilter = maybeDeleted(users.deletedAt, includeDeleted)
     const user = await db.query.users.findFirst({
-      where: and(eq(users.id, id), notDeleted(users.deletedAt)),
+      where: and(eq(users.id, id), deletedFilter),
     })
 
     if (!user) {
@@ -221,6 +225,13 @@ export class UsersService {
     })
     if (!user?.roleId) return false
     if (user.username === 'admin') return true
+
+    // 检查 role 是否被软删：role 被软删时该 role 权限不生效
+    const role = await db.query.roles.findFirst({
+      where: eq(roles.id, user.roleId),
+    })
+    if (!role || role.deletedAt) return false
+
     const result = await db
       .select({ permission: rolePermissions.permission })
       .from(rolePermissions)
@@ -258,5 +269,57 @@ export class UsersService {
     await this.cacheService.delByPattern(`cache:user:*${id}*`)
 
     return { message: `用户 ID ${id} 已删除` }
+  }
+
+  async restore(id: number): Promise<Omit<User, 'password'>> {
+    const existingUser = await db.query.users.findFirst({
+      where: eq(users.id, id),
+    })
+
+    if (!existingUser) {
+      throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
+    }
+
+    if (!existingUser.deletedAt) {
+      throw new ConflictException('用户未被删除，无需恢复')
+    }
+
+    // 恢复前校验 username 唯一
+    const duplicateUsername = await db.query.users.findFirst({
+      where: and(eq(users.username, existingUser.username), notDeleted(users.deletedAt)),
+    })
+    if (duplicateUsername) {
+      throw new ConflictException('用户名已被其他用户使用，无法恢复')
+    }
+
+    // 恢复前校验 email 唯一
+    const duplicateEmail = await db.query.users.findFirst({
+      where: and(eq(users.email, existingUser.email), notDeleted(users.deletedAt)),
+    })
+    if (duplicateEmail) {
+      throw new ConflictException('邮箱已被其他用户使用，无法恢复')
+    }
+
+    try {
+      const [restored] = await db
+        .update(users)
+        .set({ deletedAt: null })
+        .where(eq(users.id, id))
+        .returning()
+
+      if (!restored) {
+        throw new ConflictException(ErrorMessages[ErrorCodes.OPERATION_FAILED])
+      }
+
+      const { password: _, ...userWithoutPassword } = restored
+      return userWithoutPassword
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('用户名或邮箱已存在（并发冲突）')
+      }
+      throw error
+    } finally {
+      await this.cacheService.delByPattern(`cache:user:*${id}*`)
+    }
   }
 }

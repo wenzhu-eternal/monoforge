@@ -6,6 +6,7 @@ export const PermissionSchema = z.object({
   name: z.string(),
   description: z.string().nullable().optional(),
   routes: z.array(z.string()).nullable().optional(),
+  deletedAt: z.coerce.date().nullable().optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 })

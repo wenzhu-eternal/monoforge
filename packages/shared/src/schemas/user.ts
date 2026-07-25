@@ -19,6 +19,7 @@ export const UserSchema = z.object({
     .optional(),
   roleId: z.number().int().positive().nullable().optional(),
   status: z.boolean(),
+  deletedAt: z.coerce.date().nullable().optional(),
   roleName: z.string().nullable().optional(),
   roles: z.array(RoleBriefSchema).optional(),
   permissions: z.array(z.string()).optional(),
@@ -38,6 +39,7 @@ export const UserListItemSchema = UserSchema.pick({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  deletedAt: z.coerce.date().nullable().optional(),
   roleName: z.string().nullable().optional(),
   roles: z.array(RoleBriefSchema).optional(),
 })

@@ -19,8 +19,10 @@ import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { PermissionSchema } from '@shared/schemas/permission'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { z } from 'zod'
+import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { type TokenPayload } from '@/modules/auth/auth.service'
 import { CreatePermissionDto, UpdatePermissionDto } from './dto/permission.dto'
 import { PermissionsService } from './permissions.service'
 
@@ -37,10 +39,15 @@ export class PermissionsController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ZodSerializerDto(PaginatedResponseSchema(PermissionSchema))
-  async findAll(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+  async findAll(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @CurrentUser() currentUser?: TokenPayload,
+  ) {
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
-    return this.permissionsService.findAll(pageNum, size)
+    const isAdmin = currentUser?.username === 'admin'
+    return this.permissionsService.findAll(pageNum, size, isAdmin)
   }
 
   @Get('list')
@@ -56,8 +63,9 @@ export class PermissionsController {
   @Permissions(PermissionCodes.PERMISSION_VIEW)
   @ApiOperation({ summary: '按ID查询权限' })
   @ZodSerializerDto(PermissionSchema)
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.permissionsService.findById(id)
+  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
+    const isAdmin = currentUser.username === 'admin'
+    return this.permissionsService.findById(id, isAdmin)
   }
 
   @Post()
@@ -81,7 +89,16 @@ export class PermissionsController {
   @HttpCode(HttpStatus.OK)
   @Permissions(PermissionCodes.PERMISSION_DELETE)
   @ApiOperation({ summary: '删除权限' })
-  async remove(@Param('id', ParseIntPipe) id: number) {
+  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
     return this.permissionsService.remove(id)
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(PermissionCodes.PERMISSION_UPDATE)
+  @ApiOperation({ summary: '恢复已删除权限' })
+  @ZodSerializerDto(PermissionSchema)
+  async restore(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
+    return this.permissionsService.restore(id)
   }
 }

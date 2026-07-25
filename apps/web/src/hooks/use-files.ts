@@ -50,6 +50,21 @@ export const useDeleteFile = () => {
   })
 }
 
+export const useRestoreFile = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const response = await api.post<ApiResponse<{ message: string }>>(
+        `/api/v1/files/${id}/restore`,
+      )
+      return response.data.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['files'] })
+    },
+  })
+}
+
 export async function previewFile(id: number): Promise<string> {
   const response = await api.get(`/api/v1/files/${id}/preview`, {
     responseType: 'blob',

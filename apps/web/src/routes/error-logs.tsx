@@ -37,6 +37,7 @@ import {
   useErrorLogsGrouped,
   useErrorStats,
   useResolveErrorLog,
+  useRestoreWhitelist,
   useUpdateWhitelist,
   useWhitelist,
 } from '@/hooks/use-logs'
@@ -522,6 +523,7 @@ function WhitelistTab() {
   const createMutation = useCreateWhitelist()
   const updateMutation = useUpdateWhitelist()
   const deleteMutation = useDeleteWhitelist()
+  const restoreMutation = useRestoreWhitelist()
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -583,9 +585,18 @@ function WhitelistTab() {
   const handleDelete = async (id: number) => {
     try {
       await deleteMutation.mutateAsync(id)
-      messageApi.success('删除成功')
+      messageApi.success('禁用成功')
     } catch (error) {
-      messageApi.error(extractErrorMessage(error, '删除失败'))
+      messageApi.error(extractErrorMessage(error, '禁用失败'))
+    }
+  }
+
+  const handleRestore = async (id: number) => {
+    try {
+      await restoreMutation.mutateAsync(id)
+      messageApi.success('恢复成功')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '恢复失败'))
     }
   }
 
@@ -619,8 +630,22 @@ function WhitelistTab() {
           checked={v}
           size="small"
           onChange={(checked) => handleToggleActive(record, checked)}
+          disabled={!!record.deletedAt}
         />
       ),
+    },
+    {
+      title: '删除状态',
+      key: 'deleteStatus',
+      width: 100,
+      render: (_, record) => {
+        const isDeleted = !!record.deletedAt
+        return (
+          <span className={isDeleted ? 'text-red-500' : 'text-green-500'}>
+            {isDeleted ? '已禁用' : '正常'}
+          </span>
+        )
+      },
     },
     {
       title: '创建时间',
@@ -630,23 +655,45 @@ function WhitelistTab() {
     },
     {
       title: '操作',
-      width: 140,
+      width: 180,
       render: (_: unknown, record: ErrorWhitelist) => {
+        const isDeleted = !!record.deletedAt
         const actions: { key: string; node: ReactNode }[] = [
           {
             key: 'edit',
             node: (
-              <Button type="link" size="small" onClick={() => openEdit(record)}>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => openEdit(record)}
+                disabled={isDeleted}
+              >
                 编辑
               </Button>
             ),
           },
           {
+            key: 'restore',
+            node: (
+              <Popconfirm
+                title="确定要恢复该白名单规则吗？"
+                onConfirm={() => handleRestore(record.id)}
+              >
+                <Button type="link" size="small" disabled={!isDeleted}>
+                  恢复
+                </Button>
+              </Popconfirm>
+            ),
+          },
+          {
             key: 'delete',
             node: (
-              <Popconfirm title="确认删除该白名单规则？" onConfirm={() => handleDelete(record.id)}>
+              <Popconfirm
+                title={isDeleted ? '规则已禁用' : '确定要禁用该白名单规则吗？'}
+                onConfirm={() => handleDelete(record.id)}
+              >
                 <Button type="link" size="small" danger>
-                  删除
+                  禁用
                 </Button>
               </Popconfirm>
             ),

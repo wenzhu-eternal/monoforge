@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { notifications } from '@/db/schema'
 import { EventsService } from '@/modules/websocket/events.service'
 
@@ -9,14 +9,14 @@ import { EventsService } from '@/modules/websocket/events.service'
 export class NotificationsService {
   constructor(private readonly eventsService: EventsService) {}
 
-  async list(userId: number, unreadOnly = false) {
+  async list(userId: number, unreadOnly = false, includeDeleted = false) {
     const where = unreadOnly
       ? and(
           eq(notifications.userId, userId),
           eq(notifications.read, false),
           notDeleted(notifications.deletedAt),
         )
-      : and(eq(notifications.userId, userId), notDeleted(notifications.deletedAt))
+      : and(eq(notifications.userId, userId), maybeDeleted(notifications.deletedAt, includeDeleted))
 
     return db.query.notifications.findMany({
       where,
@@ -25,7 +25,7 @@ export class NotificationsService {
     })
   }
 
-  async unreadCount(userId: number): Promise<number> {
+  async unreadCount(userId: number, includeDeleted = false): Promise<number> {
     const [result] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
@@ -33,7 +33,7 @@ export class NotificationsService {
         and(
           eq(notifications.userId, userId),
           eq(notifications.read, false),
-          notDeleted(notifications.deletedAt),
+          maybeDeleted(notifications.deletedAt, includeDeleted),
         ),
       )
     return result?.count ?? 0

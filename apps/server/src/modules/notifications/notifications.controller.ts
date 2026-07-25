@@ -27,13 +27,17 @@ export class NotificationsController {
   @ApiOperation({ summary: '拉取通知列表' })
   @ZodSerializerDto(z.array(NotificationSchema))
   list(@CurrentUser() user: TokenPayload, @Query('unreadOnly') unreadOnly?: string) {
-    return this.notificationsService.list(user.sub, unreadOnly === 'true')
+    return this.notificationsService.list(
+      user.sub,
+      unreadOnly === 'true',
+      user.username === 'admin',
+    )
   }
 
   @Get('unread-count')
   @ApiOperation({ summary: '未读通知数' })
   unreadCount(@CurrentUser() user: TokenPayload) {
-    return this.notificationsService.unreadCount(user.sub)
+    return this.notificationsService.unreadCount(user.sub, user.username === 'admin')
   }
 
   @Post(':id/read')

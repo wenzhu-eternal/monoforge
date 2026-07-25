@@ -16,6 +16,7 @@ vi.mock('@/db', () => ({
 
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
+  maybeDeleted: vi.fn(() => undefined),
 }))
 
 const { db: mockDb } = await import('@/db')
@@ -54,6 +55,17 @@ describe('NotificationsService', () => {
       const result = await service.list(1, true)
       expect(result).toEqual(mockList)
     })
+
+    it('includeDeleted=true 时包含已删除记录（管理员）', async () => {
+      const mockList = [
+        { id: 1, userId: 1, type: 'system', title: 'hello', read: false },
+        { id: 2, userId: 1, type: 'mention', title: 'deleted', read: true, deletedAt: new Date() },
+      ]
+      vi.mocked(mockDb.query.notifications.findMany).mockResolvedValue(mockList as never)
+
+      const result = await service.list(1, false, true)
+      expect(result).toEqual(mockList)
+    })
   })
 
   describe('unreadCount', () => {
@@ -77,6 +89,17 @@ describe('NotificationsService', () => {
 
       const result = await service.unreadCount(1)
       expect(result).toBe(0)
+    })
+
+    it('includeDeleted=true 时包含已删除记录计数（管理员）', async () => {
+      vi.mocked(mockDb.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ count: 8 }]),
+        }),
+      } as never)
+
+      const result = await service.unreadCount(1, true)
+      expect(result).toBe(8)
     })
   })
 

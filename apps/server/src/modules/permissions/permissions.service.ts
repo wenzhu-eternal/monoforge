@@ -3,27 +3,29 @@ import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { Permission } from '@shared/schemas/permission'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { isUniqueViolation, notDeleted } from '@/db/helpers'
+import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions } from '@/db/schema'
 
 @Injectable()
 export class PermissionsService {
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<Permission>> {
+  async findAll(
+    page = 1,
+    pageSize = 10,
+    includeDeleted = false,
+  ): Promise<PaginatedResponse<Permission>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
+    const deletedFilter = maybeDeleted(permissions.deletedAt, includeDeleted)
 
     const [items, countResult] = await Promise.all([
       db.query.permissions.findMany({
-        where: notDeleted(permissions.deletedAt),
+        where: and(deletedFilter),
         limit: safePageSize,
         offset,
         orderBy: [desc(permissions.createdAt)],
       }),
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(permissions)
-        .where(notDeleted(permissions.deletedAt)),
+      db.select({ count: sql<number>`count(*)::int` }).from(permissions).where(and(deletedFilter)),
     ])
 
     const total = countResult[0]?.count ?? 0
@@ -44,9 +46,10 @@ export class PermissionsService {
     })
   }
 
-  async findById(id: number): Promise<Permission> {
+  async findById(id: number, includeDeleted = false): Promise<Permission> {
+    const deletedFilter = maybeDeleted(permissions.deletedAt, includeDeleted)
     const permission = await db.query.permissions.findFirst({
-      where: and(eq(permissions.id, id), notDeleted(permissions.deletedAt)),
+      where: and(eq(permissions.id, id), deletedFilter),
     })
     if (!permission) {
       throw new NotFoundException(`权限 ID ${id} 不存在`)
@@ -140,5 +143,45 @@ export class PermissionsService {
     await db.update(permissions).set({ deletedAt: new Date() }).where(eq(permissions.id, id))
 
     return { message: `权限 ID ${id} 已删除` }
+  }
+
+  async restore(id: number): Promise<Permission> {
+    const existing = await db.query.permissions.findFirst({
+      where: eq(permissions.id, id),
+    })
+    if (!existing) {
+      throw new NotFoundException(`权限 ID ${id} 不存在`)
+    }
+
+    if (!existing.deletedAt) {
+      throw new ConflictException('权限未被删除，无需恢复')
+    }
+
+    // 恢复前校验 code 唯一
+    const duplicate = await db.query.permissions.findFirst({
+      where: and(eq(permissions.code, existing.code), notDeleted(permissions.deletedAt)),
+    })
+    if (duplicate) {
+      throw new ConflictException('权限码已被其他权限使用，无法恢复')
+    }
+
+    try {
+      const [restored] = await db
+        .update(permissions)
+        .set({ deletedAt: null })
+        .where(eq(permissions.id, id))
+        .returning()
+
+      if (!restored) {
+        throw new ConflictException('恢复权限失败')
+      }
+
+      return restored
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('权限码已存在（并发冲突）')
+      }
+      throw error
+    }
   }
 }

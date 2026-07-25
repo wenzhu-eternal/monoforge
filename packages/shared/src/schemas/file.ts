@@ -8,6 +8,7 @@ export const FileItemSchema = z.object({
   size: z.number().int().nonnegative(),
   uploadedBy: z.number().int().positive().nullable().optional(),
   uploadedByUsername: z.string().nullable().optional(),
+  deletedAt: z.coerce.date().nullable().optional(),
   createdAt: z.coerce.date(),
 })
 

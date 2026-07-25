@@ -23,6 +23,7 @@ import {
   previewFile,
   useDeleteFile,
   useFiles,
+  useRestoreFile,
   useUploadFile,
 } from '@/hooks/use-files'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
@@ -45,6 +46,7 @@ function FilesPage() {
 
   const { data, isLoading, isError, error } = useFiles({ page, pageSize })
   const deleteMutation = useDeleteFile()
+  const restoreMutation = useRestoreFile()
   const uploadMutation = useUploadFile()
 
   useEffect(() => {
@@ -96,9 +98,18 @@ function FilesPage() {
   const handleDelete = async (id: number) => {
     try {
       await deleteMutation.mutateAsync(id)
-      messageApi.success('删除成功')
+      messageApi.success('禁用成功')
     } catch (error) {
-      messageApi.error(extractErrorMessage(error, '删除失败'))
+      messageApi.error(extractErrorMessage(error, '禁用失败'))
+    }
+  }
+
+  const handleRestore = async (id: number) => {
+    try {
+      await restoreMutation.mutateAsync(id)
+      messageApi.success('恢复成功')
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, '恢复失败'))
     }
   }
 
@@ -140,6 +151,19 @@ function FilesPage() {
         v ? `${record.uploadedByUsername ?? '-'}(${v})` : '-',
     },
     {
+      title: '删除状态',
+      key: 'deleteStatus',
+      width: 100,
+      render: (_, record) => {
+        const isDeleted = !!record.deletedAt
+        return (
+          <span className={isDeleted ? 'text-red-500' : 'text-green-500'}>
+            {isDeleted ? '已禁用' : '正常'}
+          </span>
+        )
+      },
+    },
+    {
       title: '上传时间',
       dataIndex: 'createdAt',
       width: 180,
@@ -147,10 +171,11 @@ function FilesPage() {
     },
     {
       title: '操作',
-      width: 220,
+      width: 260,
       render: (_: unknown, record: FileItem) => {
+        const isDeleted = !!record.deletedAt
         const actions: { key: string; node: ReactNode }[] = []
-        if (isImage(record.mimeType)) {
+        if (isImage(record.mimeType) && !isDeleted) {
           actions.push({
             key: 'preview',
             node: (
@@ -160,20 +185,35 @@ function FilesPage() {
             ),
           })
         }
+        if (!isDeleted) {
+          actions.push({
+            key: 'download',
+            node: (
+              <Button type="link" size="small" onClick={() => handleDownload(record)}>
+                下载
+              </Button>
+            ),
+          })
+        }
         actions.push({
-          key: 'download',
+          key: 'restore',
           node: (
-            <Button type="link" size="small" onClick={() => handleDownload(record)}>
-              下载
-            </Button>
+            <Popconfirm title="确定要恢复该文件吗？" onConfirm={() => handleRestore(record.id)}>
+              <Button type="link" size="small" disabled={!isDeleted}>
+                恢复
+              </Button>
+            </Popconfirm>
           ),
         })
         actions.push({
           key: 'delete',
           node: (
-            <Popconfirm title="确认删除该文件？" onConfirm={() => handleDelete(record.id)}>
+            <Popconfirm
+              title={isDeleted ? '文件已禁用' : '确定要禁用该文件吗？'}
+              onConfirm={() => handleDelete(record.id)}
+            >
               <Button type="link" size="small" danger>
-                删除
+                禁用
               </Button>
             </Popconfirm>
           ),

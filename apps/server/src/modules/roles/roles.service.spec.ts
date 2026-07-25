@@ -18,6 +18,8 @@ vi.mock('@/db', () => ({
 vi.mock('@/db/helpers', () => ({
   // notDeleted 接受单列，返回任意 SQL 片段（测试中不关心具体值）
   notDeleted: vi.fn(() => undefined),
+  maybeDeleted: vi.fn(() => undefined),
+  isUniqueViolation: vi.fn(() => false),
 }))
 
 const { db: mockDb } = await import('@/db')
@@ -195,6 +197,40 @@ describe('RolesService', () => {
 
       const result = await service.remove(2)
       expect(result).toEqual({ message: '角色 ID 2 已删除' })
+    })
+  })
+
+  describe('restore', () => {
+    it('角色不存在时抛 NotFoundException', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue(undefined)
+
+      await expect(service.restore(999)).rejects.toThrow(NotFoundException)
+    })
+
+    it('角色未被删除时抛 ConflictException', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 1,
+        name: 'admin',
+        deletedAt: null,
+      } as never)
+
+      await expect(service.restore(1)).rejects.toThrow(ConflictException)
+    })
+
+    it('恢复成功', async () => {
+      vi.mocked(mockDb.query.roles.findFirst)
+        .mockResolvedValueOnce({ id: 1, name: 'admin', deletedAt: new Date() } as never)
+        .mockResolvedValueOnce(undefined) // 重名检查
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1, name: 'admin', deletedAt: null }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.restore(1)
+      expect(result).toEqual({ id: 1, name: 'admin', deletedAt: null })
     })
   })
 })

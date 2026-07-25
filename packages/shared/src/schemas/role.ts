@@ -4,6 +4,7 @@ export const RoleSchema = z.object({
   id: z.number().int().positive(),
   name: z.string().min(1).max(50),
   description: z.string().nullable().optional(),
+  deletedAt: z.coerce.date().nullable().optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 })

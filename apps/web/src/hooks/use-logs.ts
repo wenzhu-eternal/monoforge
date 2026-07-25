@@ -173,6 +173,21 @@ export const useDeleteWhitelist = () => {
   })
 }
 
+export const useRestoreWhitelist = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const response = await api.post<ApiResponse<ErrorWhitelist>>(
+        `/api/v1/error-logs/whitelist/${id}/restore`,
+      )
+      return response.data.data!
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['error-whitelist'] })
+    },
+  })
+}
+
 export const useRoles = (params: LogQuery) => {
   return useQuery({
     queryKey: ['roles', params],

@@ -3,27 +3,25 @@ import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { Role } from '@shared/schemas/role'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { isUniqueViolation, notDeleted } from '@/db/helpers'
+import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { roles, users } from '@/db/schema'
 
 @Injectable()
 export class RolesService {
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<Role>> {
+  async findAll(page = 1, pageSize = 10, includeDeleted = false): Promise<PaginatedResponse<Role>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
+    const deletedFilter = maybeDeleted(roles.deletedAt, includeDeleted)
 
     const [items, countResult] = await Promise.all([
       db.query.roles.findMany({
-        where: notDeleted(roles.deletedAt),
+        where: and(deletedFilter),
         limit: safePageSize,
         offset,
         orderBy: [desc(roles.createdAt)],
       }),
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(roles)
-        .where(notDeleted(roles.deletedAt)),
+      db.select({ count: sql<number>`count(*)::int` }).from(roles).where(and(deletedFilter)),
     ])
 
     const total = countResult[0]?.count ?? 0
@@ -37,9 +35,10 @@ export class RolesService {
     }
   }
 
-  async findById(id: number): Promise<Role> {
+  async findById(id: number, includeDeleted = false): Promise<Role> {
+    const deletedFilter = maybeDeleted(roles.deletedAt, includeDeleted)
     const role = await db.query.roles.findFirst({
-      where: and(eq(roles.id, id), notDeleted(roles.deletedAt)),
+      where: and(eq(roles.id, id), deletedFilter),
     })
     if (!role) {
       throw new NotFoundException(`角色 ID ${id} 不存在`)
@@ -119,5 +118,45 @@ export class RolesService {
     await db.update(roles).set({ deletedAt: new Date() }).where(eq(roles.id, id))
 
     return { message: `角色 ID ${id} 已删除` }
+  }
+
+  async restore(id: number): Promise<Role> {
+    const existing = await db.query.roles.findFirst({
+      where: eq(roles.id, id),
+    })
+    if (!existing) {
+      throw new NotFoundException(`角色 ID ${id} 不存在`)
+    }
+
+    if (!existing.deletedAt) {
+      throw new ConflictException('角色未被删除，无需恢复')
+    }
+
+    // 恢复前校验 name 唯一
+    const duplicate = await db.query.roles.findFirst({
+      where: and(eq(roles.name, existing.name), notDeleted(roles.deletedAt)),
+    })
+    if (duplicate) {
+      throw new ConflictException('角色名已被其他角色使用，无法恢复')
+    }
+
+    try {
+      const [restored] = await db
+        .update(roles)
+        .set({ deletedAt: null })
+        .where(eq(roles.id, id))
+        .returning()
+
+      if (!restored) {
+        throw new ConflictException('恢复角色失败')
+      }
+
+      return restored
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('角色名已存在（并发冲突）')
+      }
+      throw error
+    }
   }
 }
