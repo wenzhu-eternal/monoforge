@@ -53,7 +53,7 @@ export class RolePermissionsService {
   async updateRolePermissions(
     roleId: number,
     permissionCodes: string[],
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; skipped: string[] }> {
     const role = await db.query.roles.findFirst({
       where: and(eq(roles.id, roleId), notDeleted(roles.deletedAt)),
     })
@@ -61,7 +61,7 @@ export class RolePermissionsService {
       throw new NotFoundException(`角色 ID ${roleId} 不存在`)
     }
 
-    // 静默过滤掉指向已软删权限的 code，避免幽灵权限
+    // 过滤掉指向已软删权限的 code
     let validCodes: string[] = []
     if (permissionCodes.length > 0) {
       const valid = await db
@@ -70,6 +70,7 @@ export class RolePermissionsService {
         .where(and(inArray(permissions.code, permissionCodes), notDeleted(permissions.deletedAt)))
       validCodes = valid.map((p) => p.code)
     }
+    const skipped = permissionCodes.filter((c) => !validCodes.includes(c))
 
     // 删除旧权限并插入新权限（事务保证原子性，避免 insert 失败导致权限丢失）
     await db.transaction(async (tx) => {
@@ -85,6 +86,6 @@ export class RolePermissionsService {
       }
     })
 
-    return { message: `角色 ${role.name} 的权限已更新` }
+    return { message: `角色 ${role.name} 的权限已更新`, skipped }
   }
 }

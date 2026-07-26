@@ -1,5 +1,8 @@
+import { randomBytes } from 'node:crypto'
 import { open } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { BadRequestException } from '@nestjs/common'
+import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024
 
@@ -67,6 +70,9 @@ const MAGIC_NUMBERS: Array<{ ext: string; bytes: number[] }> = [
   { ext: 'png', bytes: [0x89, 0x50, 0x4e, 0x47] },
   { ext: 'gif', bytes: [0x47, 0x49, 0x46, 0x38] },
   { ext: 'pdf', bytes: [0x25, 0x50, 0x44, 0x46] },
+  { ext: 'zip', bytes: [0x50, 0x4b, 0x03, 0x04] },
+  { ext: 'docx', bytes: [0x50, 0x4b, 0x03, 0x04] },
+  { ext: 'xlsx', bytes: [0x50, 0x4b, 0x03, 0x04] },
 ]
 
 const MALICIOUS_PATTERNS = [/<script[\s\S]*?>/i, /javascript:/i, /\son\w+\s*=/i, /data:text\/html/i]
@@ -153,22 +159,29 @@ export async function validateFileContent(filePath: string, declaredExt: string)
 }
 
 export async function scanForMalware(filePath: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>> | null = null
   try {
     // 只读前 64KB 进行扫描（恶意脚本通常在头部）
-    const handle = await open(filePath, 'r')
+    handle = await open(filePath, 'r')
     const buffer = Buffer.alloc(64 * 1024)
     const { bytesRead } = await handle.read(buffer, 0, 64 * 1024, 0)
     await handle.close()
+    handle = null
     const content = buffer.subarray(0, bytesRead).toString('utf8')
 
     for (const pattern of MALICIOUS_PATTERNS) {
       if (pattern.test(content)) {
-        throw new BadRequestException('文件包含恶意内容')
+        throw new BadRequestException(
+          `${ErrorMessages[ErrorCodes.FILE_QUARANTINED]}: ${ErrorMessages[ErrorCodes.INVALID_FILE_TYPE]}`,
+        )
       }
     }
   } catch (err) {
     if (err instanceof BadRequestException) throw err
-    // 读文件失败不阻塞（二进制文件无法 toString）
+    // 文件读取异常（权限/IO 错误）应拒绝，不静默放行
+    throw new BadRequestException('文件读取失败，无法完成安全扫描')
+  } finally {
+    handle?.close().catch(() => {})
   }
 }
 
@@ -176,9 +189,9 @@ export async function scanForMalware(filePath: string): Promise<void> {
  * 校验路径是否在指定目录内（防路径穿越）
  */
 export function isPathSafe(filePath: string, baseDir: string): boolean {
-  const normalizedPath = filePath.replace(/\\/g, '/').replace(/\.\.\//g, '')
-  const normalizedBase = baseDir.replace(/\\/g, '/').replace(/\/$/, '')
-  return normalizedPath.startsWith(normalizedBase)
+  const resolvedPath = resolve(filePath)
+  const resolvedBase = resolve(baseDir)
+  return resolvedPath.startsWith(`${resolvedBase}/`) || resolvedPath === resolvedBase
 }
 
 /**
@@ -189,6 +202,6 @@ export function generateSafeFilename(originalName: string): string {
   const baseName = originalName.replace(/\.[^.]+$/, '')
   const sanitized = baseName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '').slice(0, 100) || 'file'
   const timestamp = Date.now()
-  const random = Math.random().toString(36).slice(2, 10)
+  const random = randomBytes(8).toString('hex')
   return `${timestamp}-${random}-${sanitized}.${ext}`
 }

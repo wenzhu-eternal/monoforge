@@ -114,8 +114,9 @@ export class ErrorLogsController {
   @Permissions(PermissionCodes.ERROR_LOG_VIEW)
   @ApiOperation({ summary: '查询全部白名单' })
   @ZodSerializerDto(z.array(ErrorWhitelistSchema))
-  async findWhitelist() {
-    return this.errorLogsService.findWhitelist()
+  async findWhitelist(@CurrentUser() currentUser?: { username: string }) {
+    const isAdmin = currentUser?.username === 'admin'
+    return this.errorLogsService.findWhitelist(isAdmin)
   }
 
   // 放大限流（高频查详情）

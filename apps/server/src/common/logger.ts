@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** 日轮转文件日志（DB 错误日志的兜底） */
@@ -9,23 +9,64 @@ function getTodayLogPath(): string {
   return join(LOG_DIR, `error-${date}.log`)
 }
 
-function ensureLogDir(): void {
+async function ensureLogDir(): Promise<void> {
   try {
-    mkdirSync(LOG_DIR, { recursive: true })
+    await mkdir(LOG_DIR, { recursive: true })
   } catch {
     // 目录已存在或无权限，忽略
   }
 }
 
-/** 写入错误日志到文件 */
+/** 异步写入队列: 将日志行缓存在内存中，定时批量刷盘，避免高并发 5xx 阻塞事件循环 */
+const writeQueue: string[] = []
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleFlush(): void {
+  if (flushTimer) return
+  flushTimer = setTimeout(async () => {
+    flushTimer = null
+    if (writeQueue.length === 0) return
+
+    const lines = writeQueue.splice(0)
+    const content = lines.join('')
+
+    try {
+      await ensureLogDir()
+      await appendFile(getTodayLogPath(), content, 'utf8')
+    } catch {
+      console.error('[FileLogger] 批量写入失败:', lines.length, '条日志')
+    }
+  }, 100)
+}
+
+/** 写入错误日志到文件（异步非阻塞） */
 export function appendErrorLog(message: string, stack?: string): void {
   try {
-    ensureLogDir()
     const time = new Date().toISOString()
     const line = `[${time}] [ERROR] ${message}\n${stack ? `${stack}\n` : ''}\n`
-    appendFileSync(getTodayLogPath(), line, 'utf8')
+    writeQueue.push(line)
+    scheduleFlush()
   } catch {
-    // 文件写入失败不影响主流程，降级到控制台
-    console.error('[FileLogger] 写入失败:', message)
+    // 序列化失败不影响主流程
+    console.error('[FileLogger] 序列化失败:', message)
+  }
+}
+
+/** 进程退出前刷空队列（用于 graceful shutdown） */
+export async function flushErrorLog(): Promise<void> {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  if (writeQueue.length === 0) return
+
+  const lines = writeQueue.splice(0)
+  const content = lines.join('')
+
+  try {
+    await ensureLogDir()
+    await appendFile(getTodayLogPath(), content, 'utf8')
+  } catch {
+    console.error('[FileLogger] 最终写入失败:', lines.length, '条日志')
   }
 }

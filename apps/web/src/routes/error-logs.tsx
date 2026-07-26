@@ -692,7 +692,7 @@ function WhitelistTab() {
                 title={isDeleted ? '规则已禁用' : '确定要禁用该白名单规则吗？'}
                 onConfirm={() => handleDelete(record.id)}
               >
-                <Button type="link" size="small" danger>
+                <Button type="link" size="small" danger disabled={isDeleted}>
                   禁用
                 </Button>
               </Popconfirm>

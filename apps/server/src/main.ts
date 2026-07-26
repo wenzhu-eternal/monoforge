@@ -46,15 +46,15 @@ async function bootstrap() {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true)
       } else {
-        console.warn(`[CORS] blocked origin: ${origin}`)
+        console.warn(`[CORS] blocked origin: ${origin.replace(/[\r\n]/g, '')}`)
         callback(null, false)
       }
     },
     credentials: true,
   })
 
-  // 全局管道: 清洗 null/空字符串 → Zod 校验 → XSS 清洗
-  app.useGlobalPipes(new SanitizeBodyPipe(), new ZodValidationPipe(), new XssPipe())
+  // 全局管道: 清洗 null/空字符串 → XSS 清洗 → Zod 校验
+  app.useGlobalPipes(new SanitizeBodyPipe(), new XssPipe(), new ZodValidationPipe())
 
   // ZodSerializerInterceptor 已通过 APP_INTERCEPTOR 在 AppModule 注册，无需在此手动 useGlobalInterceptors
 

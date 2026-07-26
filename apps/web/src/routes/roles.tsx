@@ -175,7 +175,7 @@ function RolesPage() {
                 title={isDeleted ? '角色已禁用' : '确定要禁用该角色吗？'}
                 onConfirm={() => handleDeleteRole(record.id)}
               >
-                <Button type="link" danger>
+                <Button type="link" danger disabled={isDeleted}>
                   禁用
                 </Button>
               </Popconfirm>
@@ -198,7 +198,7 @@ function RolesPage() {
 
   const handleEditRole = (role: Role) => {
     setEditingRole(role)
-    roleForm.setFieldsValue({ ...role, description: role.description ?? undefined })
+    roleForm.setFieldsValue({ name: role.name, description: role.description ?? undefined })
     setIsRoleModalOpen(true)
   }
 

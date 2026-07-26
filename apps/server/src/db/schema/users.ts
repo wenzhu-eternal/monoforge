@@ -8,6 +8,7 @@ import {
   uniqueIndex,
   varchar,
 } from 'drizzle-orm/pg-core'
+import { roles } from './roles'
 
 export const users = pgTable(
   'users',
@@ -22,10 +23,13 @@ export const users = pgTable(
     // 微信登录: openId 唯一，password 对微信用户为占位符（不可用于登录）
     // 部分唯一索引：允许软删后用同一 openId 重新绑定
     wechatOpenId: varchar('wechat_open_id', { length: 64 }),
-    roleId: integer('role_id'),
+    roleId: integer('role_id').references(() => roles.id),
     status: boolean('status').default(true).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
     deletedAt: timestamp('deleted_at'),
   },
   (t) => [

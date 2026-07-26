@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common'
+import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { SetupResult, SetupStatus } from '@shared/schemas/setup'
 import * as argon2 from 'argon2'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { notDeleted } from '@/db/helpers'
+import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import { roles, users } from '@/db/schema'
 
 const DEFAULT_ROLES = [
@@ -47,7 +48,7 @@ export class SetupService {
   }): Promise<SetupResult> {
     const status = await this.getStatus()
     if (status.initialized) {
-      throw new ConflictException('系统已初始化，无法重复执行')
+      throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
     }
 
     const hashedPassword = await argon2.hash(input.password)
@@ -83,13 +84,7 @@ export class SetupService {
       this.logger.log(`系统初始化完成，管理员: ${input.username}`)
       return { message: '初始化成功', adminUsername: input.username }
     } catch (error) {
-      // 唯一约束冲突（并发初始化）
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        (error as { code: string }).code === '23505'
-      ) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException('用户名或邮箱已存在')
       }
       throw error

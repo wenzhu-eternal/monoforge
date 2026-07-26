@@ -1,4 +1,12 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common'
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Post,
+} from '@nestjs/common'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
 import { SetupResultSchema, SetupStatusSchema } from '@shared/schemas/setup'
 import { ZodSerializerDto } from 'nestjs-zod'
@@ -24,6 +32,13 @@ export class SetupController {
   @ApiOperation({ summary: '一键初始化系统（仅未初始化时可用）' })
   @ZodSerializerDto(SetupResultSchema)
   async setup(@Body() dto: SetupDto) {
+    const status = await this.setupService.getStatus()
+    if (status.initialized) {
+      throw new NotFoundException()
+    }
+    if (process.env.ALLOW_SETUP !== 'true') {
+      throw new NotFoundException()
+    }
     return this.setupService.initialize(dto)
   }
 }

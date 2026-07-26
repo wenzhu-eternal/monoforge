@@ -102,6 +102,23 @@ describe('ErrorLogsService', () => {
       expect(result).toEqual({ id: 1 })
       expect(mockDb.insert).toHaveBeenCalled()
     })
+
+    it('缓存中 isActive=false 的规则不匹配（停用规则不生效）', async () => {
+      redisServiceMock.get.mockResolvedValue(
+        JSON.stringify([{ pattern: 'ECONNRESET', matchType: 'message', isActive: false }]),
+      )
+
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+        }),
+      } as never)
+
+      const result = await service.report({ message: 'ECONNRESET timeout' })
+
+      expect(result).toEqual({ id: 1 })
+      expect(mockDb.insert).toHaveBeenCalled()
+    })
   })
 
   describe('record', () => {
@@ -219,6 +236,40 @@ describe('ErrorLogsService', () => {
         JSON.stringify(dbList),
         60,
       )
+    })
+
+    it('includeDeleted=true 时直查 DB 不读写缓存（管理员可见已删规则）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      const dbList = [
+        { pattern: 'active-rule', matchType: 'message', deletedAt: null },
+        { pattern: 'deleted-rule', matchType: 'message', deletedAt: new Date() },
+      ]
+      vi.mocked(mockDb.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockResolvedValue(dbList),
+        }),
+      } as never)
+
+      const result = await service.findWhitelist(true)
+
+      expect(result).toEqual(dbList)
+      expect(redisServiceMock.get).not.toHaveBeenCalled()
+      expect(redisServiceMock.set).not.toHaveBeenCalled()
+    })
+
+    it('includeDeleted=false 时走缓存路径（普通用户）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      vi.mocked(mockDb.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      } as never)
+
+      await service.findWhitelist(false)
+
+      expect(redisServiceMock.get).toHaveBeenCalledWith('error:whitelist:all')
     })
   })
 

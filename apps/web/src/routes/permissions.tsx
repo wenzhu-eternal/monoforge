@@ -158,7 +158,7 @@ function PermissionCodesPage() {
                 title={isDeleted ? '权限已禁用' : '确定要禁用该权限吗？'}
                 onConfirm={() => handleDelete(record.id)}
               >
-                <Button type="link" danger>
+                <Button type="link" danger disabled={isDeleted}>
                   禁用
                 </Button>
               </Popconfirm>
@@ -181,7 +181,11 @@ function PermissionCodesPage() {
 
   const handleEdit = (permission: Permission) => {
     setEditingPermission(permission)
-    form.setFieldsValue(permission)
+    form.setFieldsValue({
+      code: permission.code,
+      name: permission.name,
+      description: permission.description ?? undefined,
+    })
     setIsModalOpen(true)
   }
 

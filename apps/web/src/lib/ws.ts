@@ -11,6 +11,7 @@ class WsClient {
   private socket: Socket | null = null
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private pongTimer: ReturnType<typeof setTimeout> | null = null
+  private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
   private static readonly MAX_RECONNECT = 5
   private static readonly HEARTBEAT_INTERVAL = 10_000
   private static readonly PONG_TIMEOUT = 5_000
@@ -67,16 +68,27 @@ class WsClient {
       this.socket.disconnect()
       this.socket = null
     }
+    this.listeners.clear()
   }
 
   on(event: string, handler: (...args: unknown[]) => void): void {
+    let handlers = this.listeners.get(event)
+    if (!handlers) {
+      handlers = new Set()
+      this.listeners.set(event, handlers)
+    }
+    // 防止同一 handler 重复注册
+    if (handlers.has(handler)) return
+    handlers.add(handler)
     this.socket?.on(event, handler as (...args: unknown[]) => void)
   }
 
   off(event: string, handler?: (...args: unknown[]) => void): void {
     if (handler) {
+      this.listeners.get(event)?.delete(handler)
       this.socket?.off(event, handler as (...args: unknown[]) => void)
     } else {
+      this.listeners.delete(event)
       this.socket?.off(event)
     }
   }

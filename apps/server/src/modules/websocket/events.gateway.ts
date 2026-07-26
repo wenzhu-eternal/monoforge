@@ -13,12 +13,18 @@ import type { Server, Socket } from 'socket.io'
 
 /**
  * WebSocket 网关: 在线状态登记 + 通知推送
- * 鉴权: 优先从 auth.token（JWT access token）解析 userId
- *       兼容 query.userId（仅开发环境，生产建议关闭）
+ * 鉴权: 从 auth.token（JWT access token）解析 userId
  */
 @WebSocketGateway({
   cors: {
-    origin: true,
+    origin: (origin, callback) => {
+      const allowed = process.env.ALLOW_ORIGIN
+      if (!origin || !allowed || origin === allowed) {
+        callback(null, true)
+      } else {
+        callback(new Error('Not allowed by CORS'))
+      }
+    },
     credentials: true,
   },
   // 主动心跳探测：10s ping 一次，5s 没收到 pong 判定断开
@@ -135,15 +141,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       } catch (err) {
         this.logger.warn(`WebSocket 鉴权失败: ${(err as Error).message}`)
         return null
-      }
-    }
-
-    // 兼容降级: query.userId（仅开发环境）
-    if (this.configService.get<string>('NODE_ENV') !== 'production') {
-      const queryUserId = client.handshake.query.userId
-      if (typeof queryUserId === 'string') {
-        const id = Number.parseInt(queryUserId, 10)
-        if (!Number.isNaN(id) && id > 0) return id
       }
     }
 

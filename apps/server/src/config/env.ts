@@ -11,7 +11,7 @@ const envSchema = z
     JWT_SECRET: z.string().min(32),
     JWT_REFRESH_SECRET: z.string().min(32),
 
-    API_PORT: z.coerce.number().default(9000),
+    API_PORT: z.coerce.number().min(1).max(65535).default(9000),
     API_PREFIX: z.string().default('/api/v1'),
 
     // 应用名（Swagger 标题、邮件主题、邮件模板均引用，新项目通过 .env 配置）
@@ -37,10 +37,16 @@ const envSchema = z
     WECHAT_REDIRECT_URI: z.string().url().optional(),
 
     // Throttle: 登录接口建议单独更严格限流
-    THROTTLE_TTL: z.coerce.number().default(60),
-    THROTTLE_LIMIT: z.coerce.number().default(10),
+    THROTTLE_TTL: z.coerce.number().min(1).default(60),
+    THROTTLE_LIMIT: z.coerce.number().min(1).default(10),
 
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
+    // 初始化开关：默认关闭，仅首次部署显式打开
+    ALLOW_SETUP: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => v === true || v === 'true')
+      .default(false),
   })
   .superRefine((data, ctx) => {
     // 生产环境警告 COOKIE_SECURE 未启用（不强制退出，允许单容器 HTTP 部署配合 ngrok）
@@ -64,9 +70,9 @@ export function validateEnv() {
   const result = envSchema.safeParse(process.env)
 
   if (!result.success) {
-    console.error('❌ Invalid environment variables:')
-    console.error(result.error.flatten().fieldErrors)
-    process.exit(1)
+    const errors = result.error.flatten().fieldErrors
+    console.error('❌ Invalid environment variables:', errors)
+    throw new Error(`环境变量校验失败: ${JSON.stringify(errors)}`)
   }
 
   validatedEnv = result.data

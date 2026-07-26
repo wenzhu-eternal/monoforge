@@ -60,10 +60,12 @@ export class HttpClientService {
     const maxRetries = options.maxRetries ?? this.defaultMaxRetries
     const retryBaseDelay = options.retryBaseDelay ?? this.defaultRetryBaseDelay
 
-    // 请求拦截: 注入重试元数据
+    // 请求拦截: 注入重试元数据（仅首次请求，重试时 __retryCount 已存在则保留）
     instance.interceptors.request.use((config) => {
       const cfg = config as RetryableConfig
-      cfg.__retryCount = 0
+      if (cfg.__retryCount === undefined) {
+        cfg.__retryCount = 0
+      }
       cfg.__maxRetries = maxRetries
       cfg.__retryBaseDelay = retryBaseDelay
       cfg.__retryOn5xx = true

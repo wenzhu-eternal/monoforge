@@ -36,17 +36,10 @@ import { WechatModule } from './modules/wechat/wechat.module'
       envFilePath: [join(__dirname, '..', '..', '..', '.env')],
       // 环境变量校验由 main.ts 中的 validateEnv() 统一负责（zod schema）
     }),
-    ServeStaticModule.forRoot(
-      {
-        rootPath: join(__dirname, '..', '..', 'web', 'dist'),
-        exclude: ['/api/{*path}'],
-      },
-      {
-        rootPath: join(__dirname, '..', '..', '..', 'uploads'),
-        serveRoot: '/uploads',
-        serveStaticOptions: { index: false },
-      },
-    ),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', '..', 'web', 'dist'),
+      exclude: ['/api/{*path}'],
+    }),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

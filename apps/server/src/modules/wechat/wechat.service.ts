@@ -13,7 +13,7 @@ import type { AxiosInstance } from 'axios'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
-import { users } from '@/db/schema'
+import { roles, users } from '@/db/schema'
 import { AuthService, type TokenPayload } from '@/modules/auth/auth.service'
 import { HttpClientService } from '@/modules/http-client/http-client.service'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -240,6 +240,12 @@ export class WechatService {
 
     const username = `wx_${openId.slice(0, 8)}`
     const email = `${username}@wechat.placeholder`
+
+    // 查找默认 viewer 角色
+    const viewerRole = await db.query.roles.findFirst({
+      where: and(eq(roles.name, 'viewer'), notDeleted(roles.deletedAt)),
+    })
+
     try {
       const [newUser] = await db
         .insert(users)
@@ -250,6 +256,7 @@ export class WechatService {
           nickname: nickname ?? `微信用户_${openId.slice(0, 6)}`,
           avatar,
           wechatOpenId: openId,
+          roleId: viewerRole?.id,
         })
         .returning()
 

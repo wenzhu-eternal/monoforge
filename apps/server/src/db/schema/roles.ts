@@ -8,7 +8,10 @@ export const roles = pgTable(
     name: varchar('name', { length: 50 }).notNull(),
     description: text('description'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
     deletedAt: timestamp('deleted_at'),
   },
   (t) => [uniqueIndex('roles_name_unique').on(t.name).where(sql`deleted_at IS NULL`)],

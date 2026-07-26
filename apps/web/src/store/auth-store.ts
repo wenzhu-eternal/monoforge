@@ -26,6 +26,11 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
+      partialize: (state) => ({
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+        // token 不 persist：XSS 窃取风险，仅内存持有
+      }),
     },
   ),
 )

@@ -28,29 +28,29 @@ RUN pnpm -F @monoforge/web build
 
 # ===== Runtime stage =====
 FROM node:20-alpine AS runner
-RUN sed -i 's|https://dl-cdn.alpinelinux.org|http://mirrors.aliyun.com|g' /etc/apk/repositories
-RUN apk add --no-cache tini wget
+RUN apk add --no-cache tini
 WORKDIR /app
 ENV NODE_ENV=production
 
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/apps/server/package.json ./apps/server/
 COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+
+# 只安装生产依赖，不拷 devDeps
+RUN apk add --no-cache pnpm@10.32.1 --repository=https://registry.npmmirror.com
+RUN pnpm install --prod --frozen-lockfile
+
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
+COPY --from=builder /app/apps/server/drizzle ./apps/server/drizzle
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/server/node_modules ./apps/server/node_modules
-COPY --from=builder /app/packages/shared/node_modules ./packages/shared/node_modules
 
-# 创建 uploads 目录并赋权，避免 named volume 挂载后属主为 root 导致 node 用户无写权限
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
 ENV API_PORT=9000
 EXPOSE 9000
 
-# 非 root 运行，遵循最小权限原则
 USER node
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "apps/server/dist/main.js"]
+CMD ["sh", "-c", "cd apps/server && npx drizzle-kit migrate && cd /app && node apps/server/dist/main.js"]

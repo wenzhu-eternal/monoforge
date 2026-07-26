@@ -20,10 +20,13 @@ export function maybeDeleted(column: Column, includeDeleted: boolean): SQL | und
  * 用于 TOCTOU 兜底：并发场景下唯一约束冲突转 409
  */
 export function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code: string }).code === '23505'
-  )
+  if (typeof error !== 'object' || error === null) return false
+  // postgres-js 驱动: error.code 直接在对象上
+  if ('code' in error && (error as { code: unknown }).code === '23505') return true
+  // drizzle 包装: cause 内嵌 postgres 错误
+  const cause = (error as { cause?: unknown }).cause
+  if (typeof cause === 'object' && cause !== null && 'code' in cause) {
+    return (cause as { code: unknown }).code === '23505'
+  }
+  return false
 }

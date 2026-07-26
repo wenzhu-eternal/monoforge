@@ -17,8 +17,8 @@ export type WhitelistMatchType = z.infer<typeof WhitelistMatchType>
 
 export const ErrorLogSchema = z.object({
   id: z.number().int().positive(),
-  source: z.string(),
-  errorType: z.string().nullable().optional(),
+  source: ErrorSource,
+  errorType: ErrorType.nullable().optional(),
   message: z.string(),
   stack: z.string().nullable().optional(),
   file: z.string().nullable().optional(),

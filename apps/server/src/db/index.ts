@@ -8,11 +8,12 @@ config({ path: '../../.env' })
 
 const connectionString = process.env.DATABASE_URL!
 
-// 配置连接池: max 10 连接，避免无限制创建连接
+// 配置连接池: max 可配，默认 10；max_lifetime 30 分钟避免 stale 连接
 export const client = postgres(connectionString, {
-  max: 10,
+  max: Number(process.env.DB_POOL_MAX) || 10,
   idle_timeout: 20,
   connect_timeout: 10,
+  max_lifetime: 30 * 60,
 })
 
 export const db = drizzle(client, { schema })

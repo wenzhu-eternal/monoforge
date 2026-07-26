@@ -16,6 +16,10 @@ vi.mock('@/db', () => ({
 
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
+  isUniqueViolation: vi.fn((error: unknown) => {
+    if (typeof error !== 'object' || error === null) return false
+    return 'code' in error && (error as { code: string }).code === '23505'
+  }),
 }))
 
 const { db: mockDb } = await import('@/db')

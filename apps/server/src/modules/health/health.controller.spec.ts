@@ -20,7 +20,7 @@ describe('HealthController', () => {
   })
 
   describe('check', () => {
-    it('should return health status', async () => {
+    it('should return health status (unauthenticated)', async () => {
       const mockResult: HealthResult = {
         status: 'ok',
         timestamp: new Date().toISOString(),
@@ -30,7 +30,25 @@ describe('HealthController', () => {
 
       vi.mocked(service.check).mockResolvedValue(mockResult)
 
-      const result = await controller.check()
+      // biome-ignore lint/suspicious/noExplicitAny: test mock request
+      const result = await controller.check({} as any)
+
+      expect(result).toEqual({ status: 'ok', timestamp: mockResult.timestamp })
+      expect(service.check).toHaveBeenCalledOnce()
+    })
+
+    it('should return full details (authenticated)', async () => {
+      const mockResult: HealthResult = {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        database: 'ok',
+        redis: 'ok',
+      }
+
+      vi.mocked(service.check).mockResolvedValue(mockResult)
+
+      // biome-ignore lint/suspicious/noExplicitAny: test mock request
+      const result = await controller.check({ user: { sub: 1 } } as any)
 
       expect(result).toEqual(mockResult)
       expect(service.check).toHaveBeenCalledOnce()
@@ -46,7 +64,8 @@ describe('HealthController', () => {
 
       vi.mocked(service.check).mockResolvedValue(mockResult)
 
-      await expect(controller.check()).rejects.toThrow(ServiceUnavailableException)
+      // biome-ignore lint/suspicious/noExplicitAny: test mock request
+      await expect(controller.check({} as any)).rejects.toThrow(ServiceUnavailableException)
       expect(service.check).toHaveBeenCalledOnce()
     })
   })

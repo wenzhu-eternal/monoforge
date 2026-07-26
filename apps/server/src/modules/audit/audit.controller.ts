@@ -29,8 +29,19 @@ export class AuditController {
   @ApiOperation({ summary: '分页查询审计日志' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
+  @ApiQuery({ name: 'userId', required: false, type: Number })
+  @ApiQuery({ name: 'action', required: false, type: String })
+  @ApiQuery({ name: 'resource', required: false, type: String })
+  @ApiQuery({ name: 'keyword', required: false, type: String })
   @ZodSerializerDto(PaginatedResponseSchema(AuditLogSchema))
-  async findAll(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+  async findAll(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('userId') userId?: string,
+    @Query('action') action?: string,
+    @Query('resource') resource?: string,
+    @Query('keyword') keyword?: string,
+  ) {
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
     if (Number.isNaN(pageNum) || pageNum < 1) {
@@ -39,7 +50,13 @@ export class AuditController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    return this.auditService.findAll(pageNum, size)
+    const filter = {
+      userId: userId ? Number.parseInt(userId, 10) : undefined,
+      action,
+      resource,
+      keyword,
+    }
+    return this.auditService.findAll(pageNum, size, filter)
   }
 
   @Get(':id')

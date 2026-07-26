@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import type { AuditLog } from '@shared/schemas/audit'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
-import { count, desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { auditLogs, users } from '@/db/schema'
 
@@ -14,6 +14,13 @@ export interface RecordAuditLogParams {
   newValue?: Record<string, unknown>
   ip?: string
   userAgent?: string
+}
+
+export interface AuditFilter {
+  userId?: number
+  action?: string
+  resource?: string
+  keyword?: string
 }
 
 @Injectable()
@@ -31,10 +38,32 @@ export class AuditService {
     })
   }
 
-  async findAll(page = 1, pageSize = 10): Promise<PaginatedResponse<AuditLog>> {
+  async findAll(
+    page = 1,
+    pageSize = 10,
+    filter?: AuditFilter,
+  ): Promise<PaginatedResponse<AuditLog>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
+
+    const conditions = []
+    if (filter?.userId) {
+      conditions.push(eq(auditLogs.userId, filter.userId))
+    }
+    if (filter?.action) {
+      conditions.push(eq(auditLogs.action, filter.action))
+    }
+    if (filter?.resource) {
+      conditions.push(eq(auditLogs.resource, filter.resource))
+    }
+    if (filter?.keyword) {
+      conditions.push(
+        sql`${users.username} LIKE ${`%${filter.keyword}%`} OR ${auditLogs.resource} LIKE ${`%${filter.keyword}%`}`,
+      )
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined
 
     const [items, countResult] = await Promise.all([
       db
@@ -53,10 +82,15 @@ export class AuditService {
         })
         .from(auditLogs)
         .leftJoin(users, eq(auditLogs.userId, users.id))
+        .where(where)
         .limit(safePageSize)
         .offset(offset)
         .orderBy(desc(auditLogs.createdAt)),
-      db.select({ value: count() }).from(auditLogs),
+      db
+        .select({ value: count() })
+        .from(auditLogs)
+        .leftJoin(users, eq(auditLogs.userId, users.id))
+        .where(where),
     ])
 
     const total = countResult[0]?.value ?? 0

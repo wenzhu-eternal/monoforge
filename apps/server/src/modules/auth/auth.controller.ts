@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { AuthResponseSchema, RefreshTokenResponseSchema } from '@shared/schemas/auth'
 import { UserSchema } from '@shared/schemas/user'
 import type { Request, Response } from 'express'
@@ -33,6 +34,7 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登录' })
   @ZodSerializerDto(AuthResponseSchema)
@@ -53,6 +55,7 @@ export class AuthController {
 
   @Post('send-register-code')
   @Public()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '发送注册验证码' })
   async sendRegisterCode(@Body() dto: SendRegisterCodeDto) {
@@ -61,6 +64,7 @@ export class AuthController {
 
   @Post('register')
   @Public()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户注册' })
   @ZodSerializerDto(AuthResponseSchema)
@@ -116,9 +120,15 @@ export class AuthController {
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登出' })
-  async logout(@CurrentUser() user: TokenPayload, @Res({ passthrough: true }) response: Response) {
+  async logout(
+    @CurrentUser() user: TokenPayload,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     response.clearCookie('refreshToken', { path: '/api/v1/auth' })
-    return this.authService.logout(user.sub)
+    const authHeader = request.headers.authorization
+    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
+    return this.authService.logout(user.sub, accessToken)
   }
 
   @Get('me')

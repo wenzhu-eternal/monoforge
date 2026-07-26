@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { Role } from '@shared/schemas/role'
 import { and, desc, eq, sql } from 'drizzle-orm'
@@ -112,7 +113,9 @@ export class RolesService {
       .where(and(eq(users.roleId, id), notDeleted(users.deletedAt)))
     const count = userCount[0]?.count ?? 0
     if (count > 0) {
-      throw new ConflictException(`该角色仍被 ${count} 个用户使用，无法删除`)
+      throw new ConflictException(
+        `${ErrorMessages[ErrorCodes.ROLE_IN_USE]}（仍被 ${count} 个用户使用）`,
+      )
     }
 
     await db.update(roles).set({ deletedAt: new Date() }).where(eq(roles.id, id))

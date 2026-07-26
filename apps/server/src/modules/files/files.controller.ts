@@ -132,8 +132,28 @@ export class FilesController {
   @Get(':id/download')
   @Permissions(PermissionCodes.FILE_VIEW)
   @ApiOperation({ summary: '下载文件' })
-  async download(@Param('id', ParseIntPipe) id: number, @Res() response: Response) {
-    const file = await this.filesService.findById(id)
+  async download(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() response: Response,
+    @CurrentUser() currentUser: TokenPayload,
+  ) {
+    const isAdmin = currentUser.username === 'admin'
+    const file = await this.filesService.findByIdRaw(id)
+
+    if (!file) {
+      response.status(404).json({ message: '文件不存在' })
+      return
+    }
+
+    if (file.deletedAt) {
+      response.status(404).json({ message: '文件不存在' })
+      return
+    }
+
+    if (!isAdmin && file.uploadedBy !== currentUser.sub) {
+      response.status(403).json({ message: '无权访问该文件' })
+      return
+    }
 
     response.setHeader('Content-Type', file.mimeType)
     const encodedName = encodeURIComponent(file.originalName)

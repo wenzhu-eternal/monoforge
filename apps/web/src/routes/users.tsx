@@ -143,7 +143,7 @@ function UsersPage() {
                 onConfirm={() => handleDelete(record.id)}
               >
                 <Button type="link" danger disabled={isAdmin}>
-                  {isDeleted ? '禁用' : '禁用'}
+                  禁用
                 </Button>
               </Popconfirm>
             ),

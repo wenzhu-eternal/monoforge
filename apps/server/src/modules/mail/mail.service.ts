@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import Handlebars from 'handlebars'
 import { createTransport, type SendMailOptions, type Transporter } from 'nodemailer'
 import { getEnv } from '@/config'
@@ -31,6 +32,7 @@ export class MailService {
         host,
         port,
         secure: port === 465,
+        requireTLS: port !== 465,
         auth: { user, pass: password },
       })
       this.logger.log('邮件服务已初始化')
@@ -51,11 +53,8 @@ export class MailService {
       try {
         const content = readFileSync(join(templateDir, `${name}.hbs`), 'utf-8')
         this.templates.set(name, Handlebars.compile(content))
-      } catch (err) {
-        // fail-fast: 模板缺失属严重配置错误，必须抛出避免静默降级
-        throw new Error(
-          `邮件模板 ${name}.hbs 加载失败 (查找路径: ${templateDir}): ${err instanceof Error ? err.message : String(err)}`,
-        )
+      } catch {
+        this.logger.warn(`邮件模板 ${name}.hbs 加载失败，将使用纯文本 fallback`)
       }
     }
     this.logger.log(`已加载 ${this.templates.size} 个邮件模板`)
@@ -179,7 +178,9 @@ export class MailService {
       this.logger.log(`邮件已发送: ${subject} -> ${to}${attachInfo}`)
     } catch (err) {
       this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
-      throw new Error(`邮件发送失败: ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(
+        `${ErrorMessages[ErrorCodes.MAIL_SEND_FAILED]}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -199,7 +200,9 @@ export class MailService {
       this.logger.log(`邮件已发送: ${subject} -> ${to}`)
     } catch (err) {
       this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
-      throw new Error(`邮件发送失败: ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(
+        `${ErrorMessages[ErrorCodes.MAIL_SEND_FAILED]}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -222,7 +225,9 @@ export class MailService {
       this.logger.log(`邮件已发送: ${subject} -> ${to}`)
     } catch (err) {
       this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
-      throw new Error(`邮件发送失败: ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(
+        `${ErrorMessages[ErrorCodes.MAIL_SEND_FAILED]}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 }

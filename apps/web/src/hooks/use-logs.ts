@@ -7,7 +7,6 @@ import type {
   ErrorStats,
   ErrorWhitelist,
   PaginatedResponse,
-  Role,
   UpdateErrorWhitelist,
 } from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -184,18 +183,6 @@ export const useRestoreWhitelist = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['error-whitelist'] })
-    },
-  })
-}
-
-export const useRoles = (params: LogQuery) => {
-  return useQuery({
-    queryKey: ['roles', params],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<PaginatedResponse<Role>>>('/api/v1/roles', {
-        params,
-      })
-      return response.data.data!
     },
   })
 }

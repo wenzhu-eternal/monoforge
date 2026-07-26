@@ -1,6 +1,5 @@
 import { redirect } from '@tanstack/react-router'
 import { useAuthStore } from '@/store/auth-store'
-import type { PermissionCode } from './permissions'
 
 /**
  * 路由级认证守卫：仅检查登录状态，不检查权限
@@ -15,21 +14,16 @@ export function requireAuth() {
 }
 
 /**
- * 路由级权限守卫：无指定权限时重定向到 /403
- * 在路由的 beforeLoad 中调用
+ * 路由级权限守卫：仅检查登录状态
+ * 权限校验由 AuthenticatedLayout 在 useCurrentUser 加载完成后统一处理
+ * （避免 beforeLoad 中使用 localStorage 旧值导致首屏误 redirect）
  */
-export function requirePermission(permission: PermissionCode) {
+export function requirePermission(_permission?: string) {
   return () => {
-    const { user, isAuthenticated } = useAuthStore.getState()
+    const { isAuthenticated } = useAuthStore.getState()
 
     if (!isAuthenticated) {
       throw redirect({ to: '/login' })
     }
-
-    if (user?.permissions?.includes(permission)) {
-      return
-    }
-
-    throw redirect({ to: '/403' })
   }
 }

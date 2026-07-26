@@ -115,9 +115,24 @@ export class AuthService {
     return tokens
   }
 
-  // cookie 拿不到 jti，删除该用户全部 refresh token
-  async logout(userId: number): Promise<{ message: string }> {
+  // 吊销 refresh token + access token
+  async logout(userId: number, accessToken?: string): Promise<{ message: string }> {
     await this.redisService.deleteByPattern(`refresh:${userId}:*`)
+
+    // 吊销 access token: 把 jti 写入 Redis 黑名单，TTL = 15min（access token 最长有效期）
+    if (accessToken) {
+      try {
+        const secret = this.configService.get<string>('JWT_SECRET')
+        const decoded = await this.jwtService.verifyAsync(accessToken, { secret })
+        const jti = (decoded as { jti?: string }).jti
+        if (jti) {
+          await this.redisService.set(`access:${userId}:${jti}`, '1', 15 * 60)
+        }
+      } catch {
+        // token 已过期或无效，无需黑名单
+      }
+    }
+
     return { message: '退出登录成功' }
   }
 
@@ -256,16 +271,19 @@ export class AuthService {
     const accessTokenSecret = this.configService.get<string>('JWT_SECRET')
     const refreshTokenSecret = this.configService.get<string>('JWT_REFRESH_SECRET')
 
-    // 为 refreshToken 增加 jti（唯一 ID），便于 Redis 单条吊销
-    const jti = randomUUID()
+    const accessJti = randomUUID()
+    const refreshJti = randomUUID()
 
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
-        secret: accessTokenSecret,
-        expiresIn: '15m',
-      }),
       this.jwtService.signAsync(
-        { ...payload, jti },
+        { ...payload, jti: accessJti },
+        {
+          secret: accessTokenSecret,
+          expiresIn: '15m',
+        },
+      ),
+      this.jwtService.signAsync(
+        { ...payload, jti: refreshJti },
         {
           secret: refreshTokenSecret,
           expiresIn: '7d',

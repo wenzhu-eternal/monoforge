@@ -298,11 +298,12 @@ export class ErrorLogsService {
   }
 
   private matchWhitelist(
-    list: Array<{ pattern: string; matchType: string }>,
+    list: Array<{ pattern: string; matchType: string; isActive?: boolean }>,
     message: string,
     url?: string,
   ): boolean {
     for (const rule of list) {
+      if (rule.isActive === false) continue
       if (rule.matchType === 'message' && message.includes(rule.pattern)) {
         return true
       }
@@ -313,7 +314,15 @@ export class ErrorLogsService {
     return false
   }
 
-  async findWhitelist(): Promise<ErrorWhitelist[]> {
+  async findWhitelist(includeDeleted = false): Promise<ErrorWhitelist[]> {
+    if (includeDeleted) {
+      const list = await db
+        .select()
+        .from(errorWhitelist)
+        .orderBy(desc(errorWhitelist.createdAt), desc(errorWhitelist.id))
+      return list as ErrorWhitelist[]
+    }
+
     try {
       const cached = await this.redisService.get(WHITELIST_CACHE_KEY)
       if (cached) {

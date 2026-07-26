@@ -52,26 +52,34 @@ describe('AuditService', () => {
   })
 
   describe('findAll', () => {
+    const mockChain = (items: unknown[]) => ({
+      from: vi.fn().mockReturnValue({
+        leftJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockReturnValue({
+              offset: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockResolvedValue(items),
+              }),
+            }),
+          }),
+        }),
+      }),
+    })
+    const mockCount = (value: number) => ({
+      from: vi.fn().mockReturnValue({
+        leftJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ value }]),
+        }),
+      }),
+    })
+
     it('返回分页审计日志列表', async () => {
       const mockItems = [
         { id: 1, userId: 1, username: 'admin', action: 'create', resource: 'user' },
         { id: 2, userId: 2, username: 'alice', action: 'update', resource: 'role' },
       ]
-      // Promise.all 第一项：列表查询
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          leftJoin: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              offset: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockResolvedValue(mockItems),
-              }),
-            }),
-          }),
-        }),
-      } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockResolvedValue([{ value: 2 }]),
-      } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(mockChain(mockItems) as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(mockCount(2) as never)
 
       const result = await service.findAll(1, 10)
 
@@ -83,20 +91,8 @@ describe('AuditService', () => {
     })
 
     it('空结果 totalPages 至少为 1', async () => {
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          leftJoin: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              offset: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }),
-        }),
-      } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockResolvedValue([{ value: 0 }]),
-      } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(mockChain([]) as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(mockCount(0) as never)
 
       const result = await service.findAll(1, 10)
       expect(result.total).toBe(0)
@@ -104,40 +100,16 @@ describe('AuditService', () => {
     })
 
     it('pageSize 超过 100 被截断', async () => {
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          leftJoin: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              offset: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }),
-        }),
-      } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockResolvedValue([{ value: 0 }]),
-      } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(mockChain([]) as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(mockCount(0) as never)
 
       const result = await service.findAll(1, 200)
       expect(result.pageSize).toBe(100)
     })
 
     it('page 小于 1 时被纠正为 1', async () => {
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          leftJoin: vi.fn().mockReturnValue({
-            limit: vi.fn().mockReturnValue({
-              offset: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }),
-        }),
-      } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockResolvedValue([{ value: 0 }]),
-      } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(mockChain([]) as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(mockCount(0) as never)
 
       const result = await service.findAll(-1, 10)
       expect(result.page).toBe(1)

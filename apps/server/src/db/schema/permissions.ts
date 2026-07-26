@@ -10,7 +10,10 @@ export const permissions = pgTable(
     description: text('description'),
     routes: json('routes').$type<string[]>().default([]),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
     deletedAt: timestamp('deleted_at'),
   },
   (t) => [uniqueIndex('permissions_code_unique').on(t.code).where(sql`deleted_at IS NULL`)],

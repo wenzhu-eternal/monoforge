@@ -212,7 +212,7 @@ function FilesPage() {
               title={isDeleted ? '文件已禁用' : '确定要禁用该文件吗？'}
               onConfirm={() => handleDelete(record.id)}
             >
-              <Button type="link" size="small" danger>
+              <Button type="link" size="small" danger disabled={isDeleted}>
                 禁用
               </Button>
             </Popconfirm>

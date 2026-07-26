@@ -5,6 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
+import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import { and, eq, inArray } from 'drizzle-orm'
 import type { Request } from 'express'
 import { PERMISSIONS_KEY } from '@/common/decorators/permissions.decorator'
@@ -54,7 +55,7 @@ export class PermissionsGuard implements CanActivate {
       where: and(eq(users.id, userPayload.sub), notDeleted(users.deletedAt)),
     })
     if (!userRecord?.roleId) {
-      throw new ForbiddenException('权限不足，未分配角色')
+      throw new ForbiddenException(ErrorMessages[ErrorCodes.PERMISSION_DENIED])
     }
 
     // 查询用户权限码（role_permissions 是关联表无软删除，permissions 软删除在 code 查询时过滤）
@@ -100,7 +101,9 @@ export class PermissionsGuard implements CanActivate {
     })
 
     if (!isAllowed) {
-      throw new ForbiddenException(`权限不足，需要: ${requiredPermissions.join(', ')}`)
+      throw new ForbiddenException(
+        `${ErrorMessages[ErrorCodes.PERMISSION_DENIED]}: ${requiredPermissions.join(', ')}`,
+      )
     }
 
     return true

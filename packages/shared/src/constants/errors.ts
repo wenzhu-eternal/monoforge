@@ -17,14 +17,20 @@ export const ErrorCodes = {
 
   ROLE_NOT_FOUND: 2001,
   ROLE_ALREADY_EXISTS: 2002,
+  ROLE_IN_USE: 2003,
+  PERMISSION_NOT_FOUND: 2004,
 
   FILE_NOT_FOUND: 3001,
   FILE_TOO_LARGE: 3002,
   INVALID_FILE_TYPE: 3003,
+  FILE_QUARANTINED: 3004,
 
-  OPERATION_FAILED: 4001,
-  VALIDATION_FAILED: 4002,
-  RATE_LIMIT_EXCEEDED: 4003,
+  MAIL_SEND_FAILED: 4001,
+  SETUP_ALREADY_INITIALIZED: 4002,
+  VALIDATION_FAILED: 4003,
+  RATE_LIMIT_EXCEEDED: 4004,
+  PERMISSION_DENIED: 4005,
+  OPERATION_FAILED: 4006,
 } as const
 
 export const ErrorMessages = {
@@ -44,10 +50,16 @@ export const ErrorMessages = {
   [ErrorCodes.INITIAL_ADMIN_CANNOT_DELETE]: '初始管理员账号不可删除',
   [ErrorCodes.ROLE_NOT_FOUND]: '角色不存在',
   [ErrorCodes.ROLE_ALREADY_EXISTS]: '角色已存在',
+  [ErrorCodes.ROLE_IN_USE]: '角色使用中，不可删除',
+  [ErrorCodes.PERMISSION_NOT_FOUND]: '权限不存在',
   [ErrorCodes.FILE_NOT_FOUND]: '文件不存在',
   [ErrorCodes.FILE_TOO_LARGE]: '文件过大',
   [ErrorCodes.INVALID_FILE_TYPE]: '文件类型无效',
-  [ErrorCodes.OPERATION_FAILED]: '操作失败',
+  [ErrorCodes.FILE_QUARANTINED]: '文件已被隔离',
+  [ErrorCodes.MAIL_SEND_FAILED]: '邮件发送失败',
+  [ErrorCodes.SETUP_ALREADY_INITIALIZED]: '系统已初始化',
   [ErrorCodes.VALIDATION_FAILED]: '数据校验失败',
   [ErrorCodes.RATE_LIMIT_EXCEEDED]: '请求过于频繁，请稍后再试',
+  [ErrorCodes.PERMISSION_DENIED]: '权限不足',
+  [ErrorCodes.OPERATION_FAILED]: '操作失败',
 } as const
