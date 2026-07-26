@@ -40,9 +40,9 @@
 
 ## 初始管理员保护
 
-- **初始管理员账号（`username === 'admin'`）不可删除**
+- **ADMIN_ROLE_ID 匹配的用户不可删除**（基于 `user.roleId === ADMIN_ROLE_ID`，env 默认 1）
 - 前端：删除按钮 `disabled`，Popconfirm 禁用并提示「初始管理员账号不可删除」
-- 后端：`users.service.remove` 二次校验 `if (existingUser.username === 'admin') throw new ConflictException(ErrorMessages[ErrorCodes.INITIAL_ADMIN_CANNOT_DELETE])`
+- 后端：`users.service.remove` 二次校验 `if (isAdminUser(existingUser)) throw new ConflictException(ErrorMessages[ErrorCodes.INITIAL_ADMIN_CANNOT_DELETE])`
 
 ## 文件上传安全
 
@@ -64,7 +64,7 @@
 
 ### 文件删除权限
 
-- 仅 admin 用户或原始上传者可删除文件
+- 仅管理员（`isAdminUser`）或原始上传者可删除文件
 - **软删时磁盘文件必须移到隔离目录**：`files.service.remove` 在 `set({ deletedAt })` 前调用 `moveToTrash(filePath, filename)`，将文件 `rename` 到 `uploads-trash/{timestamp}-{filename}`。静态托管中间件只服务 `uploads/`，不服务 `uploads-trash/`，避免"已删文件仍可凭 URL 访问"的隐私泄露。`rename` 失败仅告警不阻断软删（DB 记录仍标记删除），保证业务可用性
 
 ## 越权防护
@@ -90,7 +90,7 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 }
 ```
 
-`users.service.hasPermission(userId, permissionCode)` 通过 `rolePermissions` 表查询用户角色是否拥有指定权限码；`admin` 用户（初始管理员）短路返回 `true`。
+`users.service.hasPermission(userId, permissionCode)` 通过 `rolePermissions` 表查询用户角色是否拥有指定权限码；ADMIN_ROLE_ID 匹配的用户（`isAdminUser`）短路返回 `true`。
 
 ### WebSocket 模块守卫
 

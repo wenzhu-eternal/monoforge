@@ -104,7 +104,7 @@
 | 改动项 | 说明 |
 | :--- | :--- |
 | 给 users/roles/permissions 的 `findAll`/`findOne`/`remove` 与 `files.findAll` 新增 `@CurrentUser()`（现状均未注入；`files.remove` 已有、`files.preview` 见下行） | 用于判定 `isAdmin` |
-| `isAdmin` 判定方式：**沿用现状 `user.username === 'admin'`**（`TokenPayload` 仅含 `sub/username/email`，无 role 字段；files.controller remove 已用此法，`hasPermission` 对 admin 直接 return true）。**不要**新增 role 字段到 token。 | 控制查询可见范围 |
+| `isAdmin` 判定方式：**基于角色 ID `isAdminUser(user)`**（`TokenPayload` 含 `roleId`，通过 `ADMIN_ROLE_ID` env 配置判断，默认 1）。统一使用 `@/common/utils/is-admin` 公共函数。 | 控制查询可见范围 |
 | 新增 `restore` 接口（`@Post(':id/restore')`） | users/roles/permissions/files；error_whitelist 在 error-logs 模块内补对应 restore 接口 |
 | files.preview **不加 `@Public()`** | 维持鉴权；preview 现状无 `@CurrentUser`，需新增注入并在 service 内校验「管理员或上传者本人」后代理流，软删文件返 404 |
 ## 五、前端改动清单

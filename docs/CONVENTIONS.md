@@ -43,8 +43,8 @@
 
 ### 删除按钮禁用
 
-- 初始管理员账号（`username === 'admin'`）的删除按钮必须 `disabled`，Popconfirm 也禁用并提示「初始管理员账号不可删除」
-- 后端 `users.service.remove` 也要二次校验 `if (existingUser.username === 'admin') throw new ConflictException(...)`
+- ADMIN_ROLE_ID 匹配的用户（`isAdminUser(user)`）的删除按钮必须 `disabled`，Popconfirm 也禁用并提示「初始管理员账号不可删除」
+- 后端 `users.service.remove` 也要二次校验 `if (isAdminUser(existingUser)) throw new ConflictException(...)`
 
 ## Zod DTO 桥接规范
 
