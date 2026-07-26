@@ -9,8 +9,11 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 import { SkipThrottle } from '@nestjs/throttler'
 import { Public } from '@/common/decorators/public.decorator'
-import type { AuthRequest } from '@/common/types'
 import { HealthService } from './health.service'
+
+interface AuthRequest {
+  user?: { sub: number; username: string; email: string; roleId: number | null }
+}
 
 @ApiTags('Health')
 @Controller('health')

@@ -126,7 +126,7 @@ export class ErrorLogsService {
 
     const total = countResult[0]?.value ?? 0
     return {
-      list: items,
+      list: items as ErrorLog[],
       total,
       page: safePage,
       pageSize: safePageSize,

@@ -161,6 +161,7 @@ export class WechatService {
       sub: user.id,
       username: user.username,
       email: user.email,
+      roleId: user.roleId,
     }
     const tokens = await this.authService.signTokenPair(payload)
     // refreshToken 也存 Redis 便于吊销
