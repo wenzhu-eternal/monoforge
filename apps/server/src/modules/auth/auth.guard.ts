@@ -16,7 +16,7 @@ interface AuthenticatedRequest extends Request {
     sub: number
     username: string
     email: string
-    jti?: string
+    roleId: number | null
   }
 }
 

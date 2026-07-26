@@ -107,7 +107,7 @@ function UsersPage() {
       key: 'actions',
       width: 200,
       render: (_, record) => {
-        const isAdmin = record.username === 'admin'
+        const isAdmin = record.roleId === 1
         const isDeleted = !!record.deletedAt
         const actions: { key: string; node: ReactNode }[] = [
           {
