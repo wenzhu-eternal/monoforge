@@ -71,7 +71,7 @@ describe('ErrorLogsController', () => {
       const result = await controller.findAll('1', '10', 'keyword', 'backend', 'false', adminUser)
 
       expect(result).toEqual(mockResult)
-      expect(service.findAll).toHaveBeenCalledWith(1, 10, 'keyword', 'backend', 'false', true)
+      expect(service.findAll).toHaveBeenCalledWith(1, 10, 'keyword', 'backend', 'false')
     })
 
     it('未传参时使用默认值', async () => {
@@ -85,7 +85,7 @@ describe('ErrorLogsController', () => {
 
       await controller.findAll(undefined, undefined, undefined, undefined, undefined, nonAdminUser)
 
-      expect(service.findAll).toHaveBeenCalledWith(1, 10, undefined, undefined, undefined, false)
+      expect(service.findAll).toHaveBeenCalledWith(1, 10, undefined, undefined, undefined)
     })
 
     it('page 非数字时抛 BadRequestException', async () => {

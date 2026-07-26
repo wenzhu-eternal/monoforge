@@ -77,8 +77,7 @@ export class ErrorLogsController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    const isAdmin = isAdminUser(currentUser)
-    return this.errorLogsService.findAll(pageNum, size, keyword, source, isResolved, isAdmin)
+    return this.errorLogsService.findAll(pageNum, size, keyword, source, isResolved)
   }
 
   @Get('stats')

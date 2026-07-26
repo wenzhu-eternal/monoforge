@@ -114,6 +114,8 @@ export const useDeleteErrorLog = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['error-logs'] })
+      queryClient.invalidateQueries({ queryKey: ['error-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['error-logs-grouped'] })
     },
   })
 }
