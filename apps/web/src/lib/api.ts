@@ -38,11 +38,8 @@ export async function bootstrapAuth(): Promise<void> {
   if (!isAuthenticated || token) return
 
   try {
-    const response = await axios.post(
-      `${env.VITE_API_BASE_URL}/api/v1/auth/refresh`,
-      {},
-      { withCredentials: true },
-    )
+    // 用相对路径走 Vite 代理，确保 cookie 正确携带（直连后端会因 sameSite 丢失）
+    const response = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true })
     const { accessToken } = response.data.data
     useAuthStore.getState().setToken(accessToken)
   } catch {
@@ -99,12 +96,8 @@ api.interceptors.response.use(
       isRefreshing = true
 
       try {
-        // refreshToken 走 httpOnly cookie，无需手动传参
-        const response = await axios.post(
-          `${env.VITE_API_BASE_URL}/api/v1/auth/refresh`,
-          {},
-          { withCredentials: true },
-        )
+        // refreshToken 走 httpOnly cookie，通过相对路径走 Vite 代理避免跨端口 cookie 丢失
+        const response = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true })
         const { accessToken } = response.data.data
 
         useAuthStore.getState().setToken(accessToken)
