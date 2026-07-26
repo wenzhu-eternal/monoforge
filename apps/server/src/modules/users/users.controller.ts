@@ -25,6 +25,7 @@ import { ZodSerializerDto } from 'nestjs-zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { CacheInterceptor } from '@/modules/cache/cache.interceptor'
 import { CreateUserDto } from './dto/create-user.dto'
@@ -58,7 +59,7 @@ export class UsersController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    const isAdmin = currentUser?.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     return this.usersService.findAll(pageNum, size, isAdmin)
   }
 
@@ -77,7 +78,7 @@ export class UsersController {
   @ApiOperation({ summary: '按ID查询用户（带缓存）' })
   @ZodSerializerDto(UserSchema)
   async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
-    const isAdmin = currentUser.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     return this.usersService.findById(id, isAdmin)
   }
 

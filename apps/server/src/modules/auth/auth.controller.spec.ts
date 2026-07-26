@@ -54,7 +54,7 @@ describe('AuthController', () => {
         expect.objectContaining({
           httpOnly: true,
           sameSite: 'strict',
-          path: '/api/v1/auth',
+          path: '/',
         }),
       )
     })
@@ -121,7 +121,7 @@ describe('AuthController', () => {
 
       expect(result).toEqual({ message: '已登出' })
       expect(authService.logout).toHaveBeenCalledWith(1, 'test-token')
-      expect(response.clearCookie).toHaveBeenCalledWith('refreshToken', { path: '/api/v1/auth' })
+      expect(response.clearCookie).toHaveBeenCalledWith('refreshToken', { path: '/' })
     })
   })
 

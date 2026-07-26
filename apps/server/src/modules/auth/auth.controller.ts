@@ -125,7 +125,7 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    response.clearCookie('refreshToken', { path: '/api/v1/auth' })
+    response.clearCookie('refreshToken', { path: '/' })
     const authHeader = request.headers.authorization
     const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
     return this.authService.logout(user.sub, accessToken)

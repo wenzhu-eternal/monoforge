@@ -29,8 +29,18 @@ describe('UsersController', () => {
   })
 
   describe('findAll', () => {
-    const nonAdminUser = { sub: 2, username: 'user', email: 'user@test.com' } as TokenPayload
-    const adminUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+    const nonAdminUser = {
+      sub: 2,
+      username: 'user',
+      email: 'user@test.com',
+      roleId: 2,
+    } as TokenPayload
+    const adminUser = {
+      sub: 1,
+      username: 'admin',
+      email: 'admin@test.com',
+      roleId: 1,
+    } as TokenPayload
 
     it('返回分页用户（普通用户）', async () => {
       const mockResult = {
@@ -108,7 +118,12 @@ describe('UsersController', () => {
     it('按 ID 查询用户', async () => {
       const mockUser = { id: 1, username: 'admin' }
       vi.mocked(service.findById).mockResolvedValue(mockUser as never)
-      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+      const currentUser = {
+        sub: 1,
+        username: 'admin',
+        email: 'admin@test.com',
+        roleId: 1,
+      } as TokenPayload
 
       const result = await controller.findOne(1, currentUser)
 
@@ -131,7 +146,12 @@ describe('UsersController', () => {
   })
 
   describe('update', () => {
-    const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+    const currentUser = {
+      sub: 1,
+      username: 'admin',
+      email: 'admin@test.com',
+      roleId: 1,
+    } as TokenPayload
 
     it('仅改资料（无 roleId/status）不触发 hasPermission', async () => {
       const dto = { nickname: '新昵称' }
@@ -189,7 +209,12 @@ describe('UsersController', () => {
   describe('remove', () => {
     it('删除用户', async () => {
       vi.mocked(service.remove).mockResolvedValue({ message: '用户 ID 1 已删除' })
-      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+      const currentUser = {
+        sub: 1,
+        username: 'admin',
+        email: 'admin@test.com',
+        roleId: 1,
+      } as TokenPayload
 
       const result = await controller.remove(1, currentUser)
 

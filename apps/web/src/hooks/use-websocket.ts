@@ -41,6 +41,11 @@ export function useWebSocket() {
       return
     }
 
+    // token 变化时强制重连（disconnect 后再 connect），避免持有旧 token 的 socket
+    if (wsClient.isConnected()) {
+      wsClient.disconnect()
+    }
+
     wsClient.connect(token)
 
     const onConnect = () => setConnected(true)

@@ -2,6 +2,7 @@ import { createRouter, RouterProvider } from '@tanstack/react-router'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { APP_NAME } from '@/config/brand'
+import { bootstrapAuth } from '@/lib/api'
 import { installGlobalErrorHandlers } from '@/lib/error-reporter'
 import './index.css'
 import { routeTree } from './routeTree.gen'
@@ -33,6 +34,7 @@ const rootElement = document.getElementById('root')!
 // 先注册全局错误处理器，再启动 mock，避免 mock 启动失败时错误无人接管
 installGlobalErrorHandlers()
 enableMocking()
+  .then(() => bootstrapAuth())
   .then(() => {
     ReactDOM.createRoot(rootElement).render(
       <React.StrictMode>

@@ -22,6 +22,7 @@ import { ZodSerializerDto } from 'nestjs-zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { CreateRoleDto } from './dto/create-role.dto'
 import { UpdateRoleDto } from './dto/update-role.dto'
@@ -53,7 +54,7 @@ export class RolesController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    const isAdmin = currentUser?.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     return this.rolesService.findAll(pageNum, size, isAdmin)
   }
 
@@ -63,7 +64,7 @@ export class RolesController {
   @ApiOperation({ summary: '按ID查询角色' })
   @ZodSerializerDto(RoleSchema)
   async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
-    const isAdmin = currentUser.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     return this.rolesService.findById(id, isAdmin)
   }
 

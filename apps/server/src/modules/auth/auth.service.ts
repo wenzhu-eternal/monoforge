@@ -17,6 +17,7 @@ export interface TokenPayload {
   sub: number
   username: string
   email: string
+  roleId: number | null
 }
 
 export interface TokenPair {
@@ -64,6 +65,7 @@ export class AuthService {
       sub: user.id,
       username: user.username,
       email: user.email,
+      roleId: user.roleId,
     })
 
     await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)
@@ -79,7 +81,13 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string): Promise<TokenPair> {
-    let payload: { sub: number; username: string; email: string; jti?: string }
+    let payload: {
+      sub: number
+      username: string
+      email: string
+      roleId?: number | null
+      jti?: string
+    }
     try {
       const secret = this.configService.get<string>('JWT_REFRESH_SECRET')
       payload = await this.jwtService.verifyAsync(refreshToken, { secret })
@@ -108,6 +116,7 @@ export class AuthService {
       sub: user.id,
       username: user.username,
       email: user.email,
+      roleId: user.roleId,
     })
 
     await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)

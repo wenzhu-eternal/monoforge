@@ -14,6 +14,7 @@ import { NotificationSchema } from '@shared/schemas/notification'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { z } from 'zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { NotificationsService } from './notifications.service'
 
@@ -27,17 +28,13 @@ export class NotificationsController {
   @ApiOperation({ summary: '拉取通知列表' })
   @ZodSerializerDto(z.array(NotificationSchema))
   list(@CurrentUser() user: TokenPayload, @Query('unreadOnly') unreadOnly?: string) {
-    return this.notificationsService.list(
-      user.sub,
-      unreadOnly === 'true',
-      user.username === 'admin',
-    )
+    return this.notificationsService.list(user.sub, unreadOnly === 'true', isAdminUser(user))
   }
 
   @Get('unread-count')
   @ApiOperation({ summary: '未读通知数' })
   unreadCount(@CurrentUser() user: TokenPayload) {
-    return this.notificationsService.unreadCount(user.sub, user.username === 'admin')
+    return this.notificationsService.unreadCount(user.sub, isAdminUser(user))
   }
 
   @Post(':id/read')

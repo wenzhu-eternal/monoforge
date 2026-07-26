@@ -45,8 +45,18 @@ describe('ErrorLogsController', () => {
   })
 
   describe('findAll', () => {
-    const nonAdminUser = { sub: 2, username: 'user', email: 'user@test.com' } as TokenPayload
-    const adminUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+    const nonAdminUser = {
+      sub: 2,
+      username: 'user',
+      email: 'user@test.com',
+      roleId: 2,
+    } as TokenPayload
+    const adminUser = {
+      sub: 1,
+      username: 'admin',
+      email: 'admin@test.com',
+      roleId: 1,
+    } as TokenPayload
 
     it('返回分页错误日志（管理员）', async () => {
       const mockResult = {

@@ -12,6 +12,6 @@ export function getRefreshTokenCookieOptions(configService: ConfigService): Cook
     secure,
     sameSite: 'strict',
     maxAge: REFRESH_TOKEN_MAX_AGE,
-    path: '/api/v1/auth',
+    path: '/',
   }
 }

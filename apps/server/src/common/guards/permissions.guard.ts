@@ -9,6 +9,7 @@ import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import { and, eq, inArray } from 'drizzle-orm'
 import type { Request } from 'express'
 import { PERMISSIONS_KEY } from '@/common/decorators/permissions.decorator'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions, users } from '@/db/schema'
@@ -18,13 +19,14 @@ interface AuthenticatedRequest extends Request {
     sub: number
     username: string
     email: string
+    roleId: number | null
   }
 }
 
 /**
  * 权限守卫: 根据 @Permissions(...) 元数据校验当前用户是否拥有指定权限
  * 通过 users.roleId → role_permissions.permission 获取用户权限码列表
- * admin 用户名视为拥有所有权限
+ * ADMIN_ROLE_ID 匹配时视为拥有所有权限（可配置，默认 1）
  */
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -46,8 +48,8 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('未认证用户')
     }
 
-    // admin 用户名视为拥有所有权限
-    if (userPayload.username === 'admin') {
+    // 基于角色 ID 判断 admin（可配置 ADMIN_ROLE_ID，默认 1）
+    if (isAdminUser(userPayload)) {
       return true
     }
 
@@ -58,10 +60,14 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException(ErrorMessages[ErrorCodes.PERMISSION_DENIED])
     }
 
-    // 查询用户权限码（role_permissions 是关联表无软删除，permissions 软删除在 code 查询时过滤）
+    // 查询用户权限码（role_permissions 关联表无软删除，join permissions 表过滤已软删权限）
     const userPermissions = await db
       .select({ permission: rolePermissions.permission })
       .from(rolePermissions)
+      .innerJoin(
+        permissions,
+        and(eq(rolePermissions.permission, permissions.code), notDeleted(permissions.deletedAt)),
+      )
       .where(eq(rolePermissions.roleId, userRecord.roleId))
 
     const permissionCodes = userPermissions.map((p) => p.permission)

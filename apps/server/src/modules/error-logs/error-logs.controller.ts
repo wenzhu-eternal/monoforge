@@ -29,6 +29,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { Public } from '@/common/decorators/public.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { BatchResolveDto } from './dto/batch-resolve.dto'
 import { CreateWhitelistDto } from './dto/create-whitelist.dto'
 import { ReportErrorDto } from './dto/report-error.dto'
@@ -66,7 +67,7 @@ export class ErrorLogsController {
     @Query('keyword') keyword?: string,
     @Query('source') source?: string,
     @Query('isResolved') isResolved?: string,
-    @CurrentUser() currentUser?: { username: string },
+    @CurrentUser() currentUser?: { username: string; roleId?: number | null },
   ) {
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
@@ -76,7 +77,7 @@ export class ErrorLogsController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    const isAdmin = currentUser?.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     return this.errorLogsService.findAll(pageNum, size, keyword, source, isResolved, isAdmin)
   }
 
@@ -114,8 +115,8 @@ export class ErrorLogsController {
   @Permissions(PermissionCodes.ERROR_LOG_VIEW)
   @ApiOperation({ summary: '查询全部白名单' })
   @ZodSerializerDto(z.array(ErrorWhitelistSchema))
-  async findWhitelist(@CurrentUser() currentUser?: { username: string }) {
-    const isAdmin = currentUser?.username === 'admin'
+  async findWhitelist(@CurrentUser() currentUser?: { username: string; roleId?: number | null }) {
+    const isAdmin = isAdminUser(currentUser)
     return this.errorLogsService.findWhitelist(isAdmin)
   }
 

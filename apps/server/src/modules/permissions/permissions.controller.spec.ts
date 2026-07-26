@@ -26,8 +26,18 @@ describe('PermissionsController', () => {
   })
 
   describe('findAll', () => {
-    const nonAdminUser = { sub: 2, username: 'user', email: 'user@test.com' } as TokenPayload
-    const adminUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+    const nonAdminUser = {
+      sub: 2,
+      username: 'user',
+      email: 'user@test.com',
+      roleId: 2,
+    } as TokenPayload
+    const adminUser = {
+      sub: 1,
+      username: 'admin',
+      email: 'admin@test.com',
+      roleId: 1,
+    } as TokenPayload
 
     it('should return paginated permissions (non-admin)', async () => {
       const mockResult = {
@@ -97,7 +107,12 @@ describe('PermissionsController', () => {
     it('should return permission by id', async () => {
       const mockPermission = { id: 1, code: 'user:view', name: '查看用户' }
       vi.mocked(service.findById).mockResolvedValue(mockPermission as never)
-      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+      const currentUser = {
+        sub: 1,
+        username: 'admin',
+        email: 'admin@test.com',
+        roleId: 1,
+      } as TokenPayload
 
       const result = await controller.findOne(1, currentUser)
 
@@ -169,7 +184,12 @@ describe('PermissionsController', () => {
   describe('remove', () => {
     it('should soft delete permission', async () => {
       vi.mocked(service.remove).mockResolvedValue({ message: '权限 ID 1 已删除' })
-      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+      const currentUser = {
+        sub: 1,
+        username: 'admin',
+        email: 'admin@test.com',
+        roleId: 1,
+      } as TokenPayload
 
       const result = await controller.remove(1, currentUser)
 

@@ -22,6 +22,7 @@ import { z } from 'zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { CreatePermissionDto, UpdatePermissionDto } from './dto/permission.dto'
 import { PermissionsService } from './permissions.service'
@@ -46,7 +47,7 @@ export class PermissionsController {
   ) {
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
-    const isAdmin = currentUser?.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     return this.permissionsService.findAll(pageNum, size, isAdmin)
   }
 
@@ -64,7 +65,7 @@ export class PermissionsController {
   @ApiOperation({ summary: '按ID查询权限' })
   @ZodSerializerDto(PermissionSchema)
   async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
-    const isAdmin = currentUser.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     return this.permissionsService.findById(id, isAdmin)
   }
 

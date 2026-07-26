@@ -47,6 +47,9 @@ const envSchema = z
       .union([z.boolean(), z.string()])
       .transform((v) => v === true || v === 'true')
       .default(false),
+
+    // admin 角色 ID（permissions.guard 根据此值判断超级管理员，默认 1）
+    ADMIN_ROLE_ID: z.coerce.number().int().positive().default(1),
   })
   .superRefine((data, ctx) => {
     // 生产环境警告 COOKIE_SECURE 未启用（不强制退出，允许单容器 HTTP 部署配合 ngrok）

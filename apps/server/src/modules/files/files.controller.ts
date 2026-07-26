@@ -25,6 +25,7 @@ import { ZodSerializerDto } from 'nestjs-zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { FilesService, UPLOAD_DIR } from './files.service'
 
@@ -72,7 +73,7 @@ export class FilesController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    const isAdmin = currentUser?.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     return this.filesService.findAll(pageNum, size, isAdmin)
   }
 
@@ -84,7 +85,7 @@ export class FilesController {
     @Res() response: Response,
     @CurrentUser() currentUser: TokenPayload,
   ) {
-    const isAdmin = currentUser.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     const file = await this.filesService.findByIdRaw(id)
 
     if (!file) {
@@ -137,7 +138,7 @@ export class FilesController {
     @Res() response: Response,
     @CurrentUser() currentUser: TokenPayload,
   ) {
-    const isAdmin = currentUser.username === 'admin'
+    const isAdmin = isAdminUser(currentUser)
     const file = await this.filesService.findByIdRaw(id)
 
     if (!file) {
@@ -171,9 +172,9 @@ export class FilesController {
   @ApiOperation({ summary: '删除文件' })
   async remove(
     @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user: { sub: number; username: string },
+    @CurrentUser() user: { sub: number; username: string; roleId?: number | null },
   ) {
-    return this.filesService.remove(id, user.sub, user.username === 'admin')
+    return this.filesService.remove(id, user.sub, isAdminUser(user))
   }
 
   @Post(':id/restore')
@@ -182,8 +183,8 @@ export class FilesController {
   @ApiOperation({ summary: '恢复已删除文件' })
   async restore(
     @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user: { sub: number; username: string },
+    @CurrentUser() user: { sub: number; username: string; roleId?: number | null },
   ) {
-    return this.filesService.restore(id, user.sub, user.username === 'admin')
+    return this.filesService.restore(id, user.sub, isAdminUser(user))
   }
 }

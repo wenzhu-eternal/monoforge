@@ -5,6 +5,7 @@ import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { User, UserListItem } from '@shared/schemas/user'
 import * as argon2 from 'argon2'
 import { and, desc, eq, sql } from 'drizzle-orm'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, rolePermissions, roles, users } from '@/db/schema'
@@ -224,7 +225,7 @@ export class UsersService {
       where: and(eq(users.id, userId), notDeleted(users.deletedAt)),
     })
     if (!user?.roleId) return false
-    if (user.username === 'admin') return true
+    if (isAdminUser(user)) return true
 
     // 检查 role 是否被软删：role 被软删时该 role 权限不生效
     const role = await db.query.roles.findFirst({
@@ -248,7 +249,7 @@ export class UsersService {
       throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
     }
 
-    if (existingUser.username === 'admin') {
+    if (isAdminUser(existingUser)) {
       throw new ConflictException(ErrorMessages[ErrorCodes.INITIAL_ADMIN_CANNOT_DELETE])
     }
 

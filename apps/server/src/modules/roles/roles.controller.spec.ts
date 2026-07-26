@@ -26,8 +26,18 @@ describe('RolesController', () => {
   })
 
   describe('findAll', () => {
-    const nonAdminUser = { sub: 2, username: 'user', email: 'user@test.com' } as TokenPayload
-    const adminUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+    const nonAdminUser = {
+      sub: 2,
+      username: 'user',
+      email: 'user@test.com',
+      roleId: 2,
+    } as TokenPayload
+    const adminUser = {
+      sub: 1,
+      username: 'admin',
+      email: 'admin@test.com',
+      roleId: 1,
+    } as TokenPayload
 
     it('返回分页角色（普通用户）', async () => {
       const mockResult = {
@@ -75,7 +85,12 @@ describe('RolesController', () => {
     })
 
     it('page 非数字时抛 BadRequestException', async () => {
-      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+      const currentUser = {
+        sub: 1,
+        username: 'admin',
+        email: 'admin@test.com',
+        roleId: 1,
+      } as TokenPayload
       await expect(controller.findAll('abc', '10', currentUser)).rejects.toThrow(
         BadRequestException,
       )
@@ -83,7 +98,12 @@ describe('RolesController', () => {
     })
 
     it('pageSize 非数字时抛 BadRequestException', async () => {
-      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+      const currentUser = {
+        sub: 1,
+        username: 'admin',
+        email: 'admin@test.com',
+        roleId: 1,
+      } as TokenPayload
       await expect(controller.findAll('1', 'xyz', currentUser)).rejects.toThrow(BadRequestException)
       expect(service.findAll).not.toHaveBeenCalled()
     })
@@ -93,7 +113,12 @@ describe('RolesController', () => {
     it('按 ID 查询角色', async () => {
       const mockRole = { id: 1, name: 'admin' }
       vi.mocked(service.findById).mockResolvedValue(mockRole as never)
-      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+      const currentUser = {
+        sub: 1,
+        username: 'admin',
+        email: 'admin@test.com',
+        roleId: 1,
+      } as TokenPayload
 
       const result = await controller.findOne(1, currentUser)
 
@@ -131,7 +156,12 @@ describe('RolesController', () => {
   describe('remove', () => {
     it('删除角色', async () => {
       vi.mocked(service.remove).mockResolvedValue({ message: '角色 ID 1 已删除' })
-      const currentUser = { sub: 1, username: 'admin', email: 'admin@test.com' } as TokenPayload
+      const currentUser = {
+        sub: 1,
+        username: 'admin',
+        email: 'admin@test.com',
+        roleId: 1,
+      } as TokenPayload
 
       const result = await controller.remove(1, currentUser)
 

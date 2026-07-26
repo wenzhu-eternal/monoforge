@@ -5,7 +5,7 @@ import { env } from './env'
 export const api = axios.create({
   baseURL: env.VITE_API_BASE_URL,
   timeout: 15000,
-  withCredentials: true, // refresh token 走 httpOnly cookie
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -26,6 +26,29 @@ const processQueue = (error: unknown, token: string | null) => {
     }
   })
   failedQueue = []
+}
+
+/**
+ * 应用初始化时调用：若 isAuthenticated 但 token 为空（页面刷新后），
+ * 主动用 httpOnly cookie refresh token 恢复 access token，
+ * 避免首个请求 401 的空窗期。
+ */
+export async function bootstrapAuth(): Promise<void> {
+  const { isAuthenticated, token } = useAuthStore.getState()
+  if (!isAuthenticated || token) return
+
+  try {
+    const response = await axios.post(
+      `${env.VITE_API_BASE_URL}/api/v1/auth/refresh`,
+      {},
+      { withCredentials: true },
+    )
+    const { accessToken } = response.data.data
+    useAuthStore.getState().setToken(accessToken)
+  } catch {
+    // refresh 失败说明 cookie 过期或无效，清除登录态
+    useAuthStore.getState().logout()
+  }
 }
 
 api.interceptors.request.use(

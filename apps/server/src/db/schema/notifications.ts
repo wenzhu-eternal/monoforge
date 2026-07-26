@@ -20,7 +20,7 @@ export const notifications = pgTable(
     type: varchar('type', { length: 50 }).notNull(),
     title: varchar('title', { length: 200 }).notNull(),
     content: text('content'),
-    read: boolean('read').default(false).notNull(),
+    read: boolean('is_read').default(false).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),
   },
