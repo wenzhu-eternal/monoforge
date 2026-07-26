@@ -13,8 +13,7 @@ export const useLogin = () => {
       return response.data.data!
     },
     onSuccess: (data) => {
-      // refreshToken 已由后端写入 httpOnly cookie，前端只存 accessToken
-      login(data.user, data.accessToken)
+      login(data.user, data.accessToken, data.refreshToken)
     },
   })
 }

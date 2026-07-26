@@ -69,19 +69,29 @@ describe('CreateUserSchema', () => {
 })
 
 describe('UpdateUserSchema', () => {
-  it('email 必填', () => {
-    const r = UpdateUserSchema.safeParse({ roleId: 1 })
-    expect(r.success).toBe(false)
+  it('支持局部更新（仅传 email）', () => {
+    const r = UpdateUserSchema.safeParse({ email: 'a@b.com' })
+    expect(r.success).toBe(true)
   })
 
-  it('roleId 必填', () => {
-    const r = UpdateUserSchema.safeParse({ email: 'a@b.com' })
-    expect(r.success).toBe(false)
+  it('支持局部更新（仅传 roleId）', () => {
+    const r = UpdateUserSchema.safeParse({ roleId: 1 })
+    expect(r.success).toBe(true)
   })
 
   it('合法数据通过', () => {
     const r = UpdateUserSchema.safeParse({ email: 'a@b.com', roleId: 1 })
     expect(r.success).toBe(true)
+  })
+
+  it('非法 email 失败', () => {
+    const r = UpdateUserSchema.safeParse({ email: 'not-email' })
+    expect(r.success).toBe(false)
+  })
+
+  it('非法 roleId 失败', () => {
+    const r = UpdateUserSchema.safeParse({ roleId: 0 })
+    expect(r.success).toBe(false)
   })
 })
 

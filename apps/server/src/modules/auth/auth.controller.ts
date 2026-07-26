@@ -49,6 +49,7 @@ export class AuthController {
 
     return {
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       user: result.user,
     }
   }
@@ -84,6 +85,7 @@ export class AuthController {
 
     return {
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       user: result.user,
     }
   }
@@ -98,7 +100,7 @@ export class AuthController {
     @Body('refreshToken') refreshTokenFromBody: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const refreshToken = request.cookies?.refreshToken ?? refreshTokenFromBody
+    const refreshToken = refreshTokenFromBody ?? request.cookies?.refreshToken
     if (!refreshToken) {
       throw new UnauthorizedException('缺少刷新令牌')
     }
@@ -113,6 +115,7 @@ export class AuthController {
 
     return {
       accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
     }
   }
 

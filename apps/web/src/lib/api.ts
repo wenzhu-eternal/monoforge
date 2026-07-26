@@ -33,17 +33,26 @@ const processQueue = (error: unknown, token: string | null) => {
  * 主动用 httpOnly cookie refresh token 恢复 access token，
  * 避免首个请求 401 的空窗期。
  */
+function buildRefreshPayload() {
+  return { refreshToken: useAuthStore.getState().refreshToken ?? undefined }
+}
+
 export async function bootstrapAuth(): Promise<void> {
-  const { isAuthenticated, token } = useAuthStore.getState()
-  if (!isAuthenticated || token) return
+  const { isAuthenticated, token, refreshToken } = useAuthStore.getState()
+  if (!isAuthenticated || token || !refreshToken) return
 
   try {
-    // 用相对路径走 Vite 代理，确保 cookie 正确携带（直连后端会因 sameSite 丢失）
-    const response = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true })
-    const { accessToken } = response.data.data
+    const response = await axios.post(
+      '/api/v1/auth/refresh',
+      { refreshToken },
+      {
+        withCredentials: true,
+      },
+    )
+    const { accessToken, refreshToken: newRefreshToken } = response.data.data
     useAuthStore.getState().setToken(accessToken)
+    useAuthStore.getState().setRefreshToken(newRefreshToken)
   } catch {
-    // refresh 失败说明 cookie 过期或无效，清除登录态
     useAuthStore.getState().logout()
   }
 }
@@ -97,10 +106,13 @@ api.interceptors.response.use(
 
       try {
         // refreshToken 走 httpOnly cookie，通过相对路径走 Vite 代理避免跨端口 cookie 丢失
-        const response = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true })
-        const { accessToken } = response.data.data
+        const response = await axios.post('/api/v1/auth/refresh', buildRefreshPayload(), {
+          withCredentials: true,
+        })
+        const { accessToken, refreshToken } = response.data.data
 
         useAuthStore.getState().setToken(accessToken)
+        useAuthStore.getState().setRefreshToken(refreshToken)
         processQueue(null, accessToken)
 
         originalRequest.headers.Authorization = `Bearer ${accessToken}`

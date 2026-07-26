@@ -24,7 +24,7 @@ export const useRegister = () => {
       return response.data.data!
     },
     onSuccess: (data) => {
-      login(data.user, data.accessToken)
+      login(data.user, data.accessToken, data.refreshToken)
     },
   })
 }

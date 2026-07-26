@@ -46,7 +46,11 @@ describe('AuthController', () => {
 
       const result = await controller.login(loginDto, response as never)
 
-      expect(result).toEqual({ accessToken: 'access-token', user: mockResult.user })
+      expect(result).toEqual({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        user: mockResult.user,
+      })
       expect(authService.login).toHaveBeenCalledWith('admin', 'Pass1234')
       expect(response.cookie).toHaveBeenCalledWith(
         'refreshToken',
@@ -85,7 +89,7 @@ describe('AuthController', () => {
 
       const result = await controller.refresh(request, undefined, response as never)
 
-      expect(result).toEqual({ accessToken: 'new-access' })
+      expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' })
       expect(authService.refresh).toHaveBeenCalledWith('cookie-token')
       expect(response.cookie).toHaveBeenCalled()
     })
@@ -97,7 +101,7 @@ describe('AuthController', () => {
 
       const result = await controller.refresh(request, 'body-token', response as never)
 
-      expect(result).toEqual({ accessToken: 'new-access' })
+      expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' })
       expect(authService.refresh).toHaveBeenCalledWith('body-token')
     })
 

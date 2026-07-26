@@ -18,8 +18,9 @@ import type { Server, Socket } from 'socket.io'
 @WebSocketGateway({
   cors: {
     origin: (origin, callback) => {
-      const allowed = process.env.ALLOW_ORIGIN
-      if (!origin || !allowed || origin === allowed) {
+      const raw = process.env.ALLOW_ORIGIN
+      const allowed = raw ? raw.split(',') : []
+      if (!origin || allowed.length === 0 || allowed.includes(origin)) {
         callback(null, true)
       } else {
         callback(new Error('Not allowed by CORS'))

@@ -26,8 +26,8 @@ class WsClient {
 
     this.socket = io(baseURL, {
       path: '/socket.io',
-      transports: ['websocket'],
       auth: { token },
+      transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: WsClient.MAX_RECONNECT,
       reconnectionDelay: 1000,
