@@ -13,7 +13,7 @@ export const useLogin = () => {
       return response.data.data!
     },
     onSuccess: (data) => {
-      login(data.user, data.accessToken, data.refreshToken)
+      login(data.user, data.accessToken)
     },
   })
 }
