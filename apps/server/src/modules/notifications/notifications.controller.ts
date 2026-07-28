@@ -34,7 +34,7 @@ export class NotificationsController {
   @Get('unread-count')
   @ApiOperation({ summary: '未读通知数' })
   unreadCount(@CurrentUser() user: TokenPayload) {
-    return this.notificationsService.unreadCount(user.sub, isAdminUser(user))
+    return this.notificationsService.unreadCount(user.sub)
   }
 
   @Post(':id/read')

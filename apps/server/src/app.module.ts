@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { Module } from '@nestjs/common'
+import { Module, OnApplicationShutdown } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core'
 import { ScheduleModule } from '@nestjs/schedule'
@@ -7,6 +7,7 @@ import { ServeStaticModule } from '@nestjs/serve-static'
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler'
 import { CommonModule } from './common/common.module'
 import { AuditInterceptor } from './common/interceptors/audit.interceptor'
+import { flushErrorLog } from './common/logger'
 import { DatabaseModule } from './db/database.module'
 import { AuditModule } from './modules/audit/audit.module'
 import { AuthGuard } from './modules/auth/auth.guard'
@@ -89,4 +90,8 @@ import { WechatModule } from './modules/wechat/wechat.module'
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements OnApplicationShutdown {
+  async onApplicationShutdown(): Promise<void> {
+    await flushErrorLog()
+  }
+}

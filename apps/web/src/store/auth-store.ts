@@ -5,12 +5,10 @@ import { persist } from 'zustand/middleware'
 interface AuthState {
   user: User | null
   token: string | null
-  refreshToken: string | null
   isAuthenticated: boolean
-  login: (user: User, token: string, refreshToken: string) => void
+  login: (user: User, token: string) => void
   logout: () => void
   setToken: (token: string) => void
-  setRefreshToken: (refreshToken: string) => void
   setUser: (user: User) => void
 }
 
@@ -19,13 +17,10 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
-      refreshToken: null,
       isAuthenticated: false,
-      login: (user, token, refreshToken) =>
-        set({ user, token, refreshToken, isAuthenticated: true }),
-      logout: () => set({ user: null, token: null, refreshToken: null, isAuthenticated: false }),
+      login: (user, token) => set({ user, token, isAuthenticated: true }),
+      logout: () => set({ user: null, token: null, isAuthenticated: false }),
       setToken: (token) => set({ token }),
-      setRefreshToken: (refreshToken) => set({ refreshToken }),
       setUser: (user) => set({ user }),
     }),
     {
@@ -33,7 +28,6 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
-        refreshToken: state.refreshToken,
       }),
     },
   ),

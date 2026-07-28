@@ -13,7 +13,7 @@ export class SanitizeBodyPipe implements PipeTransform {
 
     const cleaned: Record<string, unknown> = { ...(value as Record<string, unknown>) }
     for (const [key, val] of Object.entries(cleaned)) {
-      if (val === null || val === '') {
+      if (val === null) {
         cleaned[key] = undefined
       }
     }

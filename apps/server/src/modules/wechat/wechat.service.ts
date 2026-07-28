@@ -8,7 +8,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { WechatLoginType } from '@shared/schemas/wechat'
+import * as argon2 from 'argon2'
 import type { AxiosInstance } from 'axios'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
@@ -130,12 +132,24 @@ export class WechatService {
   async login(
     code: string,
     loginType: WechatLoginType,
+    state?: string,
   ): Promise<{
     accessToken: string
     refreshToken: string
     user: { id: number; username: string; nickname?: string | null; avatar?: string | null }
   }> {
     this.requireEnabled()
+
+    if (loginType === 'qrcode') {
+      if (!state) {
+        throw new UnauthorizedException('微信登录失败: 缺少 state')
+      }
+      const cached = await this.redisService.get(`wechat:state:${state}`)
+      await this.redisService.del(`wechat:state:${state}`)
+      if (!cached) {
+        throw new UnauthorizedException('微信登录失败: state 无效或已过期')
+      }
+    }
 
     let openId: string
     let nickname: string | undefined
@@ -217,10 +231,16 @@ export class WechatService {
    */
   private async findOrCreateUser(openId: string, nickname?: string, avatar?: string) {
     const existing = await db.query.users.findFirst({
-      where: and(eq(users.wechatOpenId, openId), notDeleted(users.deletedAt)),
+      where: eq(users.wechatOpenId, openId),
     })
 
     if (existing) {
+      if (existing.deletedAt) {
+        throw new UnauthorizedException('账号已注销，请联系管理员恢复')
+      }
+      if (!existing.status) {
+        throw new UnauthorizedException(ErrorMessages[ErrorCodes.USER_DISABLED])
+      }
       // 顺便更新昵称/头像（微信侧可能变更）
       const needUpdate =
         (nickname && existing.nickname !== nickname) || (avatar && existing.avatar !== avatar)
@@ -239,7 +259,7 @@ export class WechatService {
       return existing
     }
 
-    const username = `wx_${openId.slice(0, 8)}`
+    const username = `wx_${openId}`
     const email = `${username}@wechat.placeholder`
 
     // 查找默认 viewer 角色
@@ -253,7 +273,7 @@ export class WechatService {
         .values({
           username,
           email,
-          password: randomUUID(), // 占位符，微信用户不可走密码登录
+          password: await argon2.hash(randomUUID()), // 占位符，微信用户不可走密码登录
           nickname: nickname ?? `微信用户_${openId.slice(0, 6)}`,
           avatar,
           wechatOpenId: openId,

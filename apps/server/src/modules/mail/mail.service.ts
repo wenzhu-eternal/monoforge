@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import Handlebars from 'handlebars'
@@ -178,9 +178,7 @@ export class MailService {
       this.logger.log(`邮件已发送: ${subject} -> ${to}${attachInfo}`)
     } catch (err) {
       this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
-      throw new Error(
-        `${ErrorMessages[ErrorCodes.MAIL_SEND_FAILED]}: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      throw new ServiceUnavailableException(ErrorMessages[ErrorCodes.MAIL_SEND_FAILED])
     }
   }
 
@@ -200,9 +198,7 @@ export class MailService {
       this.logger.log(`邮件已发送: ${subject} -> ${to}`)
     } catch (err) {
       this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
-      throw new Error(
-        `${ErrorMessages[ErrorCodes.MAIL_SEND_FAILED]}: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      throw new ServiceUnavailableException(ErrorMessages[ErrorCodes.MAIL_SEND_FAILED])
     }
   }
 
@@ -225,9 +221,7 @@ export class MailService {
       this.logger.log(`邮件已发送: ${subject} -> ${to}`)
     } catch (err) {
       this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
-      throw new Error(
-        `${ErrorMessages[ErrorCodes.MAIL_SEND_FAILED]}: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      throw new ServiceUnavailableException(ErrorMessages[ErrorCodes.MAIL_SEND_FAILED])
     }
   }
 }

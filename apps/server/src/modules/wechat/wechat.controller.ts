@@ -44,7 +44,7 @@ export class WechatController {
     if (!this.wechatService.isEnabled()) {
       throw new ServiceUnavailableException('微信登录未启用，请配置 WEAPP_APPID 与 WEAPP_SECRET')
     }
-    const result = await this.wechatService.login(dto.code, dto.loginType)
+    const result = await this.wechatService.login(dto.code, dto.loginType, dto.state)
 
     response.cookie(
       'refreshToken',

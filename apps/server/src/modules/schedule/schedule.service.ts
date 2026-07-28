@@ -94,16 +94,52 @@ export class ScheduleService {
    * 用 spawn 调用 pg_dump，参数数组形式避免 shell 注入
    */
   private spawnPgDump(databaseUrl: string, filepath: string): Promise<void> {
+    const url = new URL(databaseUrl)
+    const dbName = url.pathname.replace(/^\//, '')
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      PGHOST: url.hostname,
+      PGPORT: url.port || '5432',
+      PGUSER: decodeURIComponent(url.username),
+      PGPASSWORD: decodeURIComponent(url.password),
+      PGDATABASE: decodeURIComponent(dbName),
+    }
     return new Promise((resolve, reject) => {
-      const child = spawn('pg_dump', [databaseUrl], { stdio: ['ignore', 'pipe', 'pipe'] })
+      const child = spawn('pg_dump', ['--no-password', `--dbname=${dbName}`], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env,
+      })
       const stream = createWriteStream(filepath)
       child.stdout.pipe(stream)
-      child.on('error', reject)
-      child.on('close', (code) => {
-        if (code === 0) resolve()
-        else reject(new Error(`pg_dump 退出码 ${code}`))
+
+      let stderr = ''
+      child.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString()
       })
-      stream.on('error', reject)
+
+      const timeout = setTimeout(() => {
+        child.kill('SIGTERM')
+        reject(new Error('pg_dump 超时'))
+      }, 300_000)
+
+      const cleanup = () => {
+        clearTimeout(timeout)
+        child.kill()
+      }
+
+      child.on('error', (err) => {
+        cleanup()
+        reject(err)
+      })
+      child.on('close', (code) => {
+        cleanup()
+        if (code === 0) resolve()
+        else reject(new Error(`pg_dump 退出码 ${code}${stderr ? `: ${stderr.slice(0, 200)}` : ''}`))
+      })
+      stream.on('error', (err) => {
+        cleanup()
+        reject(err)
+      })
     })
   }
 

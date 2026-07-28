@@ -25,7 +25,7 @@ export class NotificationsService {
     })
   }
 
-  async unreadCount(userId: number, includeDeleted = false): Promise<number> {
+  async unreadCount(userId: number): Promise<number> {
     const [result] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
@@ -33,7 +33,7 @@ export class NotificationsService {
         and(
           eq(notifications.userId, userId),
           eq(notifications.read, false),
-          maybeDeleted(notifications.deletedAt, includeDeleted),
+          notDeleted(notifications.deletedAt),
         ),
       )
     return result?.count ?? 0

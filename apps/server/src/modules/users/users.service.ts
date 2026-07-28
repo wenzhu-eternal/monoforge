@@ -9,13 +9,9 @@ import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, rolePermissions, roles, users } from '@/db/schema'
-import { Cacheable } from '@/modules/cache/cache.decorator'
-import { CacheService } from '@/modules/cache/cache.service'
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly cacheService: CacheService) {}
-
   async findAll(
     page = 1,
     pageSize = 10,
@@ -91,7 +87,6 @@ export class UsersService {
     }
   }
 
-  @Cacheable('user:id', 300)
   async findById(id: number, includeDeleted = false): Promise<Omit<User, 'password'>> {
     const deletedFilter = maybeDeleted(users.deletedAt, includeDeleted)
     const user = await db.query.users.findFirst({
@@ -128,6 +123,15 @@ export class UsersService {
 
     if (existingEmail) {
       throw new ConflictException('邮箱已被注册，请更换邮箱')
+    }
+
+    if (data.roleId) {
+      const role = await db.query.roles.findFirst({
+        where: eq(roles.id, data.roleId),
+      })
+      if (!role || role.deletedAt) {
+        throw new ConflictException('角色不存在或已被禁用')
+      }
     }
 
     const hashedPassword = await argon2.hash(data.password)
@@ -176,6 +180,15 @@ export class UsersService {
       throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
     }
 
+    if (data.roleId) {
+      const role = await db.query.roles.findFirst({
+        where: eq(roles.id, data.roleId),
+      })
+      if (!role || role.deletedAt) {
+        throw new ConflictException('角色不存在或已被禁用')
+      }
+    }
+
     // email 唯一性校验（排除自身，仅查未软删用户）
     if (data.email && data.email !== existingUser.email) {
       const duplicateEmail = await db.query.users.findFirst({
@@ -211,9 +224,6 @@ export class UsersService {
         throw new ConflictException('邮箱已被注册（并发冲突）')
       }
       throw error
-    } finally {
-      // 更新后清缓存（按 pattern 删除该用户的所有缓存变体）
-      await this.cacheService.delByPattern(`cache:user:*${id}*`)
     }
   }
 
@@ -267,8 +277,6 @@ export class UsersService {
 
     await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id))
 
-    await this.cacheService.delByPattern(`cache:user:*${id}*`)
-
     return { message: `用户 ID ${id} 已删除` }
   }
 
@@ -319,8 +327,6 @@ export class UsersService {
         throw new ConflictException('用户名或邮箱已存在（并发冲突）')
       }
       throw error
-    } finally {
-      await this.cacheService.delByPattern(`cache:user:*${id}*`)
     }
   }
 }

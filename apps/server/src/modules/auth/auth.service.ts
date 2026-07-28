@@ -1,5 +1,11 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common'
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
@@ -318,6 +324,7 @@ export class AuthService {
       }
     } catch (err) {
       this.logger.error('存储 refreshToken 到 Redis 失败:', err)
+      throw new ServiceUnavailableException('存储 refreshToken 失败')
     }
   }
 
@@ -326,6 +333,11 @@ export class AuthService {
       where: and(eq(users.id, userId), notDeleted(users.deletedAt)),
     })
     if (!userRecord?.roleId) return []
+
+    const role = await db.query.roles.findFirst({
+      where: eq(roles.id, userRecord.roleId),
+    })
+    if (!role || role.deletedAt) return []
 
     const perms = await db
       .select({ permission: rolePermissions.permission })

@@ -13,7 +13,6 @@ import {
   Post,
   Query,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
@@ -27,7 +26,7 @@ import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
-import { CacheInterceptor } from '@/modules/cache/cache.interceptor'
+
 import { CreateUserDto } from './dto/create-user.dto'
 import { UpdateUserDto } from './dto/update-user.dto'
 import { UsersService } from './users.service'
@@ -74,8 +73,7 @@ export class UsersController {
   @Get(':id')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @Permissions(PermissionCodes.USER_VIEW)
-  @UseInterceptors(CacheInterceptor)
-  @ApiOperation({ summary: '按ID查询用户（带缓存）' })
+  @ApiOperation({ summary: '按ID查询用户' })
   @ZodSerializerDto(UserSchema)
   async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
     const isAdmin = isAdminUser(currentUser)
@@ -110,6 +108,18 @@ export class UsersController {
         throw new ForbiddenException('修改角色/状态需要更高权限')
       }
     }
+    // 改他人密码/邮箱需要 USER_ROLE_MANAGE 权限，防止账号接管
+    if (updateUserDto.password !== undefined || updateUserDto.email !== undefined) {
+      if (currentUser.sub !== id) {
+        const canManage = await this.usersService.hasPermission(
+          currentUser.sub,
+          PermissionCodes.USER_ROLE_MANAGE,
+        )
+        if (!canManage) {
+          throw new ForbiddenException('修改他人密码/邮箱需要更高权限')
+        }
+      }
+    }
     return this.usersService.update(id, updateUserDto)
   }
 
@@ -123,7 +133,7 @@ export class UsersController {
 
   @Post(':id/restore')
   @HttpCode(HttpStatus.OK)
-  @Permissions(PermissionCodes.USER_UPDATE)
+  @Permissions(PermissionCodes.USER_DELETE)
   @ApiOperation({ summary: '恢复已删除用户' })
   @ZodSerializerDto(UserSchema)
   async restore(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {

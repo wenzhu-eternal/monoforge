@@ -58,8 +58,9 @@ export class AuditService {
       conditions.push(eq(auditLogs.resource, filter.resource))
     }
     if (filter?.keyword) {
+      const escaped = filter.keyword.replace(/[%_]/g, '\\$&')
       conditions.push(
-        sql`${users.username} LIKE ${`%${filter.keyword}%`} OR ${auditLogs.resource} LIKE ${`%${filter.keyword}%`}`,
+        sql`${users.username} LIKE ${`%${escaped}%`} ESCAPE '\\' OR ${auditLogs.resource} LIKE ${`%${escaped}%`} ESCAPE '\\'`,
       )
     }
 

@@ -32,13 +32,6 @@ export class CacheService {
     }
   }
 
-  /** 按 pattern 删除缓存（如 user:*） */
-  async delByPattern(pattern: string): Promise<void> {
-    try {
-      await this.redisService.deleteByPattern(pattern)
-    } catch {}
-  }
-
   async getOrSet<T>(key: string, factory: () => Promise<T>, ttl = 60): Promise<T> {
     const cached = await this.get<T>(key)
     if (cached !== null) {

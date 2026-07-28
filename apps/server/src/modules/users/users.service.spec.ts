@@ -11,21 +11,13 @@ vi.mock('argon2', () => ({
   verify: vi.fn(),
 }))
 
-// Mock CacheService
-const cacheServiceMock = {
-  delByPattern: vi.fn().mockResolvedValue(undefined),
-  get: vi.fn(),
-  set: vi.fn(),
-  del: vi.fn(),
-}
-vi.mock('@/modules/cache/cache.service', () => ({
-  CacheService: vi.fn(() => cacheServiceMock),
-}))
-
 vi.mock('@/db', () => ({
   db: {
     query: {
       users: {
+        findFirst: vi.fn(),
+      },
+      roles: {
         findFirst: vi.fn(),
       },
     },
@@ -50,7 +42,7 @@ describe('UsersService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    service = new UsersService(cacheServiceMock as never)
+    service = new UsersService()
   })
 
   describe('findById', () => {
@@ -174,9 +166,8 @@ describe('UsersService', () => {
         }),
       } as never)
 
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, deletedAt: null } as never)
       await service.update(1, { email: 'a@b.com', roleId: 1 })
-
-      expect(cacheServiceMock.delByPattern).toHaveBeenCalledWith(expect.stringContaining('1'))
     })
   })
 
@@ -206,7 +197,6 @@ describe('UsersService', () => {
 
       const result = await service.remove(1)
       expect(result.message).toContain('1')
-      expect(cacheServiceMock.delByPattern).toHaveBeenCalled()
     })
 
     it('关联文件时抛 ConflictException', async () => {

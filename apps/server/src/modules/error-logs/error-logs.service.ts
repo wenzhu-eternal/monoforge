@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
 import type { ErrorLog, ErrorLogGroup, ErrorStats, ErrorWhitelist } from '@shared/schemas/error-log'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
-import { and, count, desc, eq, ilike, sql } from 'drizzle-orm'
+import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { errorLogs } from '@/db/schema'
@@ -32,10 +32,12 @@ const WHITELIST_CACHE_TTL = 60
 export class ErrorLogsService {
   constructor(private readonly redisService: RedisService) {}
 
-  async report(params: ReportErrorParams): Promise<{ id: number }> {
+  async report(
+    params: ReportErrorParams,
+  ): Promise<{ id?: number; skipped?: boolean; reason?: string }> {
     const isWhitelisted = await this.checkWhitelist(params.message, params.url)
     if (isWhitelisted) {
-      return { id: -1 }
+      return { skipped: true, reason: 'whitelisted' }
     }
 
     const [created] = await db
@@ -59,7 +61,7 @@ export class ErrorLogsService {
       .returning()
 
     if (!created) {
-      return { id: -1 }
+      return { skipped: true, reason: 'insert_failed' }
     }
 
     return { id: created.id }
@@ -103,7 +105,8 @@ export class ErrorLogsService {
     const deletedFilter = maybeDeleted(errorLogs.deletedAt, includeDeleted)
     const conditions = [deletedFilter]
     if (keyword) {
-      conditions.push(ilike(errorLogs.message, `%${keyword}%`))
+      const escaped = keyword.replace(/[%_]/g, '\\$&')
+      conditions.push(sql`${errorLogs.message} ILIKE ${`%${escaped}%`} ESCAPE '\\'`)
     }
     if (source) {
       conditions.push(eq(errorLogs.source, source))

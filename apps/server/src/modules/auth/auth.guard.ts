@@ -58,7 +58,8 @@ export class AuthGuard implements CanActivate {
       }
 
       request.user = payload
-    } catch {
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err
       throw new UnauthorizedException('访问令牌无效')
     }
 

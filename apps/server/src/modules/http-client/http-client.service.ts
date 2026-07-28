@@ -68,7 +68,8 @@ export class HttpClientService {
       }
       cfg.__maxRetries = maxRetries
       cfg.__retryBaseDelay = retryBaseDelay
-      cfg.__retryOn5xx = true
+      const method = (cfg.method ?? 'get').toLowerCase()
+      cfg.__retryOn5xx = method === 'get' || method === 'head'
       return cfg
     })
 

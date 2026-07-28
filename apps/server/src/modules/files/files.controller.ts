@@ -74,7 +74,7 @@ export class FilesController {
       throw new BadRequestException('pageSize 必须为正整数')
     }
     const isAdmin = isAdminUser(currentUser)
-    return this.filesService.findAll(pageNum, size, isAdmin)
+    return this.filesService.findAll(pageNum, size, isAdmin, currentUser?.sub)
   }
 
   @Get(':id/preview')
@@ -114,20 +114,25 @@ export class FilesController {
 
     const range = response.req.headers.range
     if (range) {
-      const match = /bytes=(\d*)-(\d*)/.exec(range)
-      if (match) {
-        const start = match[1] ? Number.parseInt(match[1], 10) : 0
-        const end = match[2] ? Number.parseInt(match[2], 10) : stat.size - 1
+      const parsed = parseRange(range as string, stat.size)
+      if (parsed) {
+        const { start, end } = parsed
         response.status(206)
         response.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`)
         response.setHeader('Content-Length', end - start + 1)
-        createReadStream(file.path, { start, end }).pipe(response)
+        const stream = createReadStream(file.path, { start, end })
+        stream.on('error', () => response.end())
+        stream.pipe(response)
         return
       }
+      response.status(416).setHeader('Content-Range', `bytes */${stat.size}`).end()
+      return
     }
 
     response.setHeader('Content-Length', stat.size)
-    createReadStream(file.path).pipe(response)
+    const stream = createReadStream(file.path)
+    stream.on('error', () => response.end())
+    stream.pipe(response)
   }
 
   @Get(':id/download')
@@ -163,7 +168,9 @@ export class FilesController {
       `attachment; filename="download"; filename*=UTF-8''${encodedName}`,
     )
 
-    createReadStream(file.path).pipe(response)
+    const stream = createReadStream(file.path)
+    stream.on('error', () => response.end())
+    stream.pipe(response)
   }
 
   @Delete(':id')
@@ -187,4 +194,30 @@ export class FilesController {
   ) {
     return this.filesService.restore(id, user.sub, isAdminUser(user))
   }
+}
+
+function parseRange(range: string, size: number): { start: number; end: number } | null {
+  const match = range.trim().match(/^bytes=(\d*)-(\d*)$/)
+  if (!match) return null
+  const startStr = match[1] ?? ''
+  const endStr = match[2] ?? ''
+  if (startStr === '' && endStr === '') return null
+  if (startStr === '') {
+    const suffix = Number(endStr)
+    if (!Number.isFinite(suffix) || suffix <= 0) return null
+    const start = Math.max(0, size - suffix)
+    const end = size - 1
+    if (start >= size) return null
+    return { start, end }
+  }
+  const start = Number.parseInt(startStr, 10)
+  if (!Number.isFinite(start) || start < 0) return null
+  if (endStr === '') {
+    const end = size - 1
+    if (start >= size) return null
+    return { start, end }
+  }
+  const end = Number.parseInt(endStr, 10)
+  if (!Number.isFinite(end) || end < start || end >= size) return null
+  return { start, end }
 }

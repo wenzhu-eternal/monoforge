@@ -1,4 +1,4 @@
-import { mkdir, rename } from 'node:fs/promises'
+import { mkdir, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   ConflictException,
@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common'
 import type { FileItem, UploadResult } from '@shared/schemas/file'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
-import { and, count, desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq, isNull } from 'drizzle-orm'
 import {
   generateSafeFilename,
   isPathSafe,
@@ -65,6 +65,7 @@ export class FilesService {
       .returning()
 
     if (!created) {
+      await unlink(file.path).catch(() => {})
       throw new NotFoundException('文件上传失败')
     }
 
@@ -81,11 +82,16 @@ export class FilesService {
     page = 1,
     pageSize = 10,
     includeDeleted = false,
+    userId?: number,
   ): Promise<PaginatedResponse<FileItem>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
     const deletedFilter = maybeDeleted(files.deletedAt, includeDeleted)
+    const conditions = [deletedFilter]
+    if (!includeDeleted && userId) {
+      conditions.push(eq(files.uploadedBy, userId))
+    }
 
     const [items, countResult] = await Promise.all([
       db
@@ -102,11 +108,14 @@ export class FilesService {
         })
         .from(files)
         .leftJoin(users, eq(files.uploadedBy, users.id))
-        .where(and(deletedFilter))
+        .where(and(...conditions))
         .orderBy(desc(files.createdAt))
         .limit(safePageSize)
         .offset(offset),
-      db.select({ value: count() }).from(files).where(and(deletedFilter)),
+      db
+        .select({ value: count() })
+        .from(files)
+        .where(and(...conditions)),
     ])
 
     const total = countResult[0]?.value ?? 0
@@ -158,7 +167,15 @@ export class FilesService {
     // 磁盘文件移到隔离目录，记录 trash_path
     const trashPath = await this.moveToTrash(file.path, file.filename)
 
-    await db.update(files).set({ deletedAt: new Date(), trashPath }).where(eq(files.id, id))
+    const [updated] = await db
+      .update(files)
+      .set({ deletedAt: new Date(), trashPath })
+      .where(and(eq(files.id, id), isNull(files.deletedAt)))
+      .returning()
+
+    if (!updated) {
+      return { message: `文件 ID ${id} 已删除` }
+    }
 
     return { message: `文件 ID ${id} 已删除` }
   }
@@ -184,11 +201,7 @@ export class FilesService {
 
     // 凭 trash_path 精确还原磁盘文件
     if (file.trashPath) {
-      try {
-        await rename(file.trashPath, file.path)
-      } catch (err) {
-        this.logger.warn(`磁盘文件还原失败: ${err instanceof Error ? err.message : String(err)}`)
-      }
+      await rename(file.trashPath, file.path)
     }
 
     await db.update(files).set({ deletedAt: null, trashPath: null }).where(eq(files.id, id))

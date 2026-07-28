@@ -34,24 +34,23 @@ const processQueue = (error: unknown, token: string | null) => {
  * 避免首个请求 401 的空窗期。
  */
 function buildRefreshPayload() {
-  return { refreshToken: useAuthStore.getState().refreshToken ?? undefined }
+  return {}
 }
 
 export async function bootstrapAuth(): Promise<void> {
-  const { isAuthenticated, token, refreshToken } = useAuthStore.getState()
-  if (!isAuthenticated || token || !refreshToken) return
+  const { isAuthenticated, token } = useAuthStore.getState()
+  if (!isAuthenticated || token) return
 
   try {
     const response = await axios.post(
       '/api/v1/auth/refresh',
-      { refreshToken },
+      {},
       {
         withCredentials: true,
       },
     )
-    const { accessToken, refreshToken: newRefreshToken } = response.data.data
+    const { accessToken } = response.data.data
     useAuthStore.getState().setToken(accessToken)
-    useAuthStore.getState().setRefreshToken(newRefreshToken)
   } catch {
     useAuthStore.getState().logout()
   }
@@ -109,10 +108,9 @@ api.interceptors.response.use(
         const response = await axios.post('/api/v1/auth/refresh', buildRefreshPayload(), {
           withCredentials: true,
         })
-        const { accessToken, refreshToken } = response.data.data
+        const { accessToken } = response.data.data
 
         useAuthStore.getState().setToken(accessToken)
-        useAuthStore.getState().setRefreshToken(refreshToken)
         processQueue(null, accessToken)
 
         originalRequest.headers.Authorization = `Bearer ${accessToken}`

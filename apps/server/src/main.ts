@@ -19,6 +19,9 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1')
 
+  // 信任反向代理 IP（nginx 等），确保 request.ip 取真实客户端 IP
+  app.getHttpAdapter().getInstance().set('trust proxy', 1)
+
   // 安全: HTTP 安全头（CSP 放宽以兼容 SPA + Swagger）
   app.use(
     helmet({
@@ -71,7 +74,7 @@ async function bootstrap() {
     SwaggerModule.setup('api/docs', app, document)
   }
 
-  // 优雅关闭: SIGTERM 时清理 DB 连接
+  // 优雅关闭: SIGTERM/SIGINT 时刷日志 + 关闭 DB
   app.enableShutdownHooks()
 
   const port = configService.get<number>('API_PORT', 9000)

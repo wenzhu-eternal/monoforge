@@ -70,7 +70,9 @@ describe('FilesService', () => {
       })
       mockUpdate.mockReturnValue({
         set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+          }),
         }),
       } as never)
 
@@ -97,7 +99,9 @@ describe('FilesService', () => {
       })
       mockUpdate.mockReturnValue({
         set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+          }),
         }),
       } as never)
 
@@ -117,7 +121,9 @@ describe('FilesService', () => {
       mockRename.mockRejectedValue(new Error('ENOENT'))
       mockUpdate.mockReturnValue({
         set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+          }),
         }),
       } as never)
 

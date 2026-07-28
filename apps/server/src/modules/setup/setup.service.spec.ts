@@ -124,6 +124,10 @@ describe('SetupService', () => {
       vi.mocked(mockDb.transaction).mockImplementation(
         async (cb: (tx: unknown) => Promise<unknown>) => {
           const tx = {
+            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+            select: vi.fn().mockReturnValue({
+              from: vi.fn().mockResolvedValue([{ count: 0 }]),
+            }),
             insert: vi.fn().mockReturnValue({
               values: vi.fn().mockReturnValue({
                 onConflictDoNothing: vi.fn().mockReturnValue({
@@ -221,6 +225,10 @@ describe('SetupService', () => {
       vi.mocked(mockDb.transaction).mockImplementation(
         async (cb: (tx: unknown) => Promise<unknown>) => {
           const tx = {
+            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+            select: vi.fn().mockReturnValue({
+              from: vi.fn().mockResolvedValue([{ count: 0 }]),
+            }),
             insert: vi.fn().mockReturnValue({
               values: vi.fn().mockReturnValue({
                 onConflictDoNothing: vi.fn().mockReturnValue({

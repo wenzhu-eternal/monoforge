@@ -142,11 +142,10 @@ export async function validateFileContent(filePath: string, declaredExt: string)
     return
   }
 
+  const handle = await open(filePath, 'r')
   try {
-    const handle = await open(filePath, 'r')
     const buffer = Buffer.alloc(expected.bytes.length)
     await handle.read(buffer, 0, expected.bytes.length, 0)
-    await handle.close()
     const header = Array.from(buffer)
     const matches = expected.bytes.every((byte, i) => header[i] === byte)
     if (!matches) {
@@ -155,6 +154,8 @@ export async function validateFileContent(filePath: string, declaredExt: string)
   } catch (err) {
     if (err instanceof BadRequestException) throw err
     throw new BadRequestException('文件内容校验失败')
+  } finally {
+    await handle.close()
   }
 }
 

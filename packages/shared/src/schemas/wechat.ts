@@ -10,6 +10,7 @@ export const WechatLoginTypeSchema = z.enum(['qrcode', 'miniprogram'])
 export const WechatLoginSchema = z.object({
   code: z.string().min(1, 'code 不能为空'),
   loginType: WechatLoginTypeSchema,
+  state: z.string().optional(),
 })
 
 /**

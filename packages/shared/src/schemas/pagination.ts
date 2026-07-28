@@ -14,7 +14,7 @@ export type PaginationQuery = {
   page: number
   pageSize: number
   sort?: string
-  order: 'asc' | 'desc'
+  order?: 'asc' | 'desc'
 }
 export type PaginatedResponse<T> = {
   list: T[]

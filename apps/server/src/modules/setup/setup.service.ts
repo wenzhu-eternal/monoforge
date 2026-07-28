@@ -55,6 +55,18 @@ export class SetupService {
 
     try {
       await db.transaction(async (tx) => {
+        const [lockRow] = await tx.execute<{ pg_try_advisory_lock: boolean }>(
+          sql`SELECT pg_try_advisory_lock(1234567890) AS pg_try_advisory_lock`,
+        )
+        if (!lockRow?.pg_try_advisory_lock) {
+          throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
+        }
+
+        const [existing] = await tx.select({ count: sql<number>`count(*)::int` }).from(users)
+        if (!existing || existing.count > 0) {
+          throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
+        }
+
         const createdRoles = await tx
           .insert(roles)
           .values(DEFAULT_ROLES)

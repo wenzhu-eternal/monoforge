@@ -36,9 +36,7 @@ COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/apps/server/package.json ./apps/server/
 COPY --from=builder /app/packages/shared/package.json ./packages/shared/
 
-# 只安装生产依赖，不拷 devDeps
-RUN apk add --no-cache pnpm@10.32.1 --repository=https://registry.npmmirror.com
-RUN pnpm install --prod --frozen-lockfile
+COPY --from=builder /app/node_modules ./node_modules
 
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 COPY --from=builder /app/apps/server/drizzle ./apps/server/drizzle
@@ -48,9 +46,10 @@ COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
 ENV API_PORT=9000
+ENV HUSKY=0
 EXPOSE 9000
 
 USER node
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["sh", "-c", "cd apps/server && npx drizzle-kit migrate && cd /app && node apps/server/dist/main.js"]
+CMD ["sh", "-c", "cd apps/server && node ../node_modules/drizzle-kit/bin.cjs migrate && cd /app && node apps/server/dist/main.js"]

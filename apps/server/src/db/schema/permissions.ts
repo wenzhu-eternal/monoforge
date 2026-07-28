@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { json, pgTable, serial, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core'
+import { jsonb, pgTable, serial, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core'
 
 export const permissions = pgTable(
   'permissions',
@@ -8,7 +8,7 @@ export const permissions = pgTable(
     code: varchar('code', { length: 50 }).notNull(),
     name: varchar('name', { length: 100 }).notNull(),
     description: text('description'),
-    routes: json('routes').$type<string[]>().default([]),
+    routes: jsonb('routes').$type<string[]>().default([]),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()

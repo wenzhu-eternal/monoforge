@@ -43,6 +43,7 @@ export class ErrorLogsController {
 
   @Post('report')
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '前端/后端错误上报（公开）' })
   async reportError(@Body() dto: ReportErrorDto) {

@@ -12,7 +12,8 @@ import { PERMISSIONS_KEY } from '@/common/decorators/permissions.decorator'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
-import { permissions, rolePermissions, users } from '@/db/schema'
+import { permissions, rolePermissions, roles, users } from '@/db/schema'
+import { RedisService } from '@/modules/redis/redis.service'
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -30,7 +31,14 @@ interface AuthenticatedRequest extends Request {
  */
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly redisService: RedisService,
+  ) {}
+
+  private getPermissionCacheKey(roleId: number): string {
+    return `perm:role:${roleId}`
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredPermissions = this.reflector.getAllAndOverride<string[] | undefined>(
@@ -60,17 +68,36 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException(ErrorMessages[ErrorCodes.PERMISSION_DENIED])
     }
 
-    // 查询用户权限码（role_permissions 关联表无软删除，join permissions 表过滤已软删权限）
-    const userPermissions = await db
-      .select({ permission: rolePermissions.permission })
-      .from(rolePermissions)
-      .innerJoin(
-        permissions,
-        and(eq(rolePermissions.permission, permissions.code), notDeleted(permissions.deletedAt)),
-      )
-      .where(eq(rolePermissions.roleId, userRecord.roleId))
+    const roleRecord = await db.query.roles.findFirst({
+      where: eq(roles.id, userRecord.roleId),
+    })
+    if (!roleRecord || roleRecord.deletedAt) {
+      throw new ForbiddenException(ErrorMessages[ErrorCodes.PERMISSION_DENIED])
+    }
 
-    const permissionCodes = userPermissions.map((p) => p.permission)
+    // 查询用户权限码，优先走 Redis 缓存
+    const cacheKey = this.getPermissionCacheKey(userRecord.roleId)
+    let permissionCodes: string[] | null = null
+    const cached = await this.redisService.get(cacheKey)
+    if (cached) {
+      try {
+        permissionCodes = JSON.parse(cached) as string[]
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!permissionCodes) {
+      const userPermissions = await db
+        .select({ permission: rolePermissions.permission })
+        .from(rolePermissions)
+        .innerJoin(
+          permissions,
+          and(eq(rolePermissions.permission, permissions.code), notDeleted(permissions.deletedAt)),
+        )
+        .where(eq(rolePermissions.roleId, userRecord.roleId))
+      permissionCodes = userPermissions.map((p) => p.permission)
+      void this.redisService.set(cacheKey, JSON.stringify(permissionCodes), 300)
+    }
 
     // 检查是否拥有所有必需权限（权限码匹配）
     const hasAll = requiredPermissions.every((p) => permissionCodes.includes(p))

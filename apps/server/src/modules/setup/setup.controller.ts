@@ -32,10 +32,6 @@ export class SetupController {
   @ApiOperation({ summary: '一键初始化系统（仅未初始化时可用）' })
   @ZodSerializerDto(SetupResultSchema)
   async setup(@Body() dto: SetupDto) {
-    const status = await this.setupService.getStatus()
-    if (status.initialized) {
-      throw new NotFoundException()
-    }
     if (process.env.ALLOW_SETUP !== 'true') {
       throw new NotFoundException()
     }

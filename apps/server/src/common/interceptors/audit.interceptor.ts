@@ -47,6 +47,14 @@ const TABLE_MAP: Record<string, { table: Table; idField: any }> = {
   NotificationsController: { table: notifications, idField: notifications.id },
 }
 
+const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
+  UsersController: new Set(['password', 'email', 'phone', 'wechatOpenId', 'wechatUnionId']),
+  RolesController: new Set(['id']),
+  FilesController: new Set([]),
+  ErrorLogsController: new Set([]),
+  NotificationsController: new Set([]),
+}
+
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditInterceptor.name)
@@ -90,24 +98,42 @@ export class AuditInterceptor implements NestInterceptor {
       : Promise.resolve(undefined)
 
     return next.handle().pipe(
-      tap((data) => {
-        // 审计失败不应阻断主业务，仅记录错误日志
-        if (userId) {
+      tap({
+        next: (data) => {
           oldValuePromise
             .then((oldValue) => {
               return this.auditService.record({
-                userId,
+                userId: userId ?? 0,
                 action,
                 resource,
                 resourceId: resourceId ? Number(resourceId) : undefined,
                 oldValue,
-                newValue: data as Record<string, unknown> | undefined,
+                newValue:
+                  ((data as Record<string, unknown>)?.data as
+                    | Record<string, unknown>
+                    | undefined) ?? (data as Record<string, unknown> | undefined),
                 ip,
                 userAgent,
               })
             })
             .catch((err) => this.logger.error('记录审计日志失败:', err))
-        }
+        },
+        error: () => {
+          oldValuePromise
+            .then((oldValue) => {
+              return this.auditService.record({
+                userId: userId ?? 0,
+                action,
+                resource,
+                resourceId: resourceId ? Number(resourceId) : undefined,
+                oldValue,
+                newValue: undefined,
+                ip,
+                userAgent,
+              })
+            })
+            .catch((err) => this.logger.error('记录审计日志(失败)失败:', err))
+        },
       }),
     )
   }
@@ -124,12 +150,14 @@ export class AuditInterceptor implements NestInterceptor {
 
       if (result.length === 0) return undefined
 
-      // 移除敏感字段
-      const oldData = { ...result[0] }
-      if ('password' in oldData) {
-        delete (oldData as Record<string, unknown>).password
+      const sensitiveFields = SENSITIVE_COLUMNS[resource]
+      const oldData: Record<string, unknown> = {}
+      for (const [key, val] of Object.entries(result[0] as Record<string, unknown>)) {
+        if (!sensitiveFields?.has(key)) {
+          oldData[key] = val
+        }
       }
-      return oldData as Record<string, unknown>
+      return oldData
     } catch {
       return undefined
     }
