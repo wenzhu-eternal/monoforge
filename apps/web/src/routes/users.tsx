@@ -139,10 +139,10 @@ function UsersPage() {
                       ? '用户已禁用'
                       : '确定要禁用该用户吗？'
                 }
-                disabled={isAdmin}
+                disabled={isAdmin || isDeleted}
                 onConfirm={() => handleDelete(record.id)}
               >
-                <Button type="link" danger disabled={isAdmin}>
+                <Button type="link" danger disabled={isAdmin || isDeleted}>
                   禁用
                 </Button>
               </Popconfirm>

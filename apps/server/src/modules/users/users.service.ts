@@ -219,7 +219,6 @@ export class UsersService {
       const { password: _, ...userWithoutPassword } = updatedUser
       return userWithoutPassword
     } catch (error) {
-      // 并发冲突兜底
       if (isUniqueViolation(error)) {
         throw new ConflictException('邮箱已被注册（并发冲突）')
       }
@@ -227,9 +226,6 @@ export class UsersService {
     }
   }
 
-  /**
-   * 检查用户是否拥有指定权限码
-   */
   async hasPermission(userId: number, permissionCode: string): Promise<boolean> {
     const user = await db.query.users.findFirst({
       where: and(eq(users.id, userId), notDeleted(users.deletedAt)),
@@ -293,7 +289,6 @@ export class UsersService {
       throw new ConflictException('用户未被删除，无需恢复')
     }
 
-    // 恢复前校验 username 唯一
     const duplicateUsername = await db.query.users.findFirst({
       where: and(eq(users.username, existingUser.username), notDeleted(users.deletedAt)),
     })
@@ -301,7 +296,6 @@ export class UsersService {
       throw new ConflictException('用户名已被其他用户使用，无法恢复')
     }
 
-    // 恢复前校验 email 唯一
     const duplicateEmail = await db.query.users.findFirst({
       where: and(eq(users.email, existingUser.email), notDeleted(users.deletedAt)),
     })

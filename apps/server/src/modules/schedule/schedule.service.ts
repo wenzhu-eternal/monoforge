@@ -55,7 +55,6 @@ export class ScheduleService {
       const stats = await stat(filepath)
       this.logger.log(`数据库备份成功: ${filename} (${(stats.size / 1024).toFixed(2)} KB)`)
 
-      // 清理旧备份，仅保留最近 MAX_BACKUPS 份
       await this.cleanOldBackups()
 
       // 发送备份成功通知（附带 .sql 附件）

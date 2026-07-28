@@ -164,7 +164,6 @@ export class FilesService {
       throw new ForbiddenException('无权删除他人上传的文件')
     }
 
-    // 磁盘文件移到隔离目录，记录 trash_path
     const trashPath = await this.moveToTrash(file.path, file.filename)
 
     const [updated] = await db

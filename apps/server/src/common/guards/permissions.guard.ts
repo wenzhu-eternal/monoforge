@@ -99,7 +99,6 @@ export class PermissionsGuard implements CanActivate {
       void this.redisService.set(cacheKey, JSON.stringify(permissionCodes), 300)
     }
 
-    // 检查是否拥有所有必需权限（权限码匹配）
     const hasAll = requiredPermissions.every((p) => permissionCodes.includes(p))
     if (hasAll) {
       return true

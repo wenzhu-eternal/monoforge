@@ -57,6 +57,7 @@ export function useWebSocket() {
     return () => {
       wsClient.off('connect', onConnect)
       wsClient.off('disconnect', onDisconnect)
+      wsClient.disconnect()
     }
   }, [isAuthenticated, token])
 

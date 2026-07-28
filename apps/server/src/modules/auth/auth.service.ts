@@ -130,7 +130,6 @@ export class AuthService {
     return tokens
   }
 
-  // 吊销 refresh token + access token
   async logout(userId: number, accessToken?: string): Promise<{ message: string }> {
     await this.redisService.deleteByPattern(`refresh:${userId}:*`)
 

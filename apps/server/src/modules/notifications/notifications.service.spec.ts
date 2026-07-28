@@ -91,15 +91,15 @@ describe('NotificationsService', () => {
       expect(result).toBe(0)
     })
 
-    it('includeDeleted=true 时包含已删除记录计数（管理员）', async () => {
+    it('管理员视角也仅统计未删通知', async () => {
       vi.mocked(mockDb.select).mockReturnValue({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 8 }]),
+          where: vi.fn().mockResolvedValue([{ count: 5 }]),
         }),
       } as never)
 
-      const result = await service.unreadCount(1, true)
-      expect(result).toBe(8)
+      const result = await service.unreadCount(1)
+      expect(result).toBe(5)
     })
   })
 

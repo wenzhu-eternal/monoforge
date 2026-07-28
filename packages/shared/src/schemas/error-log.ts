@@ -49,7 +49,21 @@ export const ReportErrorSchema = z.object({
   url: z.string().optional(),
   method: z.string().optional(),
   statusCode: z.number().optional(),
-  context: z.record(z.string(), z.unknown()).optional(),
+  context: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .superRefine((val, ctx) => {
+      if (!val) return
+      const keys = Object.keys(val)
+      if (keys.length > 20) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'context 键数不能超过 20' })
+        return
+      }
+      const serialized = JSON.stringify(val)
+      if (serialized.length > 10240) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'context 序列化后不能超过 10KB' })
+      }
+    }),
 })
 
 export const ErrorStatsSchema = z.object({

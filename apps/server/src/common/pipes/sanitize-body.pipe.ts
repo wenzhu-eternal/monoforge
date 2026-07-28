@@ -1,7 +1,7 @@
 import { Injectable, type PipeTransform } from '@nestjs/common'
 
 /**
- * Body 清洗管道: 将 null / 空字符串转为 undefined
+ * Body 清洗管道: 将 null 转为 undefined
  * 在 ZodValidationPipe 之前执行，使 schema 的 .optional() 能正确匹配前端的 null 值
  */
 @Injectable()

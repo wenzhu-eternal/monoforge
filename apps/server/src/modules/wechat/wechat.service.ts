@@ -273,9 +273,10 @@ export class WechatService {
         .values({
           username,
           email,
-          password: await argon2.hash(randomUUID()), // 占位符，微信用户不可走密码登录
+          password: await argon2.hash(randomUUID()),
           nickname: nickname ?? `微信用户_${openId.slice(0, 6)}`,
           avatar,
+          status: true,
           wechatOpenId: openId,
           roleId: viewerRole?.id,
         })

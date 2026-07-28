@@ -93,13 +93,11 @@ export class FilesController {
       return
     }
 
-    // 软删文件返回 404
     if (file.deletedAt) {
       response.status(404).json({ message: '文件不存在' })
       return
     }
 
-    // 校验权限: 管理员或上传者本人
     if (!isAdmin && file.uploadedBy !== currentUser.sub) {
       response.status(403).json({ message: '无权访问该文件' })
       return

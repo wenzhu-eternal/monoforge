@@ -202,9 +202,6 @@ export class MailService {
     }
   }
 
-  /**
-   * 底层发送方法: 若 transporter 未初始化则跳过并打印日志
-   */
   private async send(to: string, subject: string, text: string): Promise<void> {
     if (!this.transporter) {
       this.logger.warn(`邮件服务未配置，跳过发送: ${subject} -> ${to}`)

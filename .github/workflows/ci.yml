@@ -29,6 +29,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter=@monoforge/shared exec tsc --noEmit
       - run: pnpm --filter=server exec tsc --noEmit
       - run: pnpm --filter=web exec tsc --noEmit
       - run: pnpm --filter=@monoforge/e2e exec tsc --noEmit

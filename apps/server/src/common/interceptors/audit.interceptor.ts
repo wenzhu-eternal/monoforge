@@ -72,7 +72,6 @@ export class AuditInterceptor implements NestInterceptor {
       return next.handle()
     }
 
-    // 获取中文动作和资源
     const rawAction = this.reflector.get<string>(AUDIT_ACTION_KEY, context.getHandler()) ?? method
     const rawResource =
       this.reflector.get<string>(AUDIT_RESOURCE_KEY, context.getHandler()) ??
