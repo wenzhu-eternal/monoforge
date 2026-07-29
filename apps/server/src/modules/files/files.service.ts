@@ -52,17 +52,25 @@ export class FilesService {
 
     const safeFilename = generateSafeFilename(file.originalname)
 
-    const [created] = await db
-      .insert(files)
-      .values({
-        filename: safeFilename,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        path: file.path,
-        uploadedBy,
-      })
-      .returning()
+    let created:
+      | { id: number; filename: string; originalName: string; mimeType: string; size: number }
+      | undefined
+    try {
+      ;[created] = await db
+        .insert(files)
+        .values({
+          filename: safeFilename,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          path: file.path,
+          uploadedBy,
+        })
+        .returning()
+    } catch (e) {
+      await unlink(file.path).catch(() => {})
+      throw e
+    }
 
     if (!created) {
       await unlink(file.path).catch(() => {})

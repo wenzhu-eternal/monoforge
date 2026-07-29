@@ -6,7 +6,7 @@ import {
   type NestInterceptor,
 } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
-import { eq, type Table } from 'drizzle-orm'
+import { and, eq, isNull, type Table } from 'drizzle-orm'
 import type { Observable } from 'rxjs'
 import { tap } from 'rxjs'
 import { db } from '@/db'
@@ -38,13 +38,21 @@ const RESOURCE_MAP: Record<string, string> = {
 }
 
 // Controller 类名到数据库表和ID字段的映射（用于查询旧值）
-// biome-ignore lint/suspicious/noExplicitAny: Drizzle Column 泛型推导过于复杂，运行时 eq 接受任意 Column
-const TABLE_MAP: Record<string, { table: Table; idField: any }> = {
-  UsersController: { table: users, idField: users.id },
-  RolesController: { table: roles, idField: roles.id },
-  FilesController: { table: files, idField: files.id },
-  ErrorLogsController: { table: errorLogs, idField: errorLogs.id },
-  NotificationsController: { table: notifications, idField: notifications.id },
+// biome-ignore lint/suspicious/noExplicitAny: Drizzle Column 泛型推导过于复杂
+const TABLE_MAP: Record<string, { table: Table; idField: any; deletedAtField?: any }> = {
+  UsersController: { table: users, idField: users.id, deletedAtField: users.deletedAt },
+  RolesController: { table: roles, idField: roles.id, deletedAtField: roles.deletedAt },
+  FilesController: { table: files, idField: files.id, deletedAtField: files.deletedAt },
+  ErrorLogsController: {
+    table: errorLogs,
+    idField: errorLogs.id,
+    deletedAtField: errorLogs.deletedAt,
+  },
+  NotificationsController: {
+    table: notifications,
+    idField: notifications.id,
+    deletedAtField: notifications.deletedAt,
+  },
 }
 
 const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
@@ -80,11 +88,8 @@ export class AuditInterceptor implements NestInterceptor {
     const action = ACTION_MAP[rawAction] ?? rawAction
     const resource = RESOURCE_MAP[rawResource] ?? rawResource
 
-    // AuthGuard 在 payload 中用 sub 字段
     const userId = request.user?.sub as number | undefined
-    // 反向代理下 request.ip 是代理 IP，取 x-forwarded-for 第一段作为真实客户端 IP
-    const forwardedFor = request.headers['x-forwarded-for'] as string | undefined
-    const ip = forwardedFor?.split(',')[0]?.trim() ?? request.ip
+    const ip = (request.ip ?? '') as string
     const userAgent = request.headers['user-agent'] as string | undefined
     const resourceId = request.params?.id as string | undefined
 
@@ -145,7 +150,10 @@ export class AuditInterceptor implements NestInterceptor {
     if (!config) return undefined
 
     try {
-      const result = await db.select().from(config.table).where(eq(config.idField, id)).limit(1)
+      const whereClause = config.deletedAtField
+        ? and(eq(config.idField, id), isNull(config.deletedAtField))
+        : eq(config.idField, id)
+      const result = await db.select().from(config.table).where(whereClause).limit(1)
 
       if (result.length === 0) return undefined
 

@@ -106,8 +106,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const stack = exception instanceof Error ? exception.stack : undefined
 
     const userPayload = (request as { user?: { sub?: number } }).user
-    const forwardedFor = request.headers['x-forwarded-for'] as string | undefined
-    const ip = forwardedFor?.split(',')[0]?.trim() ?? request.ip
+    const ip = (request.ip ?? '') as string
 
     await this.errorLogsService.record({
       message,

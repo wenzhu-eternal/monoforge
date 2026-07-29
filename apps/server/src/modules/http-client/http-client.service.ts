@@ -90,7 +90,8 @@ export class HttpClientService {
           config.__retryCount !== undefined &&
           config.__maxRetries !== undefined &&
           config.__retryCount < config.__maxRetries &&
-          (isNetworkError || (retryOn5xx && is5xx))
+          retryOn5xx &&
+          (isNetworkError || is5xx)
 
         if (!canRetry) {
           return Promise.reject(error)

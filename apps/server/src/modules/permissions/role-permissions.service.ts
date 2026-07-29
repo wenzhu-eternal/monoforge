@@ -4,9 +4,11 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions, roles } from '@/db/schema'
+import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
 export class RolePermissionsService {
+  constructor(private readonly redisService: RedisService) {}
   async findByRoleId(roleId: number): Promise<string[]> {
     const result = await db
       .select({ permission: rolePermissions.permission })
@@ -85,6 +87,8 @@ export class RolePermissionsService {
         )
       }
     })
+
+    void this.redisService.del(`perm:role:${roleId}`)
 
     return { message: `角色 ${role.name} 的权限已更新`, skipped }
   }
