@@ -30,12 +30,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const exceptionResponse = exception.getResponse()
 
       // nestjs-zod 的 ZodSerializationException/ZodValidationException 会把 ZodError 挂在 error 上
-      // HttpExceptionFilter 默认只读 response.message，丢失 issues，这里补打便于排障
+      // 完整 issues 仅写入日志便于排障，不回传客户端以避免暴露字段约束
       const zodError = (exception as { getZodError?: () => unknown }).getZodError?.()
+      let zodIssuesLogged = false
       if (zodError && typeof zodError === 'object' && 'issues' in zodError) {
         this.logger.error(
           `[Zod] issues: ${JSON.stringify((zodError as { issues: unknown }).issues)}`,
         )
+        zodIssuesLogged = true
       }
 
       if (typeof exceptionResponse === 'string') {
@@ -44,23 +46,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
         const responseObj = exceptionResponse as Record<string, unknown>
         // 兼容 nestjs-zod v5: issues 在 responseObj.issues 字段
         // （v4 及更早版本可能放在 message 数组里）
+        // 出于安全考虑：不向客户端回传字段名和规则，仅统一提示
         if (Array.isArray(responseObj.issues)) {
-          const issues = responseObj.issues as Array<{ message?: string; path?: unknown[] }>
-          message =
-            issues
-              .map((i) => {
-                const field = i.path?.length ? `${String(i.path[i.path.length - 1])}: ` : ''
-                return field + (i.message ?? '')
-              })
-              .filter(Boolean)
-              .join('; ') || exception.message
+          if (!zodIssuesLogged) {
+            this.logger.error(`[Zod] issues: ${JSON.stringify(responseObj.issues)}`)
+          }
+          message = '参数校验失败'
         } else if (Array.isArray(responseObj.message)) {
-          const issues = responseObj.message as Array<{ message?: string }>
-          message =
-            issues
-              .map((i) => i.message)
-              .filter(Boolean)
-              .join('; ') || exception.message
+          // 兼容 nestjs-zod v4 及更早版本：issues 在 message 数组里
+          if (!zodIssuesLogged) {
+            this.logger.error(`[Zod] issues: ${JSON.stringify(responseObj.message)}`)
+          }
+          message = '参数校验失败'
         } else {
           message = (responseObj.message as string) || exception.message
         }

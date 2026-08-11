@@ -21,6 +21,15 @@ vi.mock('@/db/helpers', () => ({
   maybeDeleted: vi.fn(),
 }))
 
+// Mock file-validator: isPathSafe 透传（测试路径不匹配实际 cwd，统一放行）
+vi.mock('@/common/file-validator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/common/file-validator')>()
+  return {
+    ...actual,
+    isPathSafe: vi.fn().mockReturnValue(true),
+  }
+})
+
 // Mock fs/promises（capture mkdir + rename 调用）
 const mockMkdir = vi.fn().mockResolvedValue(undefined)
 const mockRename = vi.fn().mockResolvedValue(undefined)
@@ -172,17 +181,26 @@ describe('FilesService', () => {
         trashPath: '/uploads-trash/123-a.png',
         path: '/uploads/a.png',
       })
-      mockUpdate.mockReturnValue({
-        set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
-        }),
-      } as never)
+      // 第一次 update: 条件抢锁（带 returning），第二次: 清空 trashPath
+      mockUpdate
+        .mockReturnValueOnce({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([{ id: 1, deletedAt: null }]),
+            }),
+          }),
+        } as never)
+        .mockReturnValueOnce({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        } as never)
 
       const result = await service.restore(1, 5, false)
 
       expect(result.message).toContain('1')
       expect(mockRename).toHaveBeenCalledWith('/uploads-trash/123-a.png', '/uploads/a.png')
-      expect(mockUpdate).toHaveBeenCalled()
+      expect(mockUpdate).toHaveBeenCalledTimes(2)
     })
 
     it('trashPath 为空 → 仅恢复 DB，不还原磁盘', async () => {
@@ -195,7 +213,9 @@ describe('FilesService', () => {
       })
       mockUpdate.mockReturnValue({
         set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1, deletedAt: null }]),
+          }),
         }),
       } as never)
 
@@ -203,7 +223,7 @@ describe('FilesService', () => {
 
       expect(result.message).toContain('1')
       expect(mockRename).not.toHaveBeenCalled()
-      expect(mockUpdate).toHaveBeenCalled()
+      expect(mockUpdate).toHaveBeenCalledTimes(1)
     })
   })
 

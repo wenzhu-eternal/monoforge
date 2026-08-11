@@ -1,4 +1,5 @@
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import {
   BadRequestException,
   Controller,
@@ -24,6 +25,7 @@ import type { Response } from 'express'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
+import { isPathSafe } from '@/common/file-validator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
@@ -103,31 +105,65 @@ export class FilesController {
       return
     }
 
-    response.setHeader('Content-Type', file.mimeType)
-    response.setHeader('Cache-Control', 'public, max-age=31536000')
+    // 路径安全校验（防 DB 篡改导致任意文件读取）
+    if (!isPathSafe(file.path, UPLOAD_DIR)) {
+      response.status(404).json({ message: '文件不存在' })
+      return
+    }
 
-    // 支持 Range 请求（大文件分片）
-    const stat = statSync(file.path)
+    // 可 inline 预览的安全白名单（图片/PDF），其余类型一律 attachment 下载防 XSS
+    const INLINE_SAFE_MIME_TYPES = new Set([
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/bmp',
+      'application/pdf',
+    ])
+    const isInlineSafe = INLINE_SAFE_MIME_TYPES.has(file.mimeType)
+
+    response.setHeader('Content-Type', file.mimeType)
+    // 纵深防御：阻止 MIME 嗅探，与 download 接口保持一致
+    response.setHeader('X-Content-Type-Options', 'nosniff')
+    // 文件含归属校验属私有资源，用 private 防止共享代理/CDN 跨用户串读；缩短缓存时间避免权限变更后旧缓存命中
+    response.setHeader('Cache-Control', 'private, max-age=300')
+    // 对可执行类型（svg/html 等）强制 attachment，防 inline 渲染执行脚本
+    const encodedName = encodeURIComponent(file.originalName)
+    response.setHeader(
+      'Content-Disposition',
+      isInlineSafe
+        ? `inline; filename="preview"; filename*=UTF-8''${encodedName}`
+        : `attachment; filename="download"; filename*=UTF-8''${encodedName}`,
+    )
+
+    // 支持 Range 请求（大文件分片）；异步 stat 避免阻塞事件循环，文件被删时 404 兜底
+    let statResult: { size: number }
+    try {
+      statResult = await stat(file.path)
+    } catch {
+      response.status(404).json({ message: '文件不存在' })
+      return
+    }
     response.setHeader('Accept-Ranges', 'bytes')
 
     const range = response.req.headers.range
     if (range) {
-      const parsed = parseRange(range as string, stat.size)
+      const parsed = parseRange(range as string, statResult.size)
       if (parsed) {
         const { start, end } = parsed
         response.status(206)
-        response.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`)
+        response.setHeader('Content-Range', `bytes ${start}-${end}/${statResult.size}`)
         response.setHeader('Content-Length', end - start + 1)
         const stream = createReadStream(file.path, { start, end })
         stream.on('error', () => response.end())
         stream.pipe(response)
         return
       }
-      response.status(416).setHeader('Content-Range', `bytes */${stat.size}`).end()
+      response.status(416).setHeader('Content-Range', `bytes */${statResult.size}`).end()
       return
     }
 
-    response.setHeader('Content-Length', stat.size)
+    response.setHeader('Content-Length', statResult.size)
     const stream = createReadStream(file.path)
     stream.on('error', () => response.end())
     stream.pipe(response)
@@ -159,7 +195,15 @@ export class FilesController {
       return
     }
 
+    // 路径安全校验（防 DB 篡改导致任意文件读取）
+    if (!isPathSafe(file.path, UPLOAD_DIR)) {
+      response.status(404).json({ message: '文件不存在' })
+      return
+    }
+
     response.setHeader('Content-Type', file.mimeType)
+    // 纵深防御：即便走 attachment 下载也阻止 MIME 嗅探
+    response.setHeader('X-Content-Type-Options', 'nosniff')
     const encodedName = encodeURIComponent(file.originalName)
     response.setHeader(
       'Content-Disposition',

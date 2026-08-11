@@ -3,7 +3,7 @@ import xss from 'xss'
 
 /**
  * XSS 清洗管道: 递归清洗对象中所有字符串字段
- * 用于全局 ValidationPipe 之后，确保入库数据不含恶意脚本
+ * 用于 ZodValidationPipe 之前，确保入库数据不含恶意脚本
  */
 @Injectable()
 export class XssPipe implements PipeTransform {
@@ -13,7 +13,7 @@ export class XssPipe implements PipeTransform {
 
   private sanitize(value: unknown): unknown {
     if (typeof value === 'string') {
-      // 移除所有 HTML 标签，清洗 script/onerror/javascript:
+      // 移除所有 HTML 标签（纯文本中的 javascript:/onerror= 不清洗）
       return xss(value, {
         whiteList: {},
         stripIgnoreTag: true,

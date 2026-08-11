@@ -124,7 +124,7 @@ export class PermissionsGuard implements CanActivate {
 
     const isAllowed = allowedRoutes.some((route) => {
       if (route === currentRoute) return true
-      // 通配符匹配 (如 GET /api/users/*)
+      // 通配符匹配 (如 GET /users/*，seed 中 routes 用 :id 参数格式)
       if (route.endsWith('*')) {
         const prefix = route.slice(0, -1)
         return currentRoute.startsWith(prefix)

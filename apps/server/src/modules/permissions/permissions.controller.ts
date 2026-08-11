@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -47,6 +48,13 @@ export class PermissionsController {
   ) {
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
+    // 防御 NaN: 非数字字符串 parseInt 后为 NaN，直接抛 400 错误
+    if (Number.isNaN(pageNum) || pageNum < 1) {
+      throw new BadRequestException('page 必须为正整数')
+    }
+    if (Number.isNaN(size) || size < 1) {
+      throw new BadRequestException('pageSize 必须为正整数')
+    }
     const isAdmin = isAdminUser(currentUser)
     return this.permissionsService.findAll(pageNum, size, isAdmin)
   }

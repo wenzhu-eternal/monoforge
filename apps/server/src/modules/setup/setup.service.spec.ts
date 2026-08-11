@@ -35,12 +35,7 @@ describe('SetupService', () => {
   })
 
   describe('getStatus', () => {
-    it('返回未初始化状态（用户和角色都为 0）', async () => {
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 0 }]),
-        }),
-      } as never)
+    it('无用户时返回未初始化状态', async () => {
       vi.mocked(mockDb.select).mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ count: 0 }]),
@@ -48,7 +43,7 @@ describe('SetupService', () => {
       } as never)
 
       const result = await service.getStatus()
-      expect(result).toEqual({ initialized: false, userCount: 0, roleCount: 0 })
+      expect(result).toEqual({ initialized: false })
     })
 
     it('有用户时返回已初始化状态', async () => {
@@ -57,14 +52,9 @@ describe('SetupService', () => {
           where: vi.fn().mockResolvedValue([{ count: 1 }]),
         }),
       } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 3 }]),
-        }),
-      } as never)
 
       const result = await service.getStatus()
-      expect(result).toEqual({ initialized: true, userCount: 1, roleCount: 3 })
+      expect(result).toEqual({ initialized: true })
     })
 
     it('count 结果为空时按 0 处理', async () => {
@@ -73,25 +63,14 @@ describe('SetupService', () => {
           where: vi.fn().mockResolvedValue([]),
         }),
       } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
-        }),
-      } as never)
 
       const result = await service.getStatus()
-      expect(result.userCount).toBe(0)
-      expect(result.roleCount).toBe(0)
+      expect(result.initialized).toBe(false)
     })
   })
 
   describe('initialize', () => {
     it('已初始化时抛 ConflictException', async () => {
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 1 }]),
-        }),
-      } as never)
       vi.mocked(mockDb.select).mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ count: 1 }]),
@@ -109,11 +88,6 @@ describe('SetupService', () => {
     })
 
     it('未初始化时成功初始化', async () => {
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 0 }]),
-        }),
-      } as never)
       vi.mocked(mockDb.select).mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ count: 0 }]),
@@ -167,11 +141,6 @@ describe('SetupService', () => {
           where: vi.fn().mockResolvedValue([{ count: 0 }]),
         }),
       } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 0 }]),
-        }),
-      } as never)
 
       // transaction 抛出唯一约束冲突
       vi.mocked(mockDb.transaction).mockRejectedValue({ code: '23505', message: 'duplicate' })
@@ -191,11 +160,6 @@ describe('SetupService', () => {
           where: vi.fn().mockResolvedValue([{ count: 0 }]),
         }),
       } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 0 }]),
-        }),
-      } as never)
 
       const otherError = new Error('db connection lost')
       vi.mocked(mockDb.transaction).mockRejectedValue(otherError)
@@ -210,11 +174,6 @@ describe('SetupService', () => {
     })
 
     it('admin 角色创建失败时抛 BadRequestException', async () => {
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 0 }]),
-        }),
-      } as never)
       vi.mocked(mockDb.select).mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ count: 0 }]),

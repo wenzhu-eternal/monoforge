@@ -58,9 +58,11 @@ export class AuditService {
       conditions.push(eq(auditLogs.resource, filter.resource))
     }
     if (filter?.keyword) {
-      const escaped = filter.keyword.replace(/[%_]/g, '\\$&')
+      // 转义 LIKE 通配符及转义符自身，避免用户输入 \ % _ 破坏匹配
+      const escaped = filter.keyword.replace(/[%_\\]/g, '\\$&')
+      // 显式加括号包裹 OR，避免 AND 优先级高于 OR 导致 keyword 绕过 userId/action 等过滤
       conditions.push(
-        sql`${users.username} LIKE ${`%${escaped}%`} ESCAPE '\\' OR ${auditLogs.resource} LIKE ${`%${escaped}%`} ESCAPE '\\'`,
+        sql`(${users.username} LIKE ${`%${escaped}%`} ESCAPE '\\' OR ${auditLogs.resource} LIKE ${`%${escaped}%`} ESCAPE '\\')`,
       )
     }
 

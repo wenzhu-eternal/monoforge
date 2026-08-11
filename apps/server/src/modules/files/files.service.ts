@@ -1,6 +1,7 @@
-import { mkdir, rename, unlink } from 'node:fs/promises'
+import { copyFile, mkdir, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -9,13 +10,14 @@ import {
 } from '@nestjs/common'
 import type { FileItem, UploadResult } from '@shared/schemas/file'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
-import { and, count, desc, eq, isNull } from 'drizzle-orm'
+import { and, count, desc, eq, isNotNull, isNull } from 'drizzle-orm'
 import {
   generateSafeFilename,
   isPathSafe,
   scanForMalware,
   validateExtension,
   validateFileContent,
+  validateFileMimeType,
   validateFilename,
   validateFileSize,
   validateMimeType,
@@ -27,6 +29,22 @@ import { files, users } from '@/db/schema'
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
 const TRASH_DIR = join(process.cwd(), 'uploads-trash')
 
+/**
+ * 跨卷安全的文件移动：优先 rename（同卷快），EXDEV 时回退 copyFile+unlink（跨卷兼容）
+ */
+async function safeMove(src: string, dest: string): Promise<void> {
+  try {
+    await rename(src, dest)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+      await copyFile(src, dest)
+      await unlink(src)
+    } else {
+      throw err
+    }
+  }
+}
+
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name)
@@ -36,19 +54,31 @@ export class FilesService {
       throw new NotFoundException('文件未上传')
     }
 
-    validateFilename(file.originalname)
-    validateFileSize(file.size)
-    validateMimeType(file.mimetype)
-    validateExtension(file.originalname)
+    // 校验链任一步失败都需清理 multer 落盘的临时文件，防恶意文件残留
+    try {
+      validateFilename(file.originalname)
+      validateFileSize(file.size)
+      validateMimeType(file.mimetype)
+      validateExtension(file.originalname)
 
-    if (!isPathSafe(file.path, UPLOAD_DIR)) {
-      throw new ForbiddenException('文件路径非法')
+      if (!isPathSafe(file.path, UPLOAD_DIR)) {
+        throw new ForbiddenException('文件路径非法')
+      }
+
+      const ext = file.originalname.split('.').pop()?.toLowerCase() ?? ''
+      await validateFileContent(file.path, ext)
+
+      await scanForMalware(file.path)
+
+      // 基于文件内容校验真实 MIME（不信任客户端 Content-Type），DB 存检测到的真实类型
+      const detectedMime = await validateFileMimeType(file.path)
+      if (detectedMime) {
+        file.mimetype = detectedMime
+      }
+    } catch (err) {
+      await unlink(file.path).catch(() => {})
+      throw err
     }
-
-    const ext = file.originalname.split('.').pop()?.toLowerCase() ?? ''
-    await validateFileContent(file.path, ext)
-
-    await scanForMalware(file.path)
 
     const safeFilename = generateSafeFilename(file.originalname)
 
@@ -148,7 +178,7 @@ export class FilesService {
   }
 
   /**
-   * 检查文件是否已被软删（不管 includeDeleted）
+   * 返回原始记录（不带 deletedAt 过滤，由调用方判断）
    */
   async findByIdRaw(id: number) {
     const file = await db.query.files.findFirst({
@@ -172,11 +202,19 @@ export class FilesService {
       throw new ForbiddenException('无权删除他人上传的文件')
     }
 
-    const trashPath = await this.moveToTrash(file.path, file.filename)
+    // 路径安全校验（与 preview/download/restore 保持一致，防 DB 篡改导致任意文件移动）
+    if (!isPathSafe(file.path, UPLOAD_DIR)) {
+      throw new BadRequestException('文件路径不安全')
+    }
 
+    // 预生成 trashPath，在同一次条件更新中同时设置 deletedAt 和 trashPath，消除 remove/restore 竞态窗口
+    const trashFilename = `${Date.now()}-${file.filename}`
+    const preTrashPath = join(TRASH_DIR, trashFilename)
+
+    // 先 DB 条件更新抢锁（deletedAt isNull → now() + trashPath），消除"先搬盘后抢锁"的并发错配
     const [updated] = await db
       .update(files)
-      .set({ deletedAt: new Date(), trashPath })
+      .set({ deletedAt: new Date(), trashPath: preTrashPath })
       .where(and(eq(files.id, id), isNull(files.deletedAt)))
       .returning()
 
@@ -184,11 +222,22 @@ export class FilesService {
       return { message: `文件 ID ${id} 已删除` }
     }
 
+    // 抢锁成功后搬盘到预生成的 trashPath；搬盘失败保留 trashPath 记录，管理员可手动恢复
+    try {
+      await mkdir(TRASH_DIR, { recursive: true })
+      await safeMove(file.path, preTrashPath)
+    } catch (err) {
+      // 搬盘失败不阻塞软删流程，trashPath 已记录预生成路径，管理员可手动处理
+      this.logger.warn(
+        `磁盘文件移到隔离目录失败: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+
     return { message: `文件 ID ${id} 已删除` }
   }
 
   /**
-   * 恢复文件: 凭 trash_path 精确还原磁盘文件
+   * 恢复文件: DB 条件更新抢锁 + 凭 trash_path 精确还原磁盘文件
    */
   async restore(id: number, currentUserId: number, isAdmin: boolean): Promise<{ message: string }> {
     const file = await db.query.files.findFirst({
@@ -206,30 +255,40 @@ export class FilesService {
       throw new ForbiddenException('无权恢复他人上传的文件')
     }
 
-    // 凭 trash_path 精确还原磁盘文件
-    if (file.trashPath) {
-      await rename(file.trashPath, file.path)
+    // 路径安全校验（防路径穿越，基于已查到的 file 对象）
+    if (
+      file.trashPath &&
+      (!isPathSafe(file.trashPath, TRASH_DIR) || !isPathSafe(file.path, UPLOAD_DIR))
+    ) {
+      throw new BadRequestException('文件路径不安全')
     }
 
-    await db.update(files).set({ deletedAt: null, trashPath: null }).where(eq(files.id, id))
+    // DB 条件更新抢锁（deletedAt isNotNull → null），消除并发 restore 导致的重复 rename
+    const [updated] = await db
+      .update(files)
+      .set({ deletedAt: null })
+      .where(and(eq(files.id, id), isNotNull(files.deletedAt)))
+      .returning()
+
+    if (!updated) {
+      throw new ConflictException('文件未被删除或已恢复')
+    }
+
+    // 抢锁成功者负责搬盘；搬盘失败回滚 deletedAt 并保留 trashPath，让用户可重试，避免孤儿文件
+    if (file.trashPath) {
+      try {
+        await safeMove(file.trashPath, file.path)
+      } catch (err) {
+        this.logger.warn(`磁盘文件恢复失败: ${err instanceof Error ? err.message : String(err)}`)
+        // 搬盘失败：回滚 deletedAt 恢复为软删状态，保留 trashPath 让用户可重试
+        await db.update(files).set({ deletedAt: new Date() }).where(eq(files.id, id))
+        throw new BadRequestException('磁盘文件恢复失败，请重试')
+      }
+      // 搬盘成功后才清空 trashPath
+      await db.update(files).set({ trashPath: null }).where(eq(files.id, id))
+    }
 
     return { message: `文件 ID ${id} 已恢复` }
-  }
-
-  private async moveToTrash(filePath: string, filename: string): Promise<string> {
-    try {
-      await mkdir(TRASH_DIR, { recursive: true })
-      // 隔离目录内用 时间戳+原名 避免冲突
-      const trashPath = join(TRASH_DIR, `${Date.now()}-${filename}`)
-      await rename(filePath, trashPath)
-      return trashPath
-    } catch (err) {
-      // 文件可能已被外部删除，不阻塞软删流程
-      this.logger.warn(
-        `磁盘文件移到隔离目录失败: ${err instanceof Error ? err.message : String(err)}`,
-      )
-      return ''
-    }
   }
 
   async ensureUploadDir(): Promise<void> {

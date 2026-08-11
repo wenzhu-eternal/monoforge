@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { open } from 'node:fs/promises'
+import { open, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { BadRequestException } from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
@@ -11,14 +11,25 @@ export const ALLOWED_MIME_TYPES = [
   'image/png',
   'image/gif',
   'image/webp',
+  'image/svg+xml',
+  'image/bmp',
+  'image/x-icon',
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/plain',
+  'text/html',
+  'text/css',
+  'application/json',
   'application/zip',
+  'application/x-rar-compressed',
   'application/x-sql',
+  'video/mp4',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/x-wav',
 ]
 
 export const ALLOWED_EXTENSIONS = [
@@ -47,7 +58,7 @@ export const ALLOWED_EXTENSIONS = [
   'sql',
 ]
 
-// 危险扩展名黑名单（即使改后缀也拒绝）
+// 危险扩展名黑名单（防御性冗余检查：这些扩展名均不在白名单）
 export const DANGEROUS_EXTENSIONS = [
   'exe',
   'bat',
@@ -125,6 +136,27 @@ export function validateMimeType(mimeType: string): void {
   }
 }
 
+/**
+ * 基于文件内容检测真实 MIME 类型（不信任客户端 Content-Type）
+ * 返回检测到的 MIME；file-type 无法识别（纯文本 txt/sql/json/css/html 等）时返回空串，由扩展名校验兜底
+ */
+export async function validateFileMimeType(filePath: string): Promise<string> {
+  // file-type 为纯 ESM 包，项目编译为 CommonJS，用动态 import 加载（CJS 运行时原生支持 import() 加载 ESM）
+  // specifier 声明为 string 以跳过静态解析（node 模式不读 exports，避免 TS2307），类型以断言补齐
+  const specifier: string = 'file-type'
+  const { fileTypeFromFile } = (await import(specifier)) as {
+    fileTypeFromFile: (path: string) => Promise<{ mime: string; ext: string } | undefined>
+  }
+  const result = await fileTypeFromFile(filePath)
+  if (result) {
+    if (!ALLOWED_MIME_TYPES.includes(result.mime)) {
+      throw new BadRequestException(`文件内容类型不允许: ${result.mime}`)
+    }
+    return result.mime
+  }
+  return ''
+}
+
 export function validateExtension(filename: string): void {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
   if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
@@ -134,7 +166,7 @@ export function validateExtension(filename: string): void {
 
 /**
  * 校验文件内容 magic number（防止改后缀伪装）
- * 仅对 jpg/png/gif/pdf 进行校验
+ * 对 jpg/png/gif/pdf/zip/docx/xlsx 进行校验
  */
 export async function validateFileContent(filePath: string, declaredExt: string): Promise<void> {
   const expected = MAGIC_NUMBERS.find((m) => m.ext === declaredExt)
@@ -160,16 +192,10 @@ export async function validateFileContent(filePath: string, declaredExt: string)
 }
 
 export async function scanForMalware(filePath: string): Promise<void> {
-  let handle: Awaited<ReturnType<typeof open>> | null = null
   try {
-    // 只读前 64KB 进行扫描（恶意脚本通常在头部）
-    handle = await open(filePath, 'r')
-    const buffer = Buffer.alloc(64 * 1024)
-    const { bytesRead } = await handle.read(buffer, 0, 64 * 1024, 0)
-    await handle.close()
-    handle = null
-    const content = buffer.subarray(0, bytesRead).toString('utf8')
-
+    // 读取全文件扫描，防止恶意内容藏在文件后半部分绕过头部扫描
+    // latin1 编码按字节读取，保留原始字节不替换，避免 utf8 解码非法字节为 U+FFFD 绕过模式匹配
+    const content = await readFile(filePath, 'latin1')
     for (const pattern of MALICIOUS_PATTERNS) {
       if (pattern.test(content)) {
         throw new BadRequestException(
@@ -181,8 +207,6 @@ export async function scanForMalware(filePath: string): Promise<void> {
     if (err instanceof BadRequestException) throw err
     // 文件读取异常（权限/IO 错误）应拒绝，不静默放行
     throw new BadRequestException('文件读取失败，无法完成安全扫描')
-  } finally {
-    handle?.close().catch(() => {})
   }
 }
 

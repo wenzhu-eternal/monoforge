@@ -18,26 +18,14 @@ export class SetupService {
   private readonly logger = new Logger(SetupService.name)
 
   async getStatus(): Promise<SetupStatus> {
-    const [userCountResult, roleCountResult] = await Promise.all([
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(users)
-        .where(notDeleted(users.deletedAt)),
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(roles)
-        .where(notDeleted(roles.deletedAt)),
-    ])
-
-    const userCount = userCountResult[0]?.count ?? 0
-    const roleCount = roleCountResult[0]?.count ?? 0
+    const [userCountResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(users)
+      .where(notDeleted(users.deletedAt))
 
     // 已初始化判定: 存在任意用户即视为已初始化（避免重复创建 admin）
-    return {
-      initialized: userCount > 0,
-      userCount,
-      roleCount,
-    }
+    // 不返回计数，避免 /status 公开接口泄露用户/角色规模
+    return { initialized: (userCountResult?.count ?? 0) > 0 }
   }
 
   async initialize(input: {
@@ -55,12 +43,8 @@ export class SetupService {
 
     try {
       await db.transaction(async (tx) => {
-        const [lockRow] = await tx.execute<{ pg_try_advisory_lock: boolean }>(
-          sql`SELECT pg_try_advisory_lock(1234567890) AS pg_try_advisory_lock`,
-        )
-        if (!lockRow?.pg_try_advisory_lock) {
-          throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
-        }
+        // 事务级锁：随事务提交/回滚自动释放，避免 session-level 锁泄露到连接池
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(1234567890)`)
 
         const [existing] = await tx.select({ count: sql<number>`count(*)::int` }).from(users)
         if (!existing || existing.count > 0) {
