@@ -43,7 +43,7 @@ COPY --from=builder /app/apps/server/drizzle ./apps/server/drizzle
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
-RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
+RUN mkdir -p /app/uploads /app/uploads-trash && chown -R node:node /app/uploads /app/uploads-trash
 
 ENV API_PORT=9000
 ENV HUSKY=0

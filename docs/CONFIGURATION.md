@@ -13,7 +13,8 @@
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL 连接串（DEV） | `postgresql://monoforge_user:monoforge_password@localhost:5432/monoforge_database` |
 | `E2E_DATABASE_URL` | e2e 专用 PostgreSQL 连接串（独立容器，DEV DB 零污染） | `postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db` |
-| `REDIS_URL` | Redis 连接串 | `redis://localhost:6379` |
+| `REDIS_URL` | Redis 连接串（含密码：`redis://:password@host:port`） | `redis://localhost:6379` |
+| `REDIS_PASSWORD` | Redis 密码（docker-compose 强制必填；代码通过 REDIS_URL 消费，此项供文档/部署参考） | `your_redis_password` |
 | `JWT_SECRET` | JWT access token 密钥 | 必填，长度 >= 32 |
 | `JWT_REFRESH_SECRET` | JWT refresh token 密钥 | 必填，长度 >= 32 |
 | `API_PORT` | 后端端口 | `9000` |
@@ -22,6 +23,9 @@
 | `ALLOW_ORIGIN` | CORS 白名单 | `http://localhost:3000` |
 | `NODE_ENV` | 环境 | `development` / `production` |
 | `COOKIE_SECURE` | refresh token cookie 的 secure 标志（HTTP=false，HTTPS=true） | `false` |
+| `ALLOW_INSECURE_COOKIE` | 生产环境允许非 secure cookie（ngrok/单容器 HTTP 调试场景；生产强制 COOKIE_SECURE 除非此项为 true） | `false` |
+| `ALLOW_SETUP` | 首次部署初始化开关（true 时允许调用 /setup 接口创建管理员，初始化后建议设为 false） | `false` |
+| `ADMIN_ROLE_ID` | admin 角色 ID（PermissionsGuard 超级管理员旁路判定用，seed 创建的 admin 默认 id=1） | `1` |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
 | `THROTTLE_LIMIT` | 时间窗口内最大请求数（生产 10；e2e 由 `playwright.config.ts` 的 webServer.env 覆盖为 1000） | `10` |
 | `SEED_ADMIN_EMAIL` | seed 创建 admin 的邮箱（可选，默认 `admin@example.com`） | `admin@example.com` |

@@ -9,11 +9,12 @@ services:
     image: postgres:16-alpine
     container_name: mf-postgres
     restart: unless-stopped
-    ports:
-      - '5432:5432'
+    # 仅容器间可访问，不映射到主机；本地开发如需从主机连接，用 docker-compose.override.yml 覆盖端口映射（需自行创建该文件）
+    expose:
+      - '5432'
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-monoforge_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-monoforge_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required, set it in .env}
       POSTGRES_DB: ${POSTGRES_DB:-monoforge_database}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -27,28 +28,31 @@ services:
     image: redis:7-alpine
     container_name: mf-redis
     restart: unless-stopped
-    ports:
-      - '6379:6379'
-    command: redis-server --appendonly yes
+    # 仅容器间可访问，不映射到主机；本地开发如需从主机连接，用 docker-compose.override.yml 覆盖端口映射（需自行创建该文件）
+    expose:
+      - '6379'
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required, set it in .env}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD-SHELL', 'redis-cli --no-auth-warning -a ${REDIS_PASSWORD:?REDIS_PASSWORD is required} ping | grep -q PONG']
       interval: 10s
       timeout: 5s
       retries: 5
 
   # ============================================================
-  # e2e 专用 postgres：端口 5433，独立数据卷，与 DEV(5432) 完全隔离
+  # e2e 专用 postgres：独立数据卷，与 DEV(5432) 完全隔离
   # 启动：docker compose up -d e2e-postgres
   # 重置：docker compose down -v e2e-postgres（删数据卷）
+  # 注：仅容器间可访问，不映射到主机；e2e 测试脚本通过 docker exec 或网络别名连接
+  # 如需从主机连接，用 docker-compose.override.yml 覆盖为 ports 映射
   # ============================================================
   e2e-postgres:
     image: postgres:16-alpine
     container_name: mf-e2e-postgres
     restart: unless-stopped
-    ports:
-      - '5433:5432'
+    expose:
+      - '5432'
     environment:
       POSTGRES_USER: ${E2E_POSTGRES_USER:-e2e_user}
       POSTGRES_PASSWORD: ${E2E_POSTGRES_PASSWORD:-e2e_password}
@@ -77,8 +81,9 @@ services:
       - '9000:9000'
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-monoforge_user}:${POSTGRES_PASSWORD:-monoforge_password}@postgres:5432/${POSTGRES_DB:-monoforge_database}
-      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-monoforge_user}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-monoforge_database}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?required}@redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?required}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required, set it in .env (min 32 chars)}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required, set it in .env (min 32 chars)}
       - API_PORT=9000
@@ -93,6 +98,8 @@ services:
       - THROTTLE_LIMIT=${THROTTLE_LIMIT:-10}
     volumes:
       - uploads_data:/app/uploads
+      - uploads_trash_data:/app/uploads-trash
+      - backups_data:/app/backups
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,4 +116,6 @@ volumes:
   postgres_data:
   redis_data:
   uploads_data:
+  uploads_trash_data:
+  backups_data:
   e2e_postgres_data:
