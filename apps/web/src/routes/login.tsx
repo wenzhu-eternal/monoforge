@@ -1,14 +1,22 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { Button, Form, Input, message, Tabs, Typography } from 'antd'
 import { useState } from 'react'
 import { APP_NAME } from '@/config/brand'
 import { useLogin } from '@/hooks/use-auth'
 import { useRegister, useSendRegisterCode } from '@/hooks/use-register'
 import { extractErrorMessage } from '@/lib/error'
+import { useAuthStore } from '@/store/auth-store'
 
 const { Title } = Typography
 
 export const Route = createFileRoute('/login')({
+  // 已登录用户访问 /login 时重定向到 /dashboard，避免重复登录
+  beforeLoad: () => {
+    const { isAuthenticated, token } = useAuthStore.getState()
+    if (isAuthenticated && token) {
+      throw redirect({ to: '/dashboard' })
+    }
+  },
   component: LoginPage,
 })
 

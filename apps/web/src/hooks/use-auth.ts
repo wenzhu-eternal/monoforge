@@ -1,4 +1,4 @@
-import type { ApiResponse, AuthResponse, Login, User } from '@shared'
+import type { ApiResponse, AuthResponse, ChangePassword, Login, User } from '@shared'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { api } from '@/lib/api'
@@ -67,4 +67,16 @@ export const useAuth = () => {
     login: loginMutation,
     logout: logoutMutation,
   }
+}
+
+export const useChangePassword = () => {
+  return useMutation({
+    mutationFn: async (data: ChangePassword) => {
+      const response = await api.post<ApiResponse<{ message: string }>>(
+        '/api/v1/users/me/password',
+        data,
+      )
+      return response.data.data!
+    },
+  })
 }

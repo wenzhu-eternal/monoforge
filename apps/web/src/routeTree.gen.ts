@@ -20,6 +20,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as ErrorLogsRouteImport } from './routes/error-logs'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as AuditLogsRouteImport } from './routes/audit-logs'
 import { Route as R403RouteImport } from './routes/403'
 import { Route as IndexRouteImport } from './routes/index'
@@ -79,6 +80,11 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChangePasswordRoute = ChangePasswordRouteImport.update({
+  id: '/change-password',
+  path: '/change-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuditLogsRoute = AuditLogsRouteImport.update({
   id: '/audit-logs',
   path: '/audit-logs',
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/403': typeof R403Route
   '/audit-logs': typeof AuditLogsRoute
+  '/change-password': typeof ChangePasswordRoute
   '/dashboard': typeof DashboardRoute
   '/error-logs': typeof ErrorLogsRoute
   '/files': typeof FilesRoute
@@ -115,6 +122,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/403': typeof R403Route
   '/audit-logs': typeof AuditLogsRoute
+  '/change-password': typeof ChangePasswordRoute
   '/dashboard': typeof DashboardRoute
   '/error-logs': typeof ErrorLogsRoute
   '/files': typeof FilesRoute
@@ -132,6 +140,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/403': typeof R403Route
   '/audit-logs': typeof AuditLogsRoute
+  '/change-password': typeof ChangePasswordRoute
   '/dashboard': typeof DashboardRoute
   '/error-logs': typeof ErrorLogsRoute
   '/files': typeof FilesRoute
@@ -150,6 +159,7 @@ export interface FileRouteTypes {
     | '/'
     | '/403'
     | '/audit-logs'
+    | '/change-password'
     | '/dashboard'
     | '/error-logs'
     | '/files'
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
     | '/'
     | '/403'
     | '/audit-logs'
+    | '/change-password'
     | '/dashboard'
     | '/error-logs'
     | '/files'
@@ -182,6 +193,7 @@ export interface FileRouteTypes {
     | '/'
     | '/403'
     | '/audit-logs'
+    | '/change-password'
     | '/dashboard'
     | '/error-logs'
     | '/files'
@@ -199,6 +211,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   R403Route: typeof R403Route
   AuditLogsRoute: typeof AuditLogsRoute
+  ChangePasswordRoute: typeof ChangePasswordRoute
   DashboardRoute: typeof DashboardRoute
   ErrorLogsRoute: typeof ErrorLogsRoute
   FilesRoute: typeof FilesRoute
@@ -291,6 +304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/change-password': {
+      id: '/change-password'
+      path: '/change-password'
+      fullPath: '/change-password'
+      preLoaderRoute: typeof ChangePasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/audit-logs': {
       id: '/audit-logs'
       path: '/audit-logs'
@@ -319,6 +339,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   R403Route: R403Route,
   AuditLogsRoute: AuditLogsRoute,
+  ChangePasswordRoute: ChangePasswordRoute,
   DashboardRoute: DashboardRoute,
   ErrorLogsRoute: ErrorLogsRoute,
   FilesRoute: FilesRoute,

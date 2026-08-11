@@ -24,6 +24,7 @@ export interface TokenPayload {
   username: string
   email: string
   roleId: number | null
+  mustChangePassword?: boolean
 }
 
 export interface TokenPair {
@@ -72,6 +73,7 @@ export class AuthService {
       username: user.username,
       email: user.email,
       roleId: user.roleId,
+      mustChangePassword: user.mustChangePassword,
     })
 
     await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)
@@ -101,8 +103,8 @@ export class AuthService {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.REFRESH_TOKEN_INVALID])
     }
 
-    // 校验 Redis 中存在该 token（已 logout 则不存在，实现真正吊销）
-    const stored = await this.redisService.get(`refresh:${payload.sub}:${payload.jti}`)
+    // 原子 get+del 校验并作废旧 token（防并发重放）
+    const stored = await this.redisService.getdel(`refresh:${payload.sub}:${payload.jti}`)
     if (stored !== '1') {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
@@ -115,14 +117,22 @@ export class AuthService {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
     }
 
-    // 旧 token 立即作废（防重放）
-    await this.redisService.del(`refresh:${payload.sub}:${payload.jti}`)
+    // 校验用户未被禁用（与 login 保持一致，防止封禁用户通过 refresh 持续续期）
+    if (user.status === false) {
+      throw new UnauthorizedException(ErrorMessages[ErrorCodes.USER_DISABLED])
+    }
+
+    // 首登未改密用户拒绝续期，强制重新登录改密
+    if (user.mustChangePassword) {
+      throw new UnauthorizedException('请先修改默认密码')
+    }
 
     const tokens = await this.signTokenPair({
       sub: user.id,
       username: user.username,
       email: user.email,
       roleId: user.roleId,
+      mustChangePassword: user.mustChangePassword,
     })
 
     await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)
@@ -267,8 +277,22 @@ export class AuthService {
   ): Promise<TokenPair & { user: Omit<User, 'password'> }> {
     const storedCode = await this.redisService.get(`register:code:${email}`)
     if (!storedCode || storedCode !== code) {
+      // 验证码尝试次数限制：5 次失败后删除验证码并重置计数，攻击者需重新获取（受 60s 发送限制）
+      const attemptKey = `register:code:attempts:${email}`
+      const attempts = await this.redisService.incr(attemptKey)
+      if (attempts === 1) {
+        await this.redisService.expire(attemptKey, 300)
+      }
+      if (attempts >= 5) {
+        await this.redisService.del(`register:code:${email}`)
+        await this.redisService.del(attemptKey)
+        throw new UnauthorizedException('验证码错误次数过多，请重新获取')
+      }
       throw new UnauthorizedException('验证码无效或已过期')
     }
+
+    // 验证成功，清除尝试计数
+    await this.redisService.del(`register:code:attempts:${email}`)
 
     await this.register(username, email, password)
 
@@ -305,7 +329,29 @@ export class AuthService {
       ),
     ])
 
+    // 记录活跃 access jti，供禁用/改角色/改密/删用户时批量吊销
+    await this.redisService.set(`access:active:${payload.sub}:${accessJti}`, '1', 15 * 60)
+
     return { accessToken, refreshToken }
+  }
+
+  /**
+   * 批量吊销某用户的所有活跃 access token（注：当前为死代码，实际吊销逻辑在 UsersService.revokeAccessTokens）
+   * 读取活跃 jti 列表 → 逐个写入黑名单（AuthGuard 查到即拒绝）→ 清除活跃记录
+   */
+  async revokeAllAccessTokens(userId: number): Promise<void> {
+    const activeKeys = await this.redisService.scanKeys(`access:active:${userId}:*`)
+    if (activeKeys.length === 0) return
+
+    const prefix = `access:active:${userId}:`
+    for (const key of activeKeys) {
+      const jti = key.slice(prefix.length)
+      // 写入黑名单，TTL 与 access token 有效期一致
+      await this.redisService.set(`access:${userId}:${jti}`, '1', 15 * 60)
+    }
+    // 清除活跃记录
+    await this.redisService.deleteByPattern(`access:active:${userId}:*`)
+    this.logger.log(`已吊销用户 ${userId} 的 ${activeKeys.length} 个 access token`)
   }
 
   /**

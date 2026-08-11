@@ -9,6 +9,8 @@ config({ path: '../../.env' })
 
 // admin 默认密码（首次登录后请立即修改）。新项目可通过环境变量 SEED_ADMIN_PASSWORD 覆盖
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? '888888'
+// 使用默认密码 888888 时首登强制改密，自定义密码则不强制（建议生产设 SEED_ADMIN_PASSWORD）
+const mustChangePassword = ADMIN_PASSWORD === '888888'
 
 const defaultPermissions = [
   {
@@ -174,13 +176,10 @@ async function seed() {
     userRole ?? (await db.query.roles.findFirst({ where: eq(roles.name, 'user') }))
 
   if (userRoleRecord) {
-    // 普通用户：用户查看 + 邮件发送
+    // 普通用户：仅邮件发送（user:view 会泄露全员 email/phone 等敏感字段，注册用户不应具备）
     await db
       .insert(rolePermissions)
-      .values([
-        { roleId: userRoleRecord.id, permission: 'user:view' },
-        { roleId: userRoleRecord.id, permission: 'mail:send' },
-      ])
+      .values([{ roleId: userRoleRecord.id, permission: 'mail:send' }])
       .onConflictDoNothing()
     console.log('User role permissions assigned')
   }
@@ -210,6 +209,7 @@ async function seed() {
       nickname: adminNickname,
       roleId: role.id,
       status: true,
+      mustChangePassword,
     })
     .onConflictDoNothing()
     .returning()

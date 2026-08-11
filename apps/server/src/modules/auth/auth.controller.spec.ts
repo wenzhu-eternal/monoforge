@@ -48,7 +48,6 @@ describe('AuthController', () => {
 
       expect(result).toEqual({
         accessToken: 'access-token',
-        refreshToken: 'refresh-token',
         user: mockResult.user,
       })
       expect(authService.login).toHaveBeenCalledWith('admin', 'Pass1234')
@@ -87,28 +86,29 @@ describe('AuthController', () => {
       const mockTokens = { accessToken: 'new-access', refreshToken: 'new-refresh' }
       vi.mocked(authService.refresh).mockResolvedValue(mockTokens as never)
 
-      const result = await controller.refresh(request, undefined, response as never)
+      const result = await controller.refresh(request, response as never)
 
-      expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' })
+      expect(result).toEqual({ accessToken: 'new-access' })
       expect(authService.refresh).toHaveBeenCalledWith('cookie-token')
       expect(response.cookie).toHaveBeenCalled()
     })
 
-    it('cookie 不存在时从 body 兜底', async () => {
-      const request = { cookies: {} } as never
-      const mockTokens = { accessToken: 'new-access', refreshToken: 'new-refresh' }
-      vi.mocked(authService.refresh).mockResolvedValue(mockTokens as never)
+    it('请求体带 refreshToken 也无法绕过 cookie 缺失，仍抛 401', async () => {
+      const request = {
+        cookies: {},
+        body: { refreshToken: 'body-token' },
+      } as never
 
-      const result = await controller.refresh(request, 'body-token', response as never)
-
-      expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' })
-      expect(authService.refresh).toHaveBeenCalledWith('body-token')
+      await expect(controller.refresh(request, response as never)).rejects.toThrow(
+        UnauthorizedException,
+      )
+      expect(authService.refresh).not.toHaveBeenCalled()
     })
 
-    it('cookie 和 body 都没有时抛 UnauthorizedException', async () => {
+    it('cookie 不存在时抛 UnauthorizedException', async () => {
       const request = { cookies: {} } as never
 
-      await expect(controller.refresh(request, undefined, response as never)).rejects.toThrow(
+      await expect(controller.refresh(request, response as never)).rejects.toThrow(
         UnauthorizedException,
       )
       expect(authService.refresh).not.toHaveBeenCalled()

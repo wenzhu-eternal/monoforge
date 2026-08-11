@@ -9,9 +9,12 @@ import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, rolePermissions, roles, users } from '@/db/schema'
+import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
 export class UsersService {
+  constructor(private readonly redisService: RedisService) {}
+
   async findAll(
     page = 1,
     pageSize = 10,
@@ -216,6 +219,29 @@ export class UsersService {
         throw new NotFoundException(ErrorMessages[ErrorCodes.OPERATION_FAILED])
       }
 
+      // 用户被禁用时吊销所有 refresh + access token，防止封禁用户继续访问
+      if (updateData.status === false) {
+        await this.redisService.deleteByPattern(`refresh:${id}:*`)
+        await this.revokeAccessTokens(id)
+      }
+
+      // 角色变更时吊销 access token（用户需用 refresh 重新签发走新角色）+ 失效旧/新角色权限缓存
+      if (data.roleId !== undefined && data.roleId !== existingUser.roleId) {
+        await this.revokeAccessTokens(id)
+        if (existingUser.roleId) {
+          await this.redisService.del(`perm:role:${existingUser.roleId}`)
+        }
+        if (data.roleId) {
+          await this.redisService.del(`perm:role:${data.roleId}`)
+        }
+      }
+
+      // 管理员重置密码后吊销所有 token，强制用户用新密码重新登录（与 changePassword 行为一致）
+      if (rawPassword) {
+        await this.redisService.deleteByPattern(`refresh:${id}:*`)
+        await this.revokeAccessTokens(id)
+      }
+
       const { password: _, ...userWithoutPassword } = updatedUser
       return userWithoutPassword
     } catch (error) {
@@ -224,6 +250,54 @@ export class UsersService {
       }
       throw error
     }
+  }
+
+  /**
+   * 批量吊销用户活跃 access token：读活跃 jti → 写黑名单 → 清活跃记录
+   * 与 AuthService.revokeAllAccessTokens 逻辑一致，内联以避免模块循环依赖
+   */
+  private async revokeAccessTokens(userId: number): Promise<void> {
+    const activeKeys = await this.redisService.scanKeys(`access:active:${userId}:*`)
+    if (activeKeys.length === 0) return
+    const prefix = `access:active:${userId}:`
+    for (const key of activeKeys) {
+      const jti = key.slice(prefix.length)
+      await this.redisService.set(`access:${userId}:${jti}`, '1', 15 * 60)
+    }
+    await this.redisService.deleteByPattern(`access:active:${userId}:*`)
+  }
+
+  /**
+   * 修改自己密码：必须验证旧密码，防止 token 泄露后被改密码锁账号
+   */
+  async changePassword(
+    userId: number,
+    oldPassword: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
+    const user = await db.query.users.findFirst({
+      where: and(eq(users.id, userId), notDeleted(users.deletedAt)),
+    })
+    if (!user) {
+      throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
+    }
+
+    const isValid = await argon2.verify(user.password, oldPassword)
+    if (!isValid) {
+      throw new ConflictException('旧密码不正确')
+    }
+
+    const hashedPassword = await argon2.hash(newPassword)
+    await db
+      .update(users)
+      .set({ password: hashedPassword, mustChangePassword: false, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+
+    // 改密后吊销所有 token，强制重新登录
+    await this.redisService.deleteByPattern(`refresh:${userId}:*`)
+    await this.revokeAccessTokens(userId)
+
+    return { message: '密码修改成功，请重新登录' }
   }
 
   async hasPermission(userId: number, permissionCode: string): Promise<boolean> {
@@ -272,6 +346,10 @@ export class UsersService {
     }
 
     await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id))
+
+    // 软删后吊销所有 token，与禁用逻辑保持一致
+    await this.redisService.deleteByPattern(`refresh:${id}:*`)
+    await this.revokeAccessTokens(id)
 
     return { message: `用户 ID ${id} 已删除` }
   }

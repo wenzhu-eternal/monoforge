@@ -28,13 +28,12 @@ import {
 } from '@/hooks/use-files'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { PermissionCodes } from '@/lib/permissions'
-import { requirePermission } from '@/lib/route-guards'
+import { requireAuth } from '@/lib/route-guards'
 
 const { Title, Text } = Typography
 
 export const Route = createFileRoute('/files')({
-  beforeLoad: requirePermission(PermissionCodes.FILE_VIEW),
+  beforeLoad: requireAuth(),
   component: FilesPage,
 })
 

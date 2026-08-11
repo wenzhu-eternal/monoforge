@@ -40,9 +40,19 @@ import { UsersService } from './users.service'
 describe('UsersService', () => {
   let service: UsersService
 
+  const mockRedisService = {
+    deleteByPattern: vi.fn().mockResolvedValue(0),
+    scanKeys: vi.fn().mockResolvedValue([]),
+    del: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockResolvedValue(null),
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
-    service = new UsersService()
+    mockRedisService.deleteByPattern.mockResolvedValue(0)
+    mockRedisService.scanKeys.mockResolvedValue([])
+    service = new UsersService(mockRedisService as never)
   })
 
   describe('findById', () => {

@@ -17,13 +17,14 @@ import { useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME } from '@/config/brand'
 import { useCurrentUser, useLogout } from '@/hooks/use-auth'
 import { PermissionCodes } from '@/lib/permissions'
+import { getRequiredPermission } from '@/lib/route-guards'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Sider, Header, Content } = Layout
 const { Text } = Typography
 
 /**
- * 外层守卫: 未认证直接 redirect 并返回 null，不挂任何业务 hook
+ * 外层守卫: 未认证直接 redirect 到 /login（返回 Navigate 组件），不挂任何业务 hook
  */
 export const AuthenticatedLayout = ({ children }: { children: ReactNode }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -46,16 +47,33 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   const user = useAuthStore((state) => state.user)
   const [collapsed, setCollapsed] = useState(false)
 
-  // 自动刷新用户信息（包括 roles 字段）
-  const { isLoading } = useCurrentUser()
+  // 自动刷新用户信息（含 permissions/roles 字段，供权限校验使用）
+  const { isLoading, isError } = useCurrentUser()
 
   // 等待用户信息加载完成后再判断权限
   if (isLoading) {
     return null
   }
 
+  // useCurrentUser 失败时不使用 localStorage 中可能过期的 permissions 旧值
+  // 401/403 已由 axios 拦截器跳转 /login 或 /403，此处兜底网络异常等场景，避免用旧权限放行受保护内容
+  if (isError) {
+    return null
+  }
+
   const hasPermission = (permission: string) => {
     return user?.permissions?.includes(permission) ?? false
+  }
+
+  // 首登强制改密：mustChangePassword 为 true 时重定向到 /change-password
+  if (user?.mustChangePassword && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
+  }
+
+  // 路由级权限校验：当前路径所需权限码未通过则重定向到 /403
+  const requiredPermission = getRequiredPermission(location.pathname)
+  if (requiredPermission && !hasPermission(requiredPermission)) {
+    return <Navigate to="/403" replace />
   }
 
   const contentChildren = [

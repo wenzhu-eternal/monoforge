@@ -25,6 +25,8 @@ export const users = pgTable(
     wechatOpenId: varchar('wechat_open_id', { length: 64 }),
     roleId: integer('role_id').references(() => roles.id, { onDelete: 'set null' }),
     status: boolean('status').default(true).notNull(),
+    // 首登/重置后强制改密标记，改密成功后置 false
+    mustChangePassword: boolean('must_change_password').default(false).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()

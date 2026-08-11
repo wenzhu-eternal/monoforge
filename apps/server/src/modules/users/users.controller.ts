@@ -27,6 +27,7 @@ import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 
+import { ChangePasswordDto } from './dto/change-password.dto'
 import { CreateUserDto } from './dto/create-user.dto'
 import { UpdateUserDto } from './dto/update-user.dto'
 import { UsersService } from './users.service'
@@ -49,7 +50,7 @@ export class UsersController {
     @Query('pageSize') pageSize?: string,
     @CurrentUser() currentUser?: TokenPayload,
   ) {
-    // 防御 NaN: 非数字字符串 parseInt 后为 NaN，需回落到默认值
+    // 防御 NaN: 非数字字符串 parseInt 后为 NaN，直接抛 400 错误
     const pageNum = page ? Number.parseInt(page, 10) : 1
     const size = pageSize ? Number.parseInt(pageSize, 10) : 10
     if (Number.isNaN(pageNum) || pageNum < 1) {
@@ -118,9 +119,20 @@ export class UsersController {
         if (!canManage) {
           throw new ForbiddenException('修改他人密码/邮箱需要更高权限')
         }
+      } else if (updateUserDto.password !== undefined) {
+        // 改自己密码必须走 /me/password 接口验证旧密码
+        throw new ForbiddenException('请使用修改密码接口更改自己的密码')
       }
     }
     return this.usersService.update(id, updateUserDto)
+  }
+
+  @Post('me/password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '修改自己的密码（需验证旧密码）' })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async changePassword(@CurrentUser() currentUser: TokenPayload, @Body() dto: ChangePasswordDto) {
+    return this.usersService.changePassword(currentUser.sub, dto.oldPassword, dto.newPassword)
   }
 
   @Delete(':id')

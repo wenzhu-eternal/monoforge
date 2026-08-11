@@ -49,7 +49,6 @@ export class AuthController {
 
     return {
       accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
       user: result.user,
     }
   }
@@ -85,22 +84,19 @@ export class AuthController {
 
     return {
       accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
       user: result.user,
     }
   }
 
   @Post('refresh')
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '刷新访问令牌' })
   @ZodSerializerDto(RefreshTokenResponseSchema)
-  async refresh(
-    @Req() request: Request,
-    @Body('refreshToken') refreshTokenFromBody: string | undefined,
-    @Res({ passthrough: true }) response: Response,
-  ) {
-    const refreshToken = refreshTokenFromBody ?? request.cookies?.refreshToken
+  async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    // 仅信任 httpOnly cookie，禁止请求体传入，防 token 被窃取后通过 body 重放
+    const refreshToken = request.cookies?.refreshToken
     if (!refreshToken) {
       throw new UnauthorizedException('缺少刷新令牌')
     }
@@ -115,7 +111,6 @@ export class AuthController {
 
     return {
       accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
     }
   }
 

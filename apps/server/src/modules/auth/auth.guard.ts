@@ -49,11 +49,26 @@ export class AuthGuard implements CanActivate {
       const secret = this.configService.get<string>('JWT_SECRET')
       const payload = await this.jwtService.verifyAsync(token, { secret })
 
-      // 检查 access token 是否已被吊销（logout 后 jti 进入 Redis 黑名单）
+      // 检查 access token 是否已被吊销（logout/禁用/改角色/用户自改密/删用户时 jti 进入 Redis 黑名单；管理员改密暂不吊销）
       if (payload.jti) {
         const revoked = await this.redisService.get(`access:${payload.sub}:${payload.jti}`)
         if (revoked === '1') {
           throw new UnauthorizedException('访问令牌已吊销')
+        }
+      }
+
+      // 强制改密场景：mustChangePassword 为 true 时，仅允许改密/个人信息/登出接口
+      // 精确匹配 method + path，避免 startsWith 匹配子路径绕过
+      if (payload.mustChangePassword) {
+        const method = request.method.toUpperCase()
+        const path = request.path
+        const allowed = [
+          { method: 'POST', path: '/api/v1/users/me/password' }, // 改密
+          { method: 'GET', path: '/api/v1/auth/me' }, // 获取个人信息
+          { method: 'POST', path: '/api/v1/auth/logout' }, // 登出
+        ]
+        if (!allowed.some((p) => method === p.method && path === p.path)) {
+          throw new UnauthorizedException('请先修改默认密码')
         }
       }
 

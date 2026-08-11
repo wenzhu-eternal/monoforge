@@ -31,13 +31,12 @@ import {
 } from '@/hooks/use-roles'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { PermissionCodes } from '@/lib/permissions'
-import { requirePermission } from '@/lib/route-guards'
+import { requireAuth } from '@/lib/route-guards'
 
 const { Title } = Typography
 
 export const Route = createFileRoute('/roles')({
-  beforeLoad: requirePermission(PermissionCodes.ROLE_VIEW),
+  beforeLoad: requireAuth(),
   component: RolesPage,
 })
 

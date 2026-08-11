@@ -64,7 +64,7 @@ function WebSocketPage() {
         WebSocket 演示
       </Title>
       <Paragraph type="secondary" className="mb-6">
-        演示 WebSocket 实时通信能力：连接状态、在线用户、通知推送。登录后自动建立连接，30s
+        演示 WebSocket 实时通信能力：连接状态、在线用户、通知推送。登录后自动建立连接，10s
         心跳保活，断线自动重连。
       </Paragraph>
 

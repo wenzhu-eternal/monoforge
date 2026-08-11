@@ -4,13 +4,12 @@ import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState } from 'react'
 import { type AuditLog, useAuditLogs } from '@/hooks/use-logs'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
-import { PermissionCodes } from '@/lib/permissions'
-import { requirePermission } from '@/lib/route-guards'
+import { requireAuth } from '@/lib/route-guards'
 
 const { Title, Text } = Typography
 
 export const Route = createFileRoute('/audit-logs')({
-  beforeLoad: requirePermission(PermissionCodes.AUDIT_VIEW),
+  beforeLoad: requireAuth(),
   component: AuditLogsPage,
 })
 

@@ -31,7 +31,7 @@ const processQueue = (error: unknown, token: string | null) => {
 /**
  * 应用初始化时调用：若 isAuthenticated 但 token 为空（页面刷新后），
  * 主动用 httpOnly cookie refresh token 恢复 access token，
- * 避免首个请求 401 的空窗期。
+ * 减少首个请求 401 的概率。
  */
 function buildRefreshPayload() {
   return {}
@@ -71,6 +71,16 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config as typeof error.config & { _retry?: boolean }
+
+    // 403 统一跳转 /403，与前端 AuthenticatedLayout 行为一致
+    if (
+      error.response?.status === 403 &&
+      !window.location.pathname.startsWith('/403') &&
+      !window.location.pathname.startsWith('/login')
+    ) {
+      window.location.href = '/403'
+      return Promise.reject(error)
+    }
 
     if (
       error.response?.status === 401 &&

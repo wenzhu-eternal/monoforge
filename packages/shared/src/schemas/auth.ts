@@ -8,7 +8,6 @@ export const RefreshTokenSchema = z.object({
 
 export const AuthResponseSchema = z.object({
   accessToken: z.string(),
-  refreshToken: z.string(),
   user: UserSchema.extend({
     roles: z.array(RoleBriefSchema).optional(),
     permissions: z.array(z.string()).optional(),
@@ -17,7 +16,6 @@ export const AuthResponseSchema = z.object({
 
 export const RefreshTokenResponseSchema = z.object({
   accessToken: z.string(),
-  refreshToken: z.string(),
 })
 
 export type AuthResponse = z.infer<typeof AuthResponseSchema>
