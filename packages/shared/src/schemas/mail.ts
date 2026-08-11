@@ -1,12 +1,13 @@
 import { z } from 'zod'
+import { UserEmailSchema } from './user'
 
 export const SendWelcomeMailSchema = z.object({
-  to: z.string().email('请输入有效邮箱'),
+  to: UserEmailSchema,
   username: z.string().min(1, '用户名不能为空').max(50, '用户名最多 50 字符'),
 })
 
 export const SendVerificationCodeMailSchema = z.object({
-  to: z.string().email('请输入有效邮箱'),
+  to: UserEmailSchema,
   name: z.string().min(1).max(50).optional(),
 })
 

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { UserEmailSchema } from './user'
 
 export const SetupSchema = z.object({
   username: z
@@ -6,15 +7,13 @@ export const SetupSchema = z.object({
     .min(3, '用户名至少 3 个字符')
     .max(50, '用户名最多 50 个字符')
     .regex(/^[a-zA-Z0-9_]+$/, '用户名只能包含字母、数字、下划线'),
-  email: z.string().email('邮箱格式不正确'),
+  email: UserEmailSchema,
   password: z.string().min(6, '密码至少 6 个字符').max(100, '密码最多 100 个字符'),
   nickname: z.string().max(50).optional(),
 })
 
 export const SetupStatusSchema = z.object({
   initialized: z.boolean(),
-  userCount: z.number().int(),
-  roleCount: z.number().int(),
 })
 
 export const SetupResultSchema = z.object({

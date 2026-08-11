@@ -37,10 +37,10 @@ describe('ErrorLogsController', () => {
       const body = { message: 'Test error', source: 'frontend' }
       vi.mocked(service.report).mockResolvedValue({ id: 1 })
 
-      const result = await controller.reportError(body)
+      const result = await controller.reportError(body, '127.0.0.1')
 
       expect(result).toEqual({ id: 1 })
-      expect(service.report).toHaveBeenCalledWith(body)
+      expect(service.report).toHaveBeenCalledWith({ ...body, ip: '127.0.0.1' })
     })
   })
 

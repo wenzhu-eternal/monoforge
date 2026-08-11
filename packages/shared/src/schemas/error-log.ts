@@ -41,8 +41,8 @@ export const ErrorLogSchema = z.object({
 export const ReportErrorSchema = z.object({
   source: ErrorSource.default('frontend'),
   errorType: ErrorType.optional(),
-  message: z.string().min(1).max(5000),
-  stack: z.string().max(10000).optional(),
+  message: z.string().min(1).max(2000),
+  stack: z.string().max(3000).optional(),
   file: z.string().optional(),
   line: z.number().optional(),
   column: z.number().optional(),

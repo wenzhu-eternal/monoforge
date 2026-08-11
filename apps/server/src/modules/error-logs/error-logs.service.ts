@@ -25,7 +25,10 @@ export interface ReportErrorParams {
   userAgent?: string
 }
 
-const WHITELIST_CACHE_KEY = 'error:whitelist:all'
+// 活跃白名单子集（isActive=true），供 checkWhitelist 命中匹配使用
+const WHITELIST_ACTIVE_CACHE_KEY = 'error:whitelist:active'
+// 未删除白名单全集（含 isActive=false），供 findWhitelist 列表展示使用
+const WHITELIST_ALL_CACHE_KEY = 'error:whitelist:all:notDeleted'
 const WHITELIST_CACHE_TTL = 60
 
 @Injectable()
@@ -38,6 +41,11 @@ export class ErrorLogsService {
     const isWhitelisted = await this.checkWhitelist(params.message, params.url)
     if (isWhitelisted) {
       return { skipped: true, reason: 'whitelisted' }
+    }
+
+    // 按 IP 限制每日上报条数，防止公开接口撑大数据库
+    if (params.ip) {
+      await this.enforceDailyIpLimit(params.ip)
     }
 
     const [created] = await db
@@ -105,7 +113,8 @@ export class ErrorLogsService {
     const deletedFilter = maybeDeleted(errorLogs.deletedAt, includeDeleted)
     const conditions = [deletedFilter]
     if (keyword) {
-      const escaped = keyword.replace(/[%_]/g, '\\$&')
+      // 转义 LIKE 通配符及转义符自身，避免用户输入 \ % _ 破坏匹配
+      const escaped = keyword.replace(/[%_\\]/g, '\\$&')
       conditions.push(sql`${errorLogs.message} ILIKE ${`%${escaped}%`} ESCAPE '\\'`)
     }
     if (source) {
@@ -278,9 +287,30 @@ export class ErrorLogsService {
     return { message: `错误日志 ID ${id} 已删除` }
   }
 
+  // 按 IP 限制每日错误上报最多 100 条
+  private async enforceDailyIpLimit(ip: string): Promise<void> {
+    const key = `error:report:day:${ip}`
+    try {
+      const count = await this.redisService.incr(key)
+      // 首次设置过期时间（当天剩余秒数，最长不超过 86400s）
+      if (count === 1) {
+        const now = new Date()
+        const secondsUntilMidnight =
+          (24 - now.getHours()) * 3600 - now.getMinutes() * 60 - now.getSeconds()
+        await this.redisService.expire(key, Math.max(secondsUntilMidnight, 60))
+      }
+      if (count > 100) {
+        throw new ConflictException('该 IP 今日错误上报已达上限')
+      }
+    } catch (err) {
+      if (err instanceof ConflictException) throw err
+      // Redis 异常时降级放行，避免阻塞主流程
+    }
+  }
+
   private async checkWhitelist(message: string, url?: string): Promise<boolean> {
     try {
-      const cached = await this.redisService.get(WHITELIST_CACHE_KEY)
+      const cached = await this.redisService.get(WHITELIST_ACTIVE_CACHE_KEY)
       if (cached) {
         const list = JSON.parse(cached) as Array<{
           pattern: string
@@ -297,6 +327,20 @@ export class ErrorLogsService {
       .select()
       .from(errorWhitelist)
       .where(and(eq(errorWhitelist.isActive, true), notDeleted(errorWhitelist.deletedAt)))
+
+    // 缓存 miss 时回填，避免白名单查询长期穿透到 DB
+    if (list.length > 0) {
+      try {
+        await this.redisService.set(
+          WHITELIST_ACTIVE_CACHE_KEY,
+          JSON.stringify(list),
+          WHITELIST_CACHE_TTL,
+        )
+      } catch {
+        // 回填失败不影响本次匹配，下次仍走查库
+      }
+    }
+
     return this.matchWhitelist(list, message, url)
   }
 
@@ -327,7 +371,7 @@ export class ErrorLogsService {
     }
 
     try {
-      const cached = await this.redisService.get(WHITELIST_CACHE_KEY)
+      const cached = await this.redisService.get(WHITELIST_ALL_CACHE_KEY)
       if (cached) {
         return JSON.parse(cached)
       }
@@ -342,7 +386,11 @@ export class ErrorLogsService {
       .orderBy(desc(errorWhitelist.createdAt), desc(errorWhitelist.id))
 
     try {
-      await this.redisService.set(WHITELIST_CACHE_KEY, JSON.stringify(list), WHITELIST_CACHE_TTL)
+      await this.redisService.set(
+        WHITELIST_ALL_CACHE_KEY,
+        JSON.stringify(list),
+        WHITELIST_CACHE_TTL,
+      )
     } catch {}
 
     return list as ErrorWhitelist[]
@@ -446,7 +494,8 @@ export class ErrorLogsService {
 
   private async invalidateWhitelistCache(): Promise<void> {
     try {
-      await this.redisService.del(WHITELIST_CACHE_KEY)
+      await this.redisService.del(WHITELIST_ACTIVE_CACHE_KEY)
+      await this.redisService.del(WHITELIST_ALL_CACHE_KEY)
     } catch {
       // 缓存失效失败忽略，等待 TTL 过期
     }

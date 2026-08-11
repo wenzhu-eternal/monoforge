@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { WechatQrCodeSchema } from '@shared/schemas/wechat'
 import type { Response } from 'express'
 import { ZodSerializerDto } from 'nestjs-zod'
@@ -28,6 +29,7 @@ export class WechatController {
   ) {}
 
   @Get('qrcode')
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @ApiOperation({ summary: '获取微信扫码登录二维码 URL' })
   @ZodSerializerDto(WechatQrCodeSchema)
   async getQrCode() {
@@ -39,6 +41,7 @@ export class WechatController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @ApiOperation({ summary: '微信登录（扫码 code 或小程序 code）' })
   async login(@Body() dto: WechatLoginDto, @Res({ passthrough: true }) response: Response) {
     if (!this.wechatService.isEnabled()) {

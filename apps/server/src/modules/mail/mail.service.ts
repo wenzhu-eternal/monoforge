@@ -1,12 +1,13 @@
 import { randomInt } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { ConflictException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import Handlebars from 'handlebars'
 import { createTransport, type SendMailOptions, type Transporter } from 'nodemailer'
 import { getEnv } from '@/config'
+import { RedisService } from '@/modules/redis/redis.service'
 
 type Attachment = NonNullable<SendMailOptions['attachments']>[number]
 
@@ -18,7 +19,10 @@ export class MailService {
   private appName: string
   private templates: Map<string, HandlebarsTemplateDelegate> = new Map()
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
+  ) {
     const host = this.configService.get<string>('MAIL_HOST')
     const portRaw = this.configService.get<string>('MAIL_PORT')
     const port = portRaw ? Number(portRaw) : undefined
@@ -60,7 +64,30 @@ export class MailService {
     this.logger.log(`已加载 ${this.templates.size} 个邮件模板`)
   }
 
+  // 按收件人邮箱限流：60s 内只允许发一次，防止对同一邮箱轰炸
+  private async enforceMailRateLimit(to: string): Promise<void> {
+    try {
+      if (await this.redisService.exists(`mail:limit:${to}`)) {
+        throw new ConflictException('发送过于频繁，请60秒后重试')
+      }
+    } catch (err) {
+      if (err instanceof ConflictException) throw err
+      // Redis 异常时降级放行，避免阻塞主流程
+      this.logger.warn(`邮件限流检查失败，降级放行: ${to}`)
+    }
+  }
+
+  // 发送成功后标记限流 key，60s 后失效
+  private async markMailRateLimit(to: string): Promise<void> {
+    try {
+      await this.redisService.set(`mail:limit:${to}`, '1', 60)
+    } catch {
+      // 标记失败忽略，不影响发送结果
+    }
+  }
+
   async sendWelcome(to: string, username: string): Promise<void> {
+    await this.enforceMailRateLimit(to)
     const template = this.templates.get('welcome')
     if (template) {
       await this.sendHtml(
@@ -75,6 +102,7 @@ export class MailService {
         `你好，${username}！欢迎注册 ${this.appName} 系统管理后台。`,
       )
     }
+    await this.markMailRateLimit(to)
   }
 
   /**
@@ -82,6 +110,7 @@ export class MailService {
    * @param code 外部传入验证码（如注册流程由 auth.service 生成并存 Redis）。不传则内部随机生成（如邮件测试接口）
    */
   async sendVerificationCode(to: string, name?: string, code?: string): Promise<void> {
+    await this.enforceMailRateLimit(to)
     const finalCode = code ?? randomInt(0, 999999).toString().padStart(6, '0')
     const template = this.templates.get('verification')
     if (template) {
@@ -102,16 +131,16 @@ export class MailService {
         `你的验证码是: ${finalCode}\n\n验证码 5 分钟内有效，请勿泄露给他人。`,
       )
     }
+    await this.markMailRateLimit(to)
   }
 
   /**
-   * 发送备份通知邮件（成功时附带 .sql 备份文件作为附件）
+   * 发送备份通知邮件（仅文字通知，不附 .sql 附件，避免整库数据经邮件外发）
    */
   async sendBackupNotification(
     success: boolean,
     detail: string,
     backupDate?: string,
-    filepath?: string,
   ): Promise<void> {
     const subject = success
       ? `【${this.appName}】数据库备份成功`
@@ -125,21 +154,12 @@ export class MailService {
         })
       : undefined
 
-    const attachments: Attachment[] = []
-    if (success && filepath && existsSync(filepath)) {
-      attachments.push({
-        filename: basename(filepath),
-        path: filepath,
-        contentType: 'application/sql',
-      })
-    }
-
     const text = `数据库备份${success ? '成功' : '失败'}\n\n详情: ${detail}`
 
     if (html) {
-      await this.sendWithAttachments(this.fromAddress, subject, html, text, attachments)
+      await this.sendWithAttachments(this.fromAddress, subject, html, text)
     } else {
-      await this.sendWithAttachments(this.fromAddress, subject, undefined, text, attachments)
+      await this.sendWithAttachments(this.fromAddress, subject, undefined, text)
     }
   }
 

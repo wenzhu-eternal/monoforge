@@ -6,6 +6,8 @@ const redisServiceMock = {
   get: vi.fn(),
   set: vi.fn(),
   del: vi.fn(),
+  incr: vi.fn().mockResolvedValue(1),
+  expire: vi.fn().mockResolvedValue(true),
 }
 
 vi.mock('@/modules/redis/redis.service', () => ({
@@ -232,7 +234,7 @@ describe('ErrorLogsService', () => {
 
       expect(result).toEqual(dbList)
       expect(redisServiceMock.set).toHaveBeenCalledWith(
-        'error:whitelist:all',
+        'error:whitelist:all:notDeleted',
         JSON.stringify(dbList),
         60,
       )
@@ -269,7 +271,7 @@ describe('ErrorLogsService', () => {
 
       await service.findWhitelist(false)
 
-      expect(redisServiceMock.get).toHaveBeenCalledWith('error:whitelist:all')
+      expect(redisServiceMock.get).toHaveBeenCalledWith('error:whitelist:all:notDeleted')
     })
   })
 
@@ -285,7 +287,7 @@ describe('ErrorLogsService', () => {
       const result = await service.createWhitelist({ pattern: 'ECONNRESET' })
 
       expect(result).toEqual(created)
-      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all')
+      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all:notDeleted')
     })
   })
 
@@ -304,7 +306,7 @@ describe('ErrorLogsService', () => {
       const result = await service.updateWhitelist(1, { pattern: 'new-pattern' })
 
       expect(result).toEqual(updated)
-      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all')
+      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all:notDeleted')
     })
 
     it('白名单不存在时抛 NotFoundException', async () => {
@@ -327,7 +329,7 @@ describe('ErrorLogsService', () => {
 
       const result = await service.removeWhitelist(1)
       expect(result.message).toContain('1')
-      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all')
+      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all:notDeleted')
     })
 
     it('白名单不存在时抛 NotFoundException', async () => {
@@ -368,7 +370,7 @@ describe('ErrorLogsService', () => {
 
       const result = await service.restoreWhitelist(1)
       expect(result).toEqual({ id: 1, pattern: 'test', deletedAt: null })
-      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all')
+      expect(redisServiceMock.del).toHaveBeenCalledWith('error:whitelist:all:notDeleted')
     })
   })
 })

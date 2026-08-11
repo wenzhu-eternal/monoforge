@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { PermissionCodes } from '@shared/constants/permissions'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
@@ -19,6 +20,7 @@ import { MailService } from './mail.service'
 @Controller('mail')
 @UseGuards(PermissionsGuard)
 @Permissions(PermissionCodes.MAIL_SEND)
+@Throttle({ default: { limit: 3, ttl: 60_000 } })
 export class MailController {
   constructor(private readonly mailService: MailService) {}
 

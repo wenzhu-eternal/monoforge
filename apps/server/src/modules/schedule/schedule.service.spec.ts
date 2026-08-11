@@ -62,8 +62,6 @@ describe('ScheduleService', () => {
       expect(mailService.sendBackupNotification).toHaveBeenCalledWith(
         true,
         expect.stringContaining('backup-'),
-        undefined,
-        expect.stringContaining('backups/backup-'),
       )
       // 成功路径不入库
       expect(errorLogsService.record).not.toHaveBeenCalled()
@@ -130,12 +128,7 @@ describe('ScheduleService', () => {
 
       // 自定义命令走 exec 不走 spawnPgDump
       expect(spawnSpy).not.toHaveBeenCalled()
-      expect(mailService.sendBackupNotification).toHaveBeenCalledWith(
-        true,
-        expect.any(String),
-        undefined,
-        expect.any(String),
-      )
+      expect(mailService.sendBackupNotification).toHaveBeenCalledWith(true, expect.any(String))
     })
   })
 })

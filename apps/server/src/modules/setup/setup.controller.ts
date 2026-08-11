@@ -8,6 +8,7 @@ import {
   Post,
 } from '@nestjs/common'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { SetupResultSchema, SetupStatusSchema } from '@shared/schemas/setup'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { Public } from '@/common/decorators/public.decorator'
@@ -29,6 +30,7 @@ export class SetupController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: '一键初始化系统（仅未初始化时可用）' })
   @ZodSerializerDto(SetupResultSchema)
   async setup(@Body() dto: SetupDto) {

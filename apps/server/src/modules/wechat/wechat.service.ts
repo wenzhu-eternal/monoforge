@@ -58,6 +58,7 @@ interface WechatCode2SessionResponse {
  * - 小程序登录: wx.login() → code2Session
  *
  * state 缓存到 Redis 用于扫码后回调校验，TTL 5 分钟
+ * 注：仅 qrcode 类型校验 state，miniprogram 类型不校验
  */
 @Injectable()
 export class WechatService {
@@ -194,7 +195,14 @@ export class WechatService {
   }
 
   private async getAccessTokenByCode(code: string): Promise<WechatAccessTokenResponse> {
-    const url = `/sns/oauth2/access_token?appid=${this.appid}&secret=${this.secret}&code=${code}&grant_type=authorization_code`
+    // 用 URLSearchParams 自动编码，避免 code 含 & 或 # 注入额外参数
+    const params = new URLSearchParams({
+      appid: this.appid!,
+      secret: this.secret!,
+      code,
+      grant_type: 'authorization_code',
+    })
+    const url = `/sns/oauth2/access_token?${params}`
     const data = await this.httpClient.get<WechatAccessTokenResponse>(this.qrcodeInstance, url)
     if (data.errcode) {
       this.logger.error(`微信获取 access_token 失败: ${data.errcode} ${data.errmsg}`)
@@ -204,7 +212,13 @@ export class WechatService {
   }
 
   private async getUserInfo(accessToken: string, openId: string): Promise<WechatUserInfoResponse> {
-    const url = `/sns/userinfo?access_token=${accessToken}&openid=${openId}&lang=zh_CN`
+    // 用 URLSearchParams 自动编码，避免 token/openid 含特殊字符注入
+    const params = new URLSearchParams({
+      access_token: accessToken,
+      openid: openId,
+      lang: 'zh_CN',
+    })
+    const url = `/sns/userinfo?${params}`
     const data = await this.httpClient.get<WechatUserInfoResponse>(this.qrcodeInstance, url)
     if (data.errcode) {
       this.logger.error(`微信获取用户信息失败: ${data.errcode} ${data.errmsg}`)
@@ -214,7 +228,14 @@ export class WechatService {
   }
 
   private async code2Session(code: string): Promise<WechatCode2SessionResponse> {
-    const url = `/sns/jscode2session?appid=${this.appid}&secret=${this.secret}&js_code=${code}&grant_type=authorization_code`
+    // 用 URLSearchParams 自动编码，避免 code 含 & 或 # 注入额外参数
+    const params = new URLSearchParams({
+      appid: this.appid!,
+      secret: this.secret!,
+      js_code: code,
+      grant_type: 'authorization_code',
+    })
+    const url = `/sns/jscode2session?${params}`
     const data = await this.httpClient.get<WechatCode2SessionResponse>(
       this.miniprogramInstance,
       url,
@@ -227,7 +248,7 @@ export class WechatService {
   }
 
   /**
-   * 查/建用户: openId 已存在则返回，不存在则建（用户名 wx_{openId 前 8 位}，邮箱占位符）
+   * 查/建用户: openId 已存在则返回，不存在则建（用户名 wx_{完整 openId}，邮箱占位符）
    */
   private async findOrCreateUser(openId: string, nickname?: string, avatar?: string) {
     const existing = await db.query.users.findFirst({

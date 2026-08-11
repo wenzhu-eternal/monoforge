@@ -42,7 +42,9 @@ export class ScheduleService {
       const customCmd = this.configService.get<string>('BACKUP_CMD')
       if (customCmd) {
         // 自定义命令保留 exec（可能含 shell 语法如管道、变量）
-        await execAsync(customCmd.replace('{filepath}', filepath))
+        // filepath 做 shell 单引号转义：单引号内的内容不会被 shell 解释
+        const safeFilepath = `'${filepath.replace(/'/g, "'\\''")}'`
+        await execAsync(customCmd.replace('{filepath}', safeFilepath))
       } else {
         const databaseUrl = this.configService.get<string>('DATABASE_URL')
         if (!databaseUrl) {
@@ -57,12 +59,10 @@ export class ScheduleService {
 
       await this.cleanOldBackups()
 
-      // 发送备份成功通知（附带 .sql 附件）
+      // 发送备份成功通知（仅文字通知，不附 .sql 附件，避免整库数据经邮件外发）
       await this.mailService.sendBackupNotification(
         true,
         `${filename} (${(stats.size / 1024).toFixed(2)} KB)`,
-        undefined,
-        filepath,
       )
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)

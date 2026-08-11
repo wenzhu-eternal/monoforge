@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Ip,
   Param,
   ParseIntPipe,
   Patch,
@@ -43,11 +44,11 @@ export class ErrorLogsController {
 
   @Post('report')
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '前端/后端错误上报（公开）' })
-  async reportError(@Body() dto: ReportErrorDto) {
-    return this.errorLogsService.report(dto)
+  async reportError(@Body() dto: ReportErrorDto, @Ip() ip: string | undefined) {
+    return this.errorLogsService.report({ ...dto, ip })
   }
 
   @Get()
@@ -120,7 +121,7 @@ export class ErrorLogsController {
     return this.errorLogsService.findWhitelist(isAdmin)
   }
 
-  // 放大限流（高频查详情）
+  // 放宽限流阈值（高频查详情接口）
 
   @Get(':id')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
