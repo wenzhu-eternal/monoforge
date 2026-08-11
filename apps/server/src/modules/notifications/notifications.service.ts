@@ -57,7 +57,7 @@ export class NotificationsService {
       throw new Error('通知创建失败')
     }
 
-    this.eventsService.pushToUser(input.userId, 'notification', created)
+    await this.eventsService.pushToUser(input.userId, 'notification', created)
 
     return created
   }

@@ -33,18 +33,18 @@ export class WebsocketController {
   @Get('online')
   @Permissions(PermissionCodes.NOTIFICATION_VIEW)
   @ApiOperation({ summary: '获取在线用户 ID 列表' })
-  online() {
-    const userIds = this.eventsService.getOnlineUserIds()
+  async online() {
+    const userIds = await this.eventsService.getOnlineUserIds()
     return { count: userIds.length, userIds }
   }
 
   @SkipThrottle()
   @Get('me')
   @ApiOperation({ summary: '查询当前用户是否在线' })
-  me(@CurrentUser() user: TokenPayload) {
+  async me(@CurrentUser() user: TokenPayload) {
     return {
       userId: user.sub,
-      online: this.eventsService.isUserOnline(user.sub),
+      online: await this.eventsService.isUserOnline(user.sub),
     }
   }
 
@@ -65,7 +65,7 @@ export class WebsocketController {
     return {
       message: '通知已发送',
       notification: created,
-      delivered: this.eventsService.isUserOnline(dto.userId),
+      delivered: await this.eventsService.isUserOnline(dto.userId),
     }
   }
 }
