@@ -101,7 +101,7 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 ### 前端路由守卫
 
-所有需登录的路由必须在 `beforeLoad` 中调用 `requireAuth()`（仅检查登录态）或 `requirePermission(code)`（检查具体权限码）。`mail`/`dashboard`/`websocket` 等路由不得缺失 `beforeLoad`，否则未登录用户可直接访问页面（虽后端有权限兜底，仍是 UX 问题且放大攻击面）。
+所有需登录的路由必须在 `beforeLoad` 中调用 `requireAuth()`（校验登录标记 + token 存在性，token 不持久化、刷新后由 `bootstrapAuth` 用 httpOnly cookie 恢复）。权限码校验不放 `beforeLoad`，而由 `AuthenticatedLayout` 在 `useCurrentUser` 加载完成后通过 `getRequiredPermission(pathname)` 统一处理，避免使用 localStorage 中可能过期的 permissions 旧值导致首屏误 redirect。`useCurrentUser` 失败时不渲染受保护内容（401/403 已由 axios 拦截器跳转）。`mail`/`dashboard`/`websocket` 等路由不得缺失 `beforeLoad`，否则未登录用户可直接访问页面（虽后端有权限兜底，仍是 UX 问题且放大攻击面）。`/login` 路由对已登录用户重定向到 `/dashboard`，避免重复登录。
 
 ## 权限控制
 

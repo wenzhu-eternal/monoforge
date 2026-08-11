@@ -75,19 +75,31 @@ export class AuthService {
 v5 的 `ZodValidationException.getResponse()` 返回 `{ statusCode, error, message: 'Validation failed', issues: [...] }`，issues 在 `responseObj.issues` 而非 `responseObj.message` 数组。filter 必须同时检查两处：
 
 ```ts
+// 先尝试从 getZodError() 取完整 issues 并记录日志（nestjs-zod 特有方法）
+const zodError = (exception as { getZodError?: () => unknown }).getZodError?.()
+let zodIssuesLogged = false
+if (zodError && typeof zodError === 'object' && 'issues' in zodError) {
+  this.logger.error(`[Zod] issues: ${JSON.stringify((zodError as { issues: unknown }).issues)}`)
+  zodIssuesLogged = true
+}
+// 安全铁律：issues 仅写入日志，不回传客户端，避免暴露字段约束被探测
 if (Array.isArray(responseObj.issues)) {
-  const issues = responseObj.issues as Array<{ message?: string; path?: unknown[] }>
-  message = issues.map((i) => {
-    const field = i.path?.length ? `${String(i.path[i.path.length - 1])}: ` : ''
-    return field + (i.message ?? '')
-  }).filter(Boolean).join('; ') || exception.message
+  if (!zodIssuesLogged) {
+    this.logger.error(`[Zod] issues: ${JSON.stringify(responseObj.issues)}`)
+  }
+  message = '参数校验失败'
 } else if (Array.isArray(responseObj.message)) {
-  message = (responseObj.message as Array<{ message?: string }>)
-    .map((i) => i.message).filter(Boolean).join('; ') || exception.message
+  // 兼容 nestjs-zod v4 及更早版本：issues 在 message 数组里
+  if (!zodIssuesLogged) {
+    this.logger.error(`[Zod] issues: ${JSON.stringify(responseObj.message)}`)
+  }
+  message = '参数校验失败'
 } else {
   message = (responseObj.message as string) || exception.message
 }
 ```
+
+> **安全提示**：Zod 校验失败时，**禁止**把 `issues` 中的 `path`（字段名）和 `message`（规则）拼成 `field: message` 回传客户端。公开接口（`@Public`）下攻击者可据此探测校验规则绕过限制。统一返回"参数校验失败"，完整 issues 仅写入服务端日志。
 
 ## 前端 catch 块
 
