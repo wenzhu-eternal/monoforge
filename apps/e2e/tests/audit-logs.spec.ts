@@ -31,8 +31,8 @@ test.describe('审计日志（admin 视角）', () => {
   })
 
   test('审计日志包含用户管理操作记录', async ({ page }) => {
-    // 先触发一次用户创建操作，确保有最新的审计日志
-    const tempUsername = `e2e-audit-${Date.now()}`
+    // 先触发一次用户创建操作，确保有最新的审计日志（不传 roleId，服务端默认分配 user 角色）
+    const tempUsername = `e2e_audit_${Date.now()}`
     await apiClient.post(
       '/users',
       {
@@ -40,7 +40,6 @@ test.describe('审计日志（admin 视角）', () => {
         email: `${tempUsername}@test.com`,
         password: 'audit-password-123',
         nickname: '审计测试用户',
-        roleId: 2,
       },
       201,
     )

@@ -4,26 +4,54 @@ import { apiClient } from './api'
 /**
  * 数据清理辅助：在测试间清理 e2e 创建的数据
  *
- * 策略：按用户名前缀 `e2e-` 删除临时用户/角色/权限
+ * 策略：用户名前缀 `e2e_`（UsernameSchema 禁用连字符）+ 文件/角色前缀 `e2e-`
  * 不删除 admin 账号和 seed 创建的默认数据
  * 不删除 normalUser/targetUser 夹具账号（由 global-setup 创建，长期复用）
  */
 
 const E2E_PREFIX = 'e2e-'
+const E2E_USER_PREFIX = 'e2e_'
 
 // 夹具账号：global-setup 创建后长期复用，cleanup 不应清理
 const PROTECTED_USERS: Set<string> = new Set([normalUser.username, targetUser.username])
 
 /**
- * 清理所有 e2e- 前缀的临时用户（排除夹具账号 normalUser/targetUser）
+ * 分页拉取全量列表（单页 100 条会截断，残留数据跨轮次累积）
+ */
+export async function fetchAllPages<T>(path: string): Promise<T[]> {
+  const all: T[] = []
+  const pageSize = 100
+  let page = 1
+  for (;;) {
+    const { data } = await apiClient.get<{ list: T[]; total: number }>(
+      `${path}?page=${page}&pageSize=${pageSize}`,
+    )
+    all.push(...data.list)
+    if (all.length >= data.total || data.list.length === 0) break
+    page++
+  }
+  return all
+}
+
+/**
+ * 按角色名查询角色 id（动态查询，避免写死 seed 顺序）
+ */
+export async function findRoleId(roleName: string): Promise<number | undefined> {
+  const roles = await fetchAllPages<{ id: number; name: string }>('/roles')
+  return roles.find((r) => r.name === roleName)?.id
+}
+
+/**
+ * 清理所有 e2e 前缀的临时用户（排除夹具账号 normalUser/targetUser；
+ * 同时匹配 e2e_ 与历史 e2e- 前缀，兼容旧残留数据）
  */
 export async function cleanupTempUsers() {
-  const { data } = await apiClient.get<{
-    list: Array<{ id: number; username: string }>
-  }>('/users?pageSize=100')
+  const users = await fetchAllPages<{ id: number; username: string }>('/users')
 
-  const tempUsers = data.list.filter(
-    (u) => u.username.startsWith(E2E_PREFIX) && !PROTECTED_USERS.has(u.username),
+  const tempUsers = users.filter(
+    (u) =>
+      (u.username.startsWith(E2E_USER_PREFIX) || u.username.startsWith(E2E_PREFIX)) &&
+      !PROTECTED_USERS.has(u.username),
   )
   for (const user of tempUsers) {
     await apiClient.delete(`/users/${user.id}`).catch(() => {})
@@ -35,11 +63,9 @@ export async function cleanupTempUsers() {
  * 注意：磁盘文件移到 uploads-trash 后由运维清理，e2e 不负责清理磁盘
  */
 export async function cleanupTempFiles() {
-  const { data } = await apiClient.get<{
-    list: Array<{ id: number; originalName: string }>
-  }>('/files?pageSize=100')
+  const files = await fetchAllPages<{ id: number; originalName: string }>('/files')
 
-  const tempFiles = data.list.filter((f) => f.originalName.startsWith(E2E_PREFIX))
+  const tempFiles = files.filter((f) => f.originalName.startsWith(E2E_PREFIX))
   for (const file of tempFiles) {
     await apiClient.delete(`/files/${file.id}`).catch(() => {})
   }
@@ -49,11 +75,9 @@ export async function cleanupTempFiles() {
  * 清理所有 e2e- 前缀的临时角色
  */
 export async function cleanupTempRoles() {
-  const { data } = await apiClient.get<{
-    list: Array<{ id: number; name: string }>
-  }>('/roles?pageSize=100')
+  const roles = await fetchAllPages<{ id: number; name: string }>('/roles')
 
-  const tempRoles = data.list.filter((r) => r.name.startsWith(E2E_PREFIX))
+  const tempRoles = roles.filter((r) => r.name.startsWith(E2E_PREFIX))
   for (const role of tempRoles) {
     await apiClient.delete(`/roles/${role.id}`).catch(() => {})
   }
@@ -63,11 +87,9 @@ export async function cleanupTempRoles() {
  * 清理所有 e2e 前缀的临时权限（兼容 e2e: 和 e2e_ 两种前缀）
  */
 export async function cleanupTempPermissions() {
-  const { data } = await apiClient.get<{
-    list: Array<{ id: number; code: string }>
-  }>('/permissions?pageSize=100')
+  const perms = await fetchAllPages<{ id: number; code: string }>('/permissions')
 
-  const tempPerms = data.list.filter((p) => p.code.startsWith('e2e:') || p.code.startsWith('e2e_'))
+  const tempPerms = perms.filter((p) => p.code.startsWith('e2e:') || p.code.startsWith('e2e_'))
   for (const perm of tempPerms) {
     await apiClient.delete(`/permissions/${perm.id}`).catch(() => {})
   }

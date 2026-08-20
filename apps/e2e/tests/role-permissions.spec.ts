@@ -47,7 +47,7 @@ test.beforeAll(async () => {
 test.describe('角色-权限绑定链路', () => {
   let tempRoleId: number
   const tempRoleName = `e2e-rp-role-${Date.now()}`
-  const tempUsername = `e2e-rp-user-${Date.now()}`
+  const tempUsername = `e2e_rp_user_${Date.now()}`
 
   test.beforeAll(async () => {
     // 1. 创建临时角色

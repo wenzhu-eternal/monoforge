@@ -183,11 +183,10 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
         .post('/api/v1/users')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
-          username: `smoke-user-${Date.now()}`,
+          username: `smoke_user_${Date.now()}`, // UsernameSchema 禁用连字符
           email: `smoke-${Date.now()}@test.com`,
           password: 'smoke123456',
           nickname: '冒烟用户',
-          roleId: 2, // user 角色（seed 创建）
         })
         .expect(201)
       expect(res.body.data.id).toBeTruthy()
@@ -209,7 +208,6 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
         .send({
           email: `smoke-updated-${Date.now()}@test.com`,
           nickname: '冒烟用户-已更新',
-          roleId: 2,
         })
         .expect(200)
     })

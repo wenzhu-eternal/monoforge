@@ -1,6 +1,6 @@
 import { adminUser, normalUser, targetUser } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
-import { cleanupAll } from '@e2e/helpers/cleanup'
+import { cleanupAll, fetchAllPages } from '@e2e/helpers/cleanup'
 
 /**
  * Playwright 全局 setup：在所有测试前准备测试数据
@@ -29,34 +29,29 @@ async function waitForServer(maxRetries = 30, intervalMs = 1000) {
   throw new Error(`server 在 ${maxRetries * intervalMs}ms 内未就绪`)
 }
 
-async function findRoleId(roleName: string): Promise<number | null> {
-  const { data } = await apiClient.get<{ list: Array<{ id: number; name: string }> }>(
-    '/roles?pageSize=100',
-  )
-  const role = data.list.find((r) => r.name === roleName)
-  return role?.id ?? null
+async function findUserId(username: string): Promise<number | null> {
+  const users = await fetchAllPages<{ id: number; username: string }>('/users')
+  const user = users.find((u) => u.username === username)
+  return user?.id ?? null
 }
 
-async function findUserId(username: string): Promise<number | null> {
-  const { data } = await apiClient.get<{ list: Array<{ id: number; username: string }> }>(
-    '/users?pageSize=100',
-  )
-  const user = data.list.find((u) => u.username === username)
-  return user?.id ?? null
+async function findRoleId(name: string): Promise<number | undefined> {
+  const roles = await fetchAllPages<{ id: number; name: string }>('/roles')
+  return roles.find((r) => r.name === name)?.id
 }
 
 async function ensureUser(
   user: { username: string; password: string; email: string; nickname: string },
-  roleId: number | null,
+  roleId: number | undefined,
 ) {
-  // 已存在则强制重置 role_id（防止上次测试污染，例如 e2e-target-user 被改成 admin 角色）
+  // 已存在则强制重置 role_id（防止上次测试污染，例如 e2e_target_user 被改成 admin 角色）
   const existingId = await findUserId(user.username)
   if (existingId) {
     console.log(
       `[global-setup] 用户 ${user.username} 已存在 (id=${existingId})，重置 role_id=${roleId}`,
     )
-    if (roleId !== null) {
-      // UpdateUserSchema 要求 email + roleId 必填，带上 email 避免校验失败
+    if (roleId !== undefined) {
+      // 顺带重置 email，保持测试数据一致（UpdateUserSchema 中 email/roleId 均为可选）
       const { status } = await apiClient.patch(`/users/${existingId}`, {
         email: user.email,
         roleId,
@@ -68,7 +63,7 @@ async function ensureUser(
     return
   }
 
-  // 不存在则创建
+  // 不存在则创建（mustChangePassword: false 为知情豁免——夹具密码即最终密码，避免夹具被首登改密锁死）
   const { status, data } = await apiClient.post<{ id: number }>(
     '/users',
     {
@@ -78,6 +73,7 @@ async function ensureUser(
       nickname: user.nickname,
       roleId: roleId ?? undefined,
       status: true,
+      mustChangePassword: false,
     },
     201,
   )

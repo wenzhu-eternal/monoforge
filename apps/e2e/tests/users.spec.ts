@@ -1,6 +1,7 @@
 import { adminUser, targetUser, tempUserPrefix } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
 import { loginAsAdmin, loginAsNormalUser } from '@e2e/helpers/auth'
+import { findRoleId } from '@e2e/helpers/cleanup'
 import { expect, test } from '@playwright/test'
 
 /**
@@ -36,7 +37,7 @@ test.describe('用户管理（admin 视角）', () => {
   test('查看用户列表 → 包含 admin 用户', async ({ page }) => {
     await page.goto('/users')
     await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
-    // 用 admin 邮箱精确匹配（避免 e2e-target-user 被改成 admin 角色后也匹配 "admin"）
+    // 用 admin 邮箱精确匹配（避免 e2e_target_user 被改成 admin 角色后也匹配 "admin"）
     await expect(page.locator('.ant-table-row').filter({ hasText: adminUser.email })).toBeVisible({
       timeout: 10_000,
     })
@@ -85,8 +86,8 @@ test.describe('用户管理（admin 视角）', () => {
   })
 
   test('删除临时用户 → 成功', async ({ page }) => {
-    // 先用 API 创建一个临时用户
-    const tempUsername = `${tempUserPrefix}-${Date.now()}`
+    // 先用 API 创建一个临时用户（用户名用下划线，UsernameSchema 禁用连字符）
+    const tempUsername = `${tempUserPrefix}_${Date.now()}`
     const { data: created } = await apiClient.post<{ id: number }>(
       '/users',
       {
@@ -94,7 +95,7 @@ test.describe('用户管理（admin 视角）', () => {
         email: `${tempUsername}@test.com`,
         password: 'temp-password-123',
         nickname: '临时用户',
-        roleId: 2, // user 角色 id（seed 数据）
+        roleId: await findRoleId('user'), // 动态查询，避免写死 seed 顺序
       },
       201,
     )
