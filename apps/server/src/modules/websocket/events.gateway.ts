@@ -20,10 +20,15 @@ import { RedisService } from '@/modules/redis/redis.service'
 // 单用户最大 WS 连接数，防 DoS
 const MAX_CONNECTIONS_PER_USER = 5
 
+// presence 事件接收方 room：持 notification:view 权限（或 admin）的连接加入；
+// 广播走 server.to(room)，经 Redis adapter 跨实例投递，替代原"遍历本实例连接"的单实例过滤
+const PRESENCE_ROOM = 'presence:watchers'
+
 /**
  * WebSocket 网关: 在线状态登记 + 通知推送
  * 鉴权: 从 auth.token（JWT access token）解析 userId
  * 多实例: 通过 Redis Set 维护全局在线状态，pushToUser 跨实例可达
+ * TTL: 在线状态 key TTL 300s，60s 定时重校验时续期，长连接期间不过期
  */
 @WebSocketGateway({
   cors: {
@@ -54,9 +59,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(EventsGateway.name)
 
-  // 本实例的 userId -> Set<socketId> 映射（用于 presence 广播按权限过滤）
-  private readonly onlineUsers = new Map<number, Set<string>>()
-
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
@@ -71,32 +73,39 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return
     }
 
-    const { userId } = auth
+    const { userId, jti } = auth
 
-    // 单用户连接数限制，防 DoS
-    const connCount = await this.getUserConnectionCount(userId)
-    if (connCount >= MAX_CONNECTIONS_PER_USER) {
+    // 原子登记（Lua 保证 SCARD 判断 + SADD + TTL 续期无竞态）:
+    // 返回 -1 表示连接数超限；否则返回登记后的全局连接数（含本次）
+    let connCount: number
+    try {
+      connCount = (await this.redisService.eval(
+        `local n = redis.call('SCARD', KEYS[1])
+         if n >= tonumber(ARGV[2]) then return -1 end
+         redis.call('SADD', KEYS[1], ARGV[1])
+         redis.call('EXPIRE', KEYS[1], ARGV[3])
+         return n + 1`,
+        [`ws:online:${userId}`],
+        [client.id, MAX_CONNECTIONS_PER_USER, 300],
+      )) as number
+    } catch (err) {
+      // Redis 异常时不留本地残留，直接拒绝连接（避免 onlineUsers 与 Redis 不一致）
+      this.logger.error(`WebSocket 在线状态登记失败 user=${userId}: ${(err as Error).message}`)
+      client.emit('error', { message: '服务暂不可用，请稍后重试' })
+      client.disconnect()
+      return
+    }
+    if (connCount < 0) {
       client.emit('error', { message: '连接数超限，请先关闭其他设备' })
       client.disconnect()
       return
     }
+    // 登记前数量为 0 说明之前全局不在线（用原子脚本返回值推导，消除原 wasOnline 查询竞态）
+    const wasOnline = connCount > 1
 
-    const wasOnline = await this.isUserOnlineGlobal(userId)
-    // 本实例登记
-    if (!this.onlineUsers.has(userId)) {
-      this.onlineUsers.set(userId, new Set())
-    }
-    this.onlineUsers.get(userId)!.add(client.id)
-    // 全局登记（Redis Set，供多实例 pushToUser 查询）
-    await this.redisService.eval(
-      `redis.call('SADD', KEYS[1], ARGV[1])
-       redis.call('EXPIRE', KEYS[1], 300)`,
-      [`ws:online:${userId}`],
-      [client.id],
-    )
     client.data.userId = userId
-    // 缓存权限与角色到 socket，用于 presence 广播按权限过滤接收方
-    // loadUserPermissions 同时校验用户状态（禁用/软删则拒绝连接）
+    client.data.jti = jti
+    // 加载权限与角色到 socket（并按权限加入 presence room；同时校验用户状态，禁用/软删则拒绝连接）
     const ok = await this.loadUserPermissions(client, userId)
     if (!ok) {
       client.emit('error', { message: '账号不可用，连接被拒绝' })
@@ -107,18 +116,33 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`用户 ${userId} 已连接 (socket: ${client.id})`)
 
     // 新用户上线（之前全局不在线）才广播，避免多端重复广播
-    // presence 仅推给持 notification:view 的连接（admin 直通），避免泄露全员在线状态
-    // 注：多实例下 presence 只覆盖当前实例连接，跨实例 presence 需通过 Redis pub/sub 广播
+    // presence 仅推给 presence room 内持 notification:view 的连接，避免泄露全员在线状态
     if (!wasOnline) {
-      this.pushToPermitted('notification:view', 'presence:update', { userId, online: true })
+      this.broadcastPresence('presence:update', { userId, online: true })
     }
 
-    // 定时重校验用户状态/权限（60s），禁用或权限变更后最长 60s 断开
+    // 定时重校验（60s）: jti 黑名单（logout 后断开）+ 用户状态/权限；并续期在线状态 TTL，
+    // 防止长连接超过 TTL 300s 后 key 过期导致 pushToUser 不可达
     const refreshTimer = setInterval(async () => {
-      const stillOk = await this.loadUserPermissions(client, userId)
-      if (!stillOk) {
-        client.emit('error', { message: '账号状态已变更，连接被断开' })
-        client.disconnect()
+      try {
+        if (jti) {
+          const revoked = await this.redisService.get(`access:${userId}:${jti}`)
+          if (revoked === '1') {
+            client.emit('error', { message: '登录状态已失效，连接被断开' })
+            client.disconnect()
+            return
+          }
+        }
+        const stillOk = await this.loadUserPermissions(client, userId)
+        if (!stillOk) {
+          client.emit('error', { message: '账号状态已变更，连接被断开' })
+          client.disconnect()
+          return
+        }
+        await this.refreshOnlineTtl(userId)
+      } catch (err) {
+        // Redis/DB 抖动不踢连接，等待下一轮重试
+        this.logger.warn(`WebSocket 定时重校验异常 user=${userId}: ${(err as Error).message}`)
       }
     }, 60_000)
     client.data.refreshTimer = refreshTimer
@@ -132,15 +156,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     if (!userId) return
 
-    // 本实例清除
-    const sockets = this.onlineUsers.get(userId)
-    if (sockets) {
-      sockets.delete(client.id)
-      if (sockets.size === 0) {
-        this.onlineUsers.delete(userId)
-      }
-    }
-    // 全局清除（Redis Set）
+    // 全局清除（Redis Set），脚本返回剩余连接数；为 0 即全部断开，广播离线
+    // （用脚本返回值判断，避免 SREM 未完成时二次 SCARD 读到旧值误判在线）
     this.redisService
       .eval(
         `redis.call('SREM', KEYS[1], ARGV[1])
@@ -150,14 +167,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         [`ws:online:${userId}`],
         [client.id],
       )
+      .then((remaining) => {
+        if (Number(remaining) === 0) {
+          this.broadcastPresence('presence:update', { userId, online: false })
+        }
+      })
       .catch((err) => this.logger.warn(`清除 Redis 在线状态失败: ${(err as Error).message}`))
-
-    // 用户所有连接都断开才广播离线（presence 仅推给持 notification:view 的连接）
-    this.isUserOnlineGlobal(userId).then((stillOnline) => {
-      if (!stillOnline) {
-        this.pushToPermitted('notification:view', 'presence:update', { userId, online: false })
-      }
-    })
 
     this.logger.log(`用户 ${userId} 已断开 (socket: ${client.id})`)
   }
@@ -199,22 +214,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * 按权限过滤广播：仅推给持指定权限码的在线连接（admin 直通）
-   * 用于 presence 等敏感事件，避免向无权限用户泄露全员状态
-   * 注：多实例下只覆盖当前实例连接，跨实例 presence 需通过 Redis pub/sub
+   * presence 事件广播：仅 presence room 内连接可收到（持 notification:view 或 admin，见 syncPresenceRoom），
+   * 避免向无权限用户泄露全员在线状态
    */
-  private pushToPermitted(permission: string, event: string, data: unknown): void {
-    for (const sockets of this.onlineUsers.values()) {
-      for (const socketId of sockets) {
-        const client = this.server.sockets.sockets.get(socketId)
-        if (!client) continue
-        const perms = (client.data as { permissions?: string[] }).permissions ?? []
-        const isAdmin = (client.data as { isAdmin?: boolean }).isAdmin === true
-        if (isAdmin || perms.includes(permission)) {
-          this.server.to(socketId).emit(event, data)
-        }
-      }
-    }
+  private broadcastPresence(event: string, data: unknown): void {
+    this.server.to(PRESENCE_ROOM).emit(event, data)
   }
 
   /**
@@ -246,10 +250,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * 全局在线查询（用于判断是否需要广播上线通知）
+   * 续期在线状态 TTL（60s 定时重校验时调用，保证长连接期间 key 不过期）
    */
-  private async isUserOnlineGlobal(userId: number): Promise<boolean> {
-    return this.isUserOnline(userId)
+  private async refreshOnlineTtl(userId: number): Promise<void> {
+    await this.redisService.eval(
+      `redis.call('EXPIRE', KEYS[1], ARGV[1])`,
+      [`ws:online:${userId}`],
+      [300],
+    )
   }
 
   /**
@@ -270,7 +278,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         username: string
         jti?: string
         mustChangePassword?: boolean
-      }>(authToken, { secret })
+      }>(authToken, { secret, algorithms: ['HS256'] })
       if (!payload?.sub || payload.sub <= 0) return null
       // 查 jti 黑名单（与 AuthGuard 一致：access:${sub}:${jti}）
       if (payload.jti) {
@@ -293,7 +301,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * 查询用户权限码并缓存 roleId 到 socket
+   * 查询用户权限码并缓存 roleId 到 socket，并按权限维护 presence room 成员资格
    * admin 由 roleId 判断（与后端 isAdminUser 一致），无需查权限码
    * 简化版查询（不 join permissions 过滤已删权限、不走 Redis 缓存；注：与 PermissionsGuard 不一致，待对齐）
    * 返回 false 表示用户被禁用或软删，调用方应断开连接；DB 异常时返回 false 避免虚假在线
@@ -313,6 +321,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.data.permissions = []
         // 仅 admin role 置 true，无角色用户保持 false，避免越权
         client.data.isAdmin = isAdminUser(userRecord)
+        this.syncPresenceRoom(client)
         return true
       }
       const perms = await db
@@ -321,11 +330,26 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         .where(eq(rolePermissions.roleId, userRecord.roleId))
       client.data.permissions = perms.map((p) => p.permission)
       client.data.isAdmin = false
+      this.syncPresenceRoom(client)
       return true
     } catch (err) {
-      // DB 异常时返回 false 触发断连，避免 client 已加入 onlineUsers 但 permissions 未设置的虚假在线
+      // DB 异常时返回 false 触发断连，避免 client 已加入 presence room 但 permissions 未设置的虚假在线
       this.logger.error(`WebSocket 加载用户权限失败 user=${userId}: ${(err as Error).message}`)
       return false
+    }
+  }
+
+  /**
+   * 按当前权限同步 presence room 成员资格（连接时与 60s 重校验时调用，
+   * 权限被收回的连接在下一个重校验周期内自动退出 room）
+   */
+  private syncPresenceRoom(client: Socket): void {
+    const perms = (client.data as { permissions?: string[] }).permissions ?? []
+    const isAdmin = (client.data as { isAdmin?: boolean }).isAdmin === true
+    if (isAdmin || perms.includes('notification:view')) {
+      client.join(PRESENCE_ROOM)
+    } else {
+      client.leave(PRESENCE_ROOM)
     }
   }
 }
