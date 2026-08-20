@@ -33,6 +33,9 @@ const processQueue = (error: unknown, token: string | null) => {
  * 主动用 httpOnly cookie refresh token 恢复 access token，
  * 减少首个请求 401 的概率。
  */
+// refresh 与业务请求统一走 VITE_API_BASE_URL（默认空为同源相对路径；分离部署时该值必配，否则 refresh 打到前端自身域名 404）
+const refreshUrl = `${env.VITE_API_BASE_URL}/api/v1/auth/refresh`
+
 function buildRefreshPayload() {
   return {}
 }
@@ -43,7 +46,7 @@ export async function bootstrapAuth(): Promise<void> {
 
   try {
     const response = await axios.post(
-      '/api/v1/auth/refresh',
+      refreshUrl,
       {},
       {
         withCredentials: true,
@@ -114,8 +117,8 @@ api.interceptors.response.use(
       isRefreshing = true
 
       try {
-        // refreshToken 走 httpOnly cookie，通过相对路径走 Vite 代理避免跨端口 cookie 丢失
-        const response = await axios.post('/api/v1/auth/refresh', buildRefreshPayload(), {
+        // refreshToken 走 httpOnly cookie；同源部署（VITE_API_BASE_URL 为空）时走相对路径经 Vite 代理携带 cookie
+        const response = await axios.post(refreshUrl, buildRefreshPayload(), {
           withCredentials: true,
         })
         const { accessToken } = response.data.data

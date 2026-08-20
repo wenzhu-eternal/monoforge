@@ -14,6 +14,11 @@
       "require": "./dist/schemas/*.js",
       "import": "./dist/schemas/*.js",
       "types": "./dist/schemas/*.d.ts"
+    },
+    "./constants/*": {
+      "require": "./dist/constants/*.js",
+      "import": "./dist/constants/*.js",
+      "types": "./dist/constants/*.d.ts"
     }
   },
   "scripts": {

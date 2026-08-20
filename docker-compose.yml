@@ -44,15 +44,14 @@ services:
   # e2e 专用 postgres：独立数据卷，与 DEV(5432) 完全隔离
   # 启动：docker compose up -d e2e-postgres
   # 重置：docker compose down -v e2e-postgres（删数据卷）
-  # 注：仅容器间可访问，不映射到主机；e2e 测试脚本通过 docker exec 或网络别名连接
-  # 如需从主机连接，用 docker-compose.override.yml 覆盖为 ports 映射
+  # 注：5433 仅绑定 127.0.0.1（e2e 脚本按 localhost:5433 直连），不对局域网暴露
   # ============================================================
   e2e-postgres:
     image: postgres:16-alpine
     container_name: mf-e2e-postgres
     restart: unless-stopped
-    expose:
-      - '5432'
+    ports:
+      - '127.0.0.1:5433:5432'
     environment:
       POSTGRES_USER: ${E2E_POSTGRES_USER:-e2e_user}
       POSTGRES_PASSWORD: ${E2E_POSTGRES_PASSWORD:-e2e_password}
@@ -89,6 +88,12 @@ services:
       - API_PORT=9000
       - ALLOW_ORIGIN=${ALLOW_ORIGIN:-http://localhost:9000}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      # 生产强制 COOKIE_SECURE 的逃生舱（ngrok/单容器 HTTP 调试场景），见 docs/CONFIGURATION.md
+      - ALLOW_INSECURE_COOKIE=${ALLOW_INSECURE_COOKIE:-false}
+      - ALLOW_SETUP=${ALLOW_SETUP:-false}
+      - ADMIN_ROLE_ID=${ADMIN_ROLE_ID:-1}
+      - TRUST_PROXY=${TRUST_PROXY:-1}
+      - APP_NAME=${APP_NAME:-MonoForge}
       - MAIL_HOST=${MAIL_HOST:-}
       - MAIL_PORT=${MAIL_PORT:-}
       - MAIL_USER=${MAIL_USER:-}
@@ -96,6 +101,9 @@ services:
       - MAIL_FROM=${MAIL_FROM:-}
       - THROTTLE_TTL=${THROTTLE_TTL:-60}
       - THROTTLE_LIMIT=${THROTTLE_LIMIT:-10}
+      - WEAPP_APPID=${WEAPP_APPID:-}
+      - WEAPP_SECRET=${WEAPP_SECRET:-}
+      - WECHAT_REDIRECT_URI=${WECHAT_REDIRECT_URI:-}
     volumes:
       - uploads_data:/app/uploads
       - uploads_trash_data:/app/uploads-trash

@@ -1,9 +1,24 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+// @tailwindcss/vite 4.3.2 的 ESM 产物仅提供 default 导出（无 tailwindcss 命名导出），命名导入会在 vitest 加载 config 时抛 SyntaxError
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react-swc'
 // 从 vitest/config 导入，使其同时识别 test 字段（vite 的 defineConfig 不含 test）
 import { defineConfig } from 'vitest/config'
+
+// 读根目录 .env 的指定变量（不用 vite 的 loadEnv：显式 import 'vite' 会与 vitest 内置 vite 形成双实例冲突）
+function readRootEnv(key: string): string | undefined {
+  const envPath = resolve(__dirname, '../../.env')
+  if (!existsSync(envPath)) return undefined
+  const line = readFileSync(envPath, 'utf-8')
+    .split('\n')
+    .find((l) => l.startsWith(`${key}=`))
+  return line ? line.slice(key.length + 1).trim() : undefined
+}
+
+// VITE_DEV_HOST: 默认仅监听 localhost（防局域网未授权访问）；ngrok 调试等场景设 0.0.0.0
+const devHost = process.env.VITE_DEV_HOST || readRootEnv('VITE_DEV_HOST') || 'localhost'
 
 export default defineConfig({
   plugins: [TanStackRouterVite({ quoteStyle: 'single' }), react(), tailwindcss()],
@@ -31,7 +46,7 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    host: '0.0.0.0',
+    host: devHost,
     allowedHosts: ['.ngrok-free.dev'],
     strictPort: true,
     proxy: {

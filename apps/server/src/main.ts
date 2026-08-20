@@ -1,3 +1,7 @@
+// 必须最先执行: 显式加载根目录 .env，保证 validateEnv 与 db 连接读到配置
+// （此前依赖 AppModule→db/index.ts 的 import 副作用隐式加载，顺序脆弱；生产容器由 compose 注入环境变量，文件缺失无害）
+import './env-loader'
+
 import { ConfigService } from '@nestjs/config'
 import { NestFactory } from '@nestjs/core'
 import { NestExpressApplication } from '@nestjs/platform-express'
@@ -19,10 +23,12 @@ async function bootstrap() {
   const isProduction = configService.get<string>('NODE_ENV') === 'production'
   const appName = env.APP_NAME
 
+  // API 前缀固定 /api/v1（auth.guard 改密白名单、permissions.guard 前缀剥离、seed routes、e2e 均以此为契约，不做配置化）
   app.setGlobalPrefix('api/v1')
 
-  // 信任反向代理 IP（nginx 等），确保 request.ip 取真实客户端 IP
-  app.getHttpAdapter().getInstance().set('trust proxy', 1)
+  // 反向代理信任（TRUST_PROXY，默认 false 不信任）:
+  // 直连部署时不采信 X-Forwarded-For，防止伪造头绕过 IP 限流；nginx/ngrok 前置时设 1
+  app.getHttpAdapter().getInstance().set('trust proxy', env.TRUST_PROXY)
 
   // 安全: HTTP 安全头；生产环境移除 scriptSrc 'unsafe-inline'，开发环境保留以兼容 Vite HMR + Swagger
   app.use(
@@ -46,6 +52,7 @@ async function bootstrap() {
   const allowedOrigins = configService
     .get<string>('ALLOW_ORIGIN', 'http://localhost:3000')
     .split(',')
+    .map((origin) => origin.trim())
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, ok?: boolean) => void) => {
       if (!origin || allowedOrigins.includes(origin)) {

@@ -36,7 +36,18 @@ const envSchema = z
     JWT_REFRESH_SECRET: jwtSecretSchema,
 
     API_PORT: z.coerce.number().min(1).max(65535).default(9000),
-    API_PREFIX: z.string().default('/api/v1'),
+
+    // 反向代理信任（Express trust proxy）：默认 false 不信任（直连部署防 XFF 伪造绕过 IP 限流）；
+    // nginx/ngrok 前置时设 1（信任一层代理，request.ip 取真实客户端 IP）；也可传具体代理 IP
+    TRUST_PROXY: z
+      .string()
+      .default('false')
+      .transform((v) => {
+        if (v === 'true') return true
+        if (v === 'false') return false
+        const n = Number.parseInt(v, 10)
+        return Number.isNaN(n) ? v : n
+      }),
 
     // 应用名（Swagger 标题、邮件主题、邮件模板均引用，新项目通过 .env 配置）
     APP_NAME: z.string().default('MonoForge'),

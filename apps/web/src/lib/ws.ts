@@ -21,7 +21,7 @@ class WsClient {
       return this.socket
     }
 
-    // 同源时 baseURL 为空，socket.io 走相对路径
+    // 未配置 API 地址时回退到当前页面 origin（同源部署场景）
     const baseURL = env.VITE_API_BASE_URL || window.location.origin
 
     this.socket = io(baseURL, {
