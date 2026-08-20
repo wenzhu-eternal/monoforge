@@ -98,10 +98,10 @@ function SetupPage() {
             name="password"
             rules={[
               { required: true, message: '请输入密码' },
-              { min: 8, max: 100, message: '密码至少 8 个字符' },
+              { min: 6, max: 100, message: '密码至少 6 个字符' },
             ]}
           >
-            <Input.Password placeholder="至少 8 个字符" />
+            <Input.Password placeholder="至少 6 个字符" />
           </Form.Item>
           <Form.Item label="昵称（可选）" name="nickname">
             <Input placeholder="可选" />

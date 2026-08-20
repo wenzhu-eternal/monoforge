@@ -155,6 +155,9 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   }
 
   const handleLogout = () => {
+    // 先同步清空本地登录态再跳转，避免 /login 的 beforeLoad 读到旧值反弹回 /dashboard；
+    // 后端登出（清 refreshToken cookie）异步进行，useLogout 的 onSuccess 会再次 logout()（幂等）
+    useAuthStore.getState().logout()
     logoutMutation.mutate()
     navigate({ to: '/login' })
   }
@@ -168,18 +171,7 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
     },
   ]
 
-  const getSelectedKeys = () => {
-    const pathname = location.pathname
-    if (
-      pathname.startsWith('/audit-logs') ||
-      pathname.startsWith('/error-logs') ||
-      pathname.startsWith('/roles') ||
-      pathname.startsWith('/permissions')
-    ) {
-      return [pathname]
-    }
-    return [pathname]
-  }
+  const getSelectedKeys = () => [location.pathname]
 
   const getOpenKeys = () => {
     const pathname = location.pathname

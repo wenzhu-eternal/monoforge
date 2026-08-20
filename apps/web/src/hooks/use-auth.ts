@@ -55,20 +55,6 @@ export const useCurrentUser = () => {
   return query
 }
 
-export const useAuth = () => {
-  const { user, token, isAuthenticated } = useAuthStore()
-  const loginMutation = useLogin()
-  const logoutMutation = useLogout()
-
-  return {
-    user,
-    token,
-    isAuthenticated,
-    login: loginMutation,
-    logout: logoutMutation,
-  }
-}
-
 export const useChangePassword = () => {
   return useMutation({
     mutationFn: async (data: ChangePassword) => {

@@ -22,7 +22,8 @@ interface NotifyResponse {
 }
 
 /**
- * WebSocket 连接 hook: 登录后自动连接，登出自动断开
+ * WebSocket 连接 hook: 组件挂载且已登录时连接，卸载或登出时断开
+ * （当前仅 /websocket 演示页使用，并非全局连接）
  */
 export function useWebSocket() {
   const token = useAuthStore((state) => state.token)

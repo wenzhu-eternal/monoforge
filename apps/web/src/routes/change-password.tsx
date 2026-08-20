@@ -48,9 +48,11 @@ function ChangePasswordPage() {
         newPassword: values.newPassword,
       })
       messageApi.success('密码修改成功，请重新登录')
-      // 改密成功后登出，清除旧 token
+      // 改密成功后立即清空本地登录态（旧 token 已全部吊销），跳转交给下方 isAuthenticated 兜底 effect；
+      // 后端登出（清 refreshToken cookie）异步进行
+      useAuthStore.getState().logout()
       logoutMutation.mutate()
-      setTimeout(() => navigate({ to: '/login' }), 1500)
+      navigate({ to: '/login' })
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '密码修改失败'))
     }
