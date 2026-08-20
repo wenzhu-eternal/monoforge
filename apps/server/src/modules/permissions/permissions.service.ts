@@ -5,9 +5,16 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions } from '@/db/schema'
+import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
 export class PermissionsService {
+  constructor(private readonly redisService: RedisService) {}
+
+  // 权限码变更（改名/软删/恢复）会影响所有引用该码的角色缓存，统一失效
+  private invalidateRolePermissionCache(): void {
+    void this.redisService.deleteByPattern('perm:role:*')
+  }
   async findAll(
     page = 1,
     pageSize = 10,
@@ -110,15 +117,35 @@ export class PermissionsService {
       }
     }
 
-    const [updated] = await db
-      .update(permissions)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(permissions.id, id))
-      .returning()
+    // 改 code 时在事务中同步 role_permissions 绑定（该表以 code 字符串关联角色）:
+    // 不同步则旧绑定成为孤儿记录，innerJoin 匹配不到，引用角色会静默失去该权限
+    let updated: Permission | undefined
+    if (data.code && data.code !== existing.code) {
+      updated = await db.transaction(async (tx) => {
+        await tx
+          .update(rolePermissions)
+          .set({ permission: data.code as string })
+          .where(eq(rolePermissions.permission, existing.code))
+        const [row] = await tx
+          .update(permissions)
+          .set({ ...data, updatedAt: new Date() })
+          .where(eq(permissions.id, id))
+          .returning()
+        return row
+      })
+    } else {
+      const [row] = await db
+        .update(permissions)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(permissions.id, id))
+        .returning()
+      updated = row
+    }
 
     if (!updated) {
       throw new NotFoundException(`更新权限 ID ${id} 失败`)
     }
+    this.invalidateRolePermissionCache()
     return updated
   }
 
@@ -141,6 +168,7 @@ export class PermissionsService {
     }
 
     await db.update(permissions).set({ deletedAt: new Date() }).where(eq(permissions.id, id))
+    this.invalidateRolePermissionCache()
 
     return { message: `权限 ID ${id} 已删除` }
   }
@@ -175,6 +203,7 @@ export class PermissionsService {
       if (!restored) {
         throw new ConflictException('恢复权限失败')
       }
+      this.invalidateRolePermissionCache()
 
       return restored
     } catch (error) {

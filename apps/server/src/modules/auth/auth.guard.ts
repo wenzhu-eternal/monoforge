@@ -47,9 +47,10 @@ export class AuthGuard implements CanActivate {
 
     try {
       const secret = this.configService.get<string>('JWT_SECRET')
-      const payload = await this.jwtService.verifyAsync(token, { secret })
+      // 显式算法白名单，防算法混淆
+      const payload = await this.jwtService.verifyAsync(token, { secret, algorithms: ['HS256'] })
 
-      // 检查 access token 是否已被吊销（logout/禁用/改角色/用户自改密/删用户时 jti 进入 Redis 黑名单；管理员改密暂不吊销）
+      // 检查 access token 是否已被吊销（logout/禁用/改角色/改密（含管理员重置）/删用户时 jti 进入 Redis 黑名单）
       if (payload.jti) {
         const revoked = await this.redisService.get(`access:${payload.sub}:${payload.jti}`)
         if (revoked === '1') {

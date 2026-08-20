@@ -40,23 +40,40 @@ describe('CreateUserSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('密码少于 6 位失败', () => {
+  it('密码少于 8 位失败', () => {
     const result = CreateUserSchema.safeParse({
       username: 'alice',
       email: 'alice@example.com',
-      password: '12345',
-      roleId: 1,
+      password: 'abc123',
     })
     expect(result.success).toBe(false)
   })
 
-  it('roleId 必填且为正整数', () => {
+  it('纯数字密码失败（须含字母）', () => {
+    const result = CreateUserSchema.safeParse({
+      username: 'alice',
+      email: 'alice@example.com',
+      password: '12345678',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('纯字母密码失败（须含数字）', () => {
+    const result = CreateUserSchema.safeParse({
+      username: 'alice',
+      email: 'alice@example.com',
+      password: 'abcdefgh',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('roleId 可选，未传时合法（服务端默认分配），非正整数失败', () => {
     const r1 = CreateUserSchema.safeParse({
       username: 'alice',
       email: 'alice@example.com',
       password: 'secret123',
     })
-    expect(r1.success).toBe(false)
+    expect(r1.success).toBe(true)
 
     const r2 = CreateUserSchema.safeParse({
       username: 'alice',
@@ -100,8 +117,12 @@ describe('LoginSchema', () => {
     expect(LoginSchema.safeParse({ username: 'alice', password: 'secret123' }).success).toBe(true)
   })
 
-  it('密码过短失败', () => {
-    expect(LoginSchema.safeParse({ username: 'alice', password: '123' }).success).toBe(false)
+  it('历史弱密码也可登录（不套用注册级策略，走改密流程）', () => {
+    expect(LoginSchema.safeParse({ username: 'alice', password: '888888' }).success).toBe(true)
+  })
+
+  it('密码为空失败', () => {
+    expect(LoginSchema.safeParse({ username: 'alice', password: '' }).success).toBe(false)
   })
 
   it('用户名过短失败', () => {

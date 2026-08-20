@@ -120,11 +120,10 @@ describe('AuthController', () => {
       const user = { sub: 1 }
       vi.mocked(authService.logout).mockResolvedValue({ message: '已登出' } as never)
 
-      const request = { headers: { authorization: 'Bearer test-token' } } as never
-      const result = await controller.logout(user as never, request, response as never)
+      const result = await controller.logout(user as never, response as never)
 
       expect(result).toEqual({ message: '已登出' })
-      expect(authService.logout).toHaveBeenCalledWith(1, 'test-token')
+      expect(authService.logout).toHaveBeenCalledWith(1)
       expect(response.clearCookie).toHaveBeenCalledWith('refreshToken', { path: '/' })
     })
   })

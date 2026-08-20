@@ -118,15 +118,9 @@ export class AuthController {
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登出' })
-  async logout(
-    @CurrentUser() user: TokenPayload,
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-  ) {
+  async logout(@CurrentUser() user: TokenPayload, @Res({ passthrough: true }) response: Response) {
     response.clearCookie('refreshToken', { path: '/' })
-    const authHeader = request.headers.authorization
-    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
-    return this.authService.logout(user.sub, accessToken)
+    return this.authService.logout(user.sub)
   }
 
   @Get('me')

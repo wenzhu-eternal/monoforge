@@ -17,7 +17,7 @@ const defaultPermissions = [
     code: 'user:view',
     name: '查看用户',
     description: '查看用户列表和详情',
-    routes: ['GET /users/', 'GET /users/:id'],
+    routes: ['GET /users', 'GET /users/stats', 'GET /users/:id'],
   },
   { code: 'user:create', name: '创建用户', description: '创建新用户', routes: ['POST /users/'] },
   {
@@ -30,13 +30,13 @@ const defaultPermissions = [
     code: 'user:delete',
     name: '删除用户',
     description: '删除用户',
-    routes: ['DELETE /users/:id'],
+    routes: ['DELETE /users/:id', 'POST /users/:id/restore'],
   },
   {
     code: 'role:view',
     name: '查看角色',
     description: '查看角色列表和详情',
-    routes: ['GET /roles/', 'GET /roles/:id'],
+    routes: ['GET /roles', 'GET /roles/:id'],
   },
   { code: 'role:create', name: '创建角色', description: '创建新角色', routes: ['POST /roles/'] },
   {
@@ -55,7 +55,7 @@ const defaultPermissions = [
     code: 'permission:view',
     name: '查看权限',
     description: '查看权限列表',
-    routes: ['GET /permissions/', 'GET /permissions/list', 'GET /permissions/:id'],
+    routes: ['GET /permissions', 'GET /permissions/list', 'GET /permissions/:id'],
   },
   {
     code: 'permission:create',
@@ -75,7 +75,12 @@ const defaultPermissions = [
     description: '删除权限',
     routes: ['DELETE /permissions/:id'],
   },
-  { code: 'file:view', name: '查看文件', description: '查看文件列表', routes: ['GET /files/'] },
+  {
+    code: 'file:view',
+    name: '查看文件',
+    description: '查看文件列表与预览下载',
+    routes: ['GET /files', 'GET /files/:id/preview', 'GET /files/:id/download'],
+  },
   {
     code: 'file:upload',
     name: '上传文件',
@@ -85,14 +90,14 @@ const defaultPermissions = [
   {
     code: 'file:delete',
     name: '删除文件',
-    description: '删除文件',
-    routes: ['DELETE /files/:id'],
+    description: '删除与恢复文件',
+    routes: ['DELETE /files/:id', 'POST /files/:id/restore'],
   },
   {
     code: 'audit:view',
     name: '查看审计日志',
     description: '查看审计日志',
-    routes: ['GET /audit-logs/', 'GET /audit-logs/:id'],
+    routes: ['GET /audit-logs', 'GET /audit-logs/:id'],
   },
   {
     code: 'mail:send',
@@ -111,9 +116,10 @@ const defaultPermissions = [
     name: '查看错误日志',
     description: '查看错误日志',
     routes: [
-      'GET /error-logs/',
+      'GET /error-logs',
       'GET /error-logs/:id',
       'GET /error-logs/stats',
+      'GET /error-logs/grouped',
       'GET /error-logs/whitelist',
     ],
   },
@@ -122,24 +128,38 @@ const defaultPermissions = [
     name: '管理错误日志',
     description: '处理和管理错误日志',
     routes: [
-      'GET /error-logs/',
+      'GET /error-logs',
       'GET /error-logs/:id',
       'GET /error-logs/stats',
+      'GET /error-logs/grouped',
       'GET /error-logs/whitelist',
-      'POST /error-logs/report',
       'POST /error-logs/:id/resolve',
+      'POST /error-logs/batch-resolve',
       'DELETE /error-logs/:id',
       'POST /error-logs/whitelist',
       'PATCH /error-logs/whitelist/:id',
       'DELETE /error-logs/whitelist/:id',
+      'POST /error-logs/whitelist/:id/restore',
     ],
+  },
+  {
+    code: 'notification:view',
+    name: '查看在线状态',
+    description: '查看 WebSocket 在线用户列表',
+    routes: ['GET /websocket/online'],
+  },
+  {
+    code: 'user:role_manage',
+    name: '管理用户角色',
+    description: '分配/修改用户角色、状态、密码与邮箱',
+    routes: ['POST /users/', 'PATCH /users/:id'],
   },
 ]
 
 async function seed() {
   console.log('Seeding database...')
 
-  // 创建默认权限（已存在则跳过，匹配部分唯一索引 permissions_code_active_uniq）
+  // 创建默认权限（已存在则跳过，匹配部分唯一索引 permissions_code_unique）
   for (const perm of defaultPermissions) {
     await db.insert(permissions).values(perm).onConflictDoNothing()
   }

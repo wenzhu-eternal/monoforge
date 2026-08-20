@@ -27,10 +27,14 @@ import { PermissionsService } from './permissions.service'
 
 describe('PermissionsService', () => {
   let service: PermissionsService
+  const mockRedisService = {
+    deleteByPattern: vi.fn().mockResolvedValue(0),
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
-    service = new PermissionsService()
+    mockRedisService.deleteByPattern.mockResolvedValue(0)
+    service = new PermissionsService(mockRedisService as never)
   })
 
   describe('findAll', () => {

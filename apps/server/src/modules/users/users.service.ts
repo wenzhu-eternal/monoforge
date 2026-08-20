@@ -8,7 +8,7 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
-import { files, rolePermissions, roles, users } from '@/db/schema'
+import { files, permissions as permissionsTable, rolePermissions, roles, users } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
@@ -111,6 +111,7 @@ export class UsersService {
     nickname?: string
     phone?: string
     roleId?: number | null
+    mustChangePassword?: boolean
   }): Promise<Omit<User, 'password'>> {
     const existingUsername = await db.query.users.findFirst({
       where: and(eq(users.username, data.username), notDeleted(users.deletedAt)),
@@ -128,9 +129,19 @@ export class UsersService {
       throw new ConflictException('邮箱已被注册，请更换邮箱')
     }
 
-    if (data.roleId) {
+    // 未指定角色时默认分配普通 user 角色（controller 已拦截越权指定 roleId 的请求）
+    let roleId = data.roleId
+    if (!roleId) {
+      const defaultRole = await db.query.roles.findFirst({
+        where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
+      })
+      if (!defaultRole) {
+        throw new ConflictException('默认角色不存在，请联系管理员初始化种子数据')
+      }
+      roleId = defaultRole.id
+    } else {
       const role = await db.query.roles.findFirst({
-        where: eq(roles.id, data.roleId),
+        where: eq(roles.id, roleId),
       })
       if (!role || role.deletedAt) {
         throw new ConflictException('角色不存在或已被禁用')
@@ -144,7 +155,10 @@ export class UsersService {
         .insert(users)
         .values({
           ...data,
+          roleId,
           password: hashedPassword,
+          // 管理员建户默认强制首登改密（密码由管理员单方指定）
+          mustChangePassword: data.mustChangePassword ?? true,
         })
         .returning()
 
@@ -313,9 +327,17 @@ export class UsersService {
     })
     if (!role || role.deletedAt) return false
 
+    // 与 PermissionsGuard 同口径: innerJoin permissions 过滤已软删的权限码
     const result = await db
       .select({ permission: rolePermissions.permission })
       .from(rolePermissions)
+      .innerJoin(
+        permissionsTable,
+        and(
+          eq(rolePermissions.permission, permissionsTable.code),
+          notDeleted(permissionsTable.deletedAt),
+        ),
+      )
       .where(eq(rolePermissions.roleId, user.roleId))
     return result.some((p) => p.permission === permissionCode)
   }

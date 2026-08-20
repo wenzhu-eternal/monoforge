@@ -46,7 +46,11 @@ export class SetupService {
         // 事务级锁：随事务提交/回滚自动释放，避免 session-level 锁泄露到连接池
         await tx.execute(sql`SELECT pg_advisory_xact_lock(1234567890)`)
 
-        const [existing] = await tx.select({ count: sql<number>`count(*)::int` }).from(users)
+        // 与 getStatus 同口径: 仅统计未软删用户（全部用户被软删时允许重新初始化）
+        const [existing] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(users)
+          .where(notDeleted(users.deletedAt))
         if (!existing || existing.count > 0) {
           throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
         }

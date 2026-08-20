@@ -140,24 +140,27 @@ export class AuthService {
     return tokens
   }
 
-  async logout(userId: number, accessToken?: string): Promise<{ message: string }> {
+  async logout(userId: number): Promise<{ message: string }> {
     await this.redisService.deleteByPattern(`refresh:${userId}:*`)
-
-    // 吊销 access token: 把 jti 写入 Redis 黑名单，TTL = 15min（access token 最长有效期）
-    if (accessToken) {
-      try {
-        const secret = this.configService.get<string>('JWT_SECRET')
-        const decoded = await this.jwtService.verifyAsync(accessToken, { secret })
-        const jti = (decoded as { jti?: string }).jti
-        if (jti) {
-          await this.redisService.set(`access:${userId}:${jti}`, '1', 15 * 60)
-        }
-      } catch {
-        // token 已过期或无效，无需黑名单
-      }
-    }
+    // 批量吊销全部活跃 access token（多设备/refresh 轮换后遗留的旧 token 一并拉黑，TTL=15min 与 token 有效期一致）
+    await this.revokeAllAccessTokens(userId)
 
     return { message: '退出登录成功' }
+  }
+
+  /**
+   * 批量吊销用户活跃 access token：读活跃 jti → 写黑名单 → 清活跃记录
+   * 与 UsersService.revokeAccessTokens 逻辑一致，内联以避免模块循环依赖
+   */
+  private async revokeAllAccessTokens(userId: number): Promise<void> {
+    const activeKeys = await this.redisService.scanKeys(`access:active:${userId}:*`)
+    if (activeKeys.length === 0) return
+    const prefix = `access:active:${userId}:`
+    for (const key of activeKeys) {
+      const jti = key.slice(prefix.length)
+      await this.redisService.set(`access:${userId}:${jti}`, '1', 15 * 60)
+    }
+    await this.redisService.deleteByPattern(`access:active:${userId}:*`)
   }
 
   async getProfile(userId: number): Promise<
@@ -248,7 +251,9 @@ export class AuthService {
     })
 
     if (existingEmail) {
-      throw new ConflictException('该邮箱已被注册')
+      // 防邮箱枚举：已注册邮箱返回与未注册一致的响应（与 login 防枚举策略对齐），不实际发送
+      this.logger.warn(`注册验证码请求命中已注册邮箱，静默跳过发送: ${email}`)
+      return { message: '验证码已发送' }
     }
 
     const lastSendTime = await this.redisService.get(`register:code:limit:${email}`)
@@ -278,11 +283,15 @@ export class AuthService {
     const storedCode = await this.redisService.get(`register:code:${email}`)
     if (!storedCode || storedCode !== code) {
       // 验证码尝试次数限制：5 次失败后删除验证码并重置计数，攻击者需重新获取（受 60s 发送限制）
+      // Lua 保证 INCR + 首次 EXPIRE 原子，避免进程在两步之间崩溃导致计数永驻
       const attemptKey = `register:code:attempts:${email}`
-      const attempts = await this.redisService.incr(attemptKey)
-      if (attempts === 1) {
-        await this.redisService.expire(attemptKey, 300)
-      }
+      const attempts = (await this.redisService.eval(
+        `local n = redis.call('INCR', KEYS[1])
+         if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+         return n`,
+        [attemptKey],
+        [300],
+      )) as number
       if (attempts >= 5) {
         await this.redisService.del(`register:code:${email}`)
         await this.redisService.del(attemptKey)
@@ -291,13 +300,11 @@ export class AuthService {
       throw new UnauthorizedException('验证码无效或已过期')
     }
 
-    // 验证成功，清除尝试计数
+    // 验证成功即原子消费验证码（getdel）：否则注册失败后可换用户名反复尝试注册（同一码 5 分钟内多次使用）
+    await this.redisService.getdel(`register:code:${email}`)
     await this.redisService.del(`register:code:attempts:${email}`)
 
     await this.register(username, email, password)
-
-    // 注册成功后才删除验证码，避免注册失败导致验证码白费
-    await this.redisService.del(`register:code:${email}`)
 
     return this.login(username, password)
   }
@@ -336,31 +343,13 @@ export class AuthService {
   }
 
   /**
-   * 批量吊销某用户的所有活跃 access token（注：当前为死代码，实际吊销逻辑在 UsersService.revokeAccessTokens）
-   * 读取活跃 jti 列表 → 逐个写入黑名单（AuthGuard 查到即拒绝）→ 清除活跃记录
-   */
-  async revokeAllAccessTokens(userId: number): Promise<void> {
-    const activeKeys = await this.redisService.scanKeys(`access:active:${userId}:*`)
-    if (activeKeys.length === 0) return
-
-    const prefix = `access:active:${userId}:`
-    for (const key of activeKeys) {
-      const jti = key.slice(prefix.length)
-      // 写入黑名单，TTL 与 access token 有效期一致
-      await this.redisService.set(`access:${userId}:${jti}`, '1', 15 * 60)
-    }
-    // 清除活跃记录
-    await this.redisService.deleteByPattern(`access:active:${userId}:*`)
-    this.logger.log(`已吊销用户 ${userId} 的 ${activeKeys.length} 个 access token`)
-  }
-
-  /**
    * 存储 refreshToken 到 Redis: key=refresh:{userId}:{jti}, value=1, TTL=7d
    */
   async storeRefreshTokenForExternal(token: string, userId: number): Promise<void> {
     try {
       const decoded = await this.jwtService.verifyAsync(token, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        algorithms: ['HS256'],
         ignoreExpiration: true,
       })
       const jti = (decoded as { jti?: string }).jti

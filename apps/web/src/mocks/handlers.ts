@@ -67,7 +67,7 @@ export const handlers = [
         code: 200,
         message: 'Success',
         data: {
-          token: 'mock-jwt-token-123456',
+          accessToken: 'mock-jwt-token-123456',
           refreshToken: 'mock-refresh-token-123456',
           user: mockUser,
         },
@@ -124,7 +124,7 @@ export const handlers = [
       code: 200,
       message: 'Success',
       data: {
-        items: mockUsers.slice((page - 1) * pageSize, page * pageSize),
+        list: mockUsers.slice((page - 1) * pageSize, page * pageSize),
         total: mockUsers.length,
         page,
         pageSize,

@@ -111,6 +111,12 @@ describe('UsersService', () => {
 
     it('创建成功返回用户（不含密码）', async () => {
       vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
+      // 未指定 roleId 时服务会查询默认 user 角色
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 2,
+        name: 'user',
+        deletedAt: null,
+      } as never)
       vi.mocked(mockDb.insert).mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockResolvedValue([

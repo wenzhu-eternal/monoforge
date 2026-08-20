@@ -100,7 +100,9 @@ describe('SetupService', () => {
           const tx = {
             execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
             select: vi.fn().mockReturnValue({
-              from: vi.fn().mockResolvedValue([{ count: 0 }]),
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([{ count: 0 }]),
+              }),
             }),
             insert: vi.fn().mockReturnValue({
               values: vi.fn().mockReturnValue({
@@ -186,7 +188,9 @@ describe('SetupService', () => {
           const tx = {
             execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
             select: vi.fn().mockReturnValue({
-              from: vi.fn().mockResolvedValue([{ count: 0 }]),
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([{ count: 0 }]),
+              }),
             }),
             insert: vi.fn().mockReturnValue({
               values: vi.fn().mockReturnValue({

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import type { RolePermission } from '@shared/schemas/permission'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/db'
@@ -55,12 +55,18 @@ export class RolePermissionsService {
   async updateRolePermissions(
     roleId: number,
     permissionCodes: string[],
+    caller?: { userId: number; roleId: number | null; isAdmin: boolean },
   ): Promise<{ message: string; skipped: string[] }> {
     const role = await db.query.roles.findFirst({
       where: and(eq(roles.id, roleId), notDeleted(roles.deletedAt)),
     })
     if (!role) {
       throw new NotFoundException(`角色 ID ${roleId} 不存在`)
+    }
+
+    // 防自提权: 非 admin 禁止修改自己所属角色的权限集合
+    if (caller && !caller.isAdmin && caller.roleId === roleId) {
+      throw new ForbiddenException('不能修改自己所属角色的权限')
     }
 
     // 过滤掉指向已软删权限的 code
@@ -73,6 +79,23 @@ export class RolePermissionsService {
       validCodes = valid.map((p) => p.code)
     }
     const skipped = permissionCodes.filter((c) => !validCodes.includes(c))
+
+    // 防越权授予: 非 admin 授予的权限码不得超过调用者自身权限集（与 PermissionsGuard 同口径: innerJoin 过滤软删权限）
+    if (caller && !caller.isAdmin && validCodes.length > 0) {
+      const callerPerms = await db
+        .select({ permission: rolePermissions.permission })
+        .from(rolePermissions)
+        .innerJoin(
+          permissions,
+          and(eq(rolePermissions.permission, permissions.code), notDeleted(permissions.deletedAt)),
+        )
+        .where(eq(rolePermissions.roleId, caller.roleId ?? -1))
+      const callerSet = new Set(callerPerms.map((p) => p.permission))
+      const exceeded = validCodes.filter((c) => !callerSet.has(c))
+      if (exceeded.length > 0) {
+        throw new ForbiddenException('不能授予自身未持有的权限')
+      }
+    }
 
     // 删除旧权限并插入新权限（事务保证原子性，避免 insert 失败导致权限丢失）
     await db.transaction(async (tx) => {

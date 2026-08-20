@@ -68,6 +68,12 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException(ErrorMessages[ErrorCodes.PERMISSION_DENIED])
     }
 
+    // 实时校验禁用状态：禁用生效原本仅依赖 Redis 吊销成功（DB 提交后 Redis 异常的窗口内 token 仍有效），
+    // 此处兜底消除毫秒级 TOCTOU 窗口（查询本身已有，零额外成本）
+    if (userRecord.status === false) {
+      throw new ForbiddenException('账号已被禁用')
+    }
+
     const roleRecord = await db.query.roles.findFirst({
       where: eq(roles.id, userRecord.roleId),
     })
@@ -122,15 +128,7 @@ export class PermissionsGuard implements CanActivate {
     const currentPath = request.path.replace(/^\/api\/v1/, '')
     const currentRoute = `${currentMethod} ${currentPath}`
 
-    const isAllowed = allowedRoutes.some((route) => {
-      if (route === currentRoute) return true
-      // 通配符匹配 (如 GET /users/*，seed 中 routes 用 :id 参数格式)
-      if (route.endsWith('*')) {
-        const prefix = route.slice(0, -1)
-        return currentRoute.startsWith(prefix)
-      }
-      return false
-    })
+    const isAllowed = allowedRoutes.some((route) => this.matchRoute(route, currentRoute))
 
     if (!isAllowed) {
       throw new ForbiddenException(
@@ -139,5 +137,31 @@ export class PermissionsGuard implements CanActivate {
     }
 
     return true
+  }
+
+  /**
+   * 路由白名单匹配（routes 形如 'GET /users/:id'）:
+   * 1. 精确匹配（尾斜杠归一化，'GET /users/' 与 'GET /users' 等价）
+   * 2. 尾部 * 通配前缀匹配（'GET /files/*'）
+   * 3. :param 段匹配（'GET /users/:id' 匹配 'GET /users/123'，参数段匹配任意非空单段）
+   */
+  private matchRoute(pattern: string, route: string): boolean {
+    const normalize = (r: string) => (r.endsWith('/') && r.length > 1 ? r.slice(0, -1) : r)
+    if (normalize(pattern) === normalize(route)) return true
+    if (pattern.endsWith('*')) {
+      return route.startsWith(pattern.slice(0, -1))
+    }
+    if (!pattern.includes('/:')) return false
+
+    const [pMethod, pPath] = pattern.split(' ')
+    const [rMethod, rPath] = route.split(' ')
+    if (pMethod !== rMethod || !pPath || !rPath) return false
+    const pSegs = pPath.split('/').filter(Boolean)
+    const rSegs = rPath.split('/').filter(Boolean)
+    if (pSegs.length !== rSegs.length) return false
+    return pSegs.every((seg, i) => {
+      const rSeg = rSegs[i]
+      return seg.startsWith(':') ? (rSeg?.length ?? 0) > 0 : seg === rSeg
+    })
   }
 }

@@ -86,7 +86,18 @@ export class UsersController {
   @Permissions(PermissionCodes.USER_CREATE)
   @ApiOperation({ summary: '创建用户' })
   @ZodSerializerDto(UserSchema)
-  async create(@Body() createUserDto: CreateUserDto) {
+  async create(@Body() createUserDto: CreateUserDto, @CurrentUser() currentUser: TokenPayload) {
+    // 指定角色属于敏感操作（防提权）: 仅 USER_ROLE_MANAGE 权限可指定 roleId，
+    // 未指定时由 service 默认分配普通角色
+    if (createUserDto.roleId !== undefined) {
+      const canManage = await this.usersService.hasPermission(
+        currentUser.sub,
+        PermissionCodes.USER_ROLE_MANAGE,
+      )
+      if (!canManage) {
+        throw new ForbiddenException('指定角色需要更高权限')
+      }
+    }
     return this.usersService.create(createUserDto)
   }
 
@@ -101,6 +112,11 @@ export class UsersController {
   ) {
     // 改角色/状态需要 USER_ROLE_MANAGE 权限，防止提权
     if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
+      // 自改角色一律禁止（含 admin）：持 USER_ROLE_MANAGE 的普通用户可把自己改成 admin 角色完成提权，
+      // role-permissions 已有同款"禁改自身角色"防线，此处补齐 users.update 路径
+      if (currentUser.sub === id && updateUserDto.roleId !== undefined) {
+        throw new ForbiddenException('不能修改自己的角色')
+      }
       const canManage = await this.usersService.hasPermission(
         currentUser.sub,
         PermissionCodes.USER_ROLE_MANAGE,
@@ -109,17 +125,27 @@ export class UsersController {
         throw new ForbiddenException('修改角色/状态需要更高权限')
       }
     }
-    // 改他人密码/邮箱需要 USER_ROLE_MANAGE 权限，防止账号接管
-    if (updateUserDto.password !== undefined || updateUserDto.email !== undefined) {
+    // 邮箱换绑是账号接管链路的一环: 无论改自己还是他人，一律要求 USER_ROLE_MANAGE（自改无门槛会被泄露 token 利用）
+    if (updateUserDto.email !== undefined) {
+      const canManage = await this.usersService.hasPermission(
+        currentUser.sub,
+        PermissionCodes.USER_ROLE_MANAGE,
+      )
+      if (!canManage) {
+        throw new ForbiddenException('修改邮箱需要更高权限')
+      }
+    }
+    // 改他人密码需要 USER_ROLE_MANAGE 权限，防止账号接管
+    if (updateUserDto.password !== undefined) {
       if (currentUser.sub !== id) {
         const canManage = await this.usersService.hasPermission(
           currentUser.sub,
           PermissionCodes.USER_ROLE_MANAGE,
         )
         if (!canManage) {
-          throw new ForbiddenException('修改他人密码/邮箱需要更高权限')
+          throw new ForbiddenException('修改他人密码需要更高权限')
         }
-      } else if (updateUserDto.password !== undefined) {
+      } else {
         // 改自己密码必须走 /me/password 接口验证旧密码
         throw new ForbiddenException('请使用修改密码接口更改自己的密码')
       }

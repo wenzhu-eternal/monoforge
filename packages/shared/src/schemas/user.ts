@@ -19,8 +19,12 @@ export const UsernameSchema = z
   .max(50, '用户名最多 50 个字符')
   .regex(/^[a-zA-Z0-9_]+$/, '用户名只能包含字母、数字、下划线')
 
-// 密码强度：至少 6 位（与现有策略保持一致，复杂度提升见 F20 决策）
-export const PasswordSchema = z.string().min(6, '密码至少 6 个字符').max(100, '密码最多 100 个字符')
+// 密码策略：至少 8 位且同时包含字母与数字（注册/建户/改密共用；纯数字如生日密码被拒）
+export const PasswordSchema = z
+  .string()
+  .min(8, '密码至少 8 个字符')
+  .max(100, '密码最多 100 个字符')
+  .regex(/^(?=.*[a-zA-Z])(?=.*\d).+$/, '密码必须同时包含字母和数字')
 
 export const UserSchema = z.object({
   id: z.number().int().positive(),
@@ -67,7 +71,10 @@ export const CreateUserSchema = z.object({
   password: PasswordSchema,
   nickname: z.string().max(50).optional(),
   phone: PhoneSchema,
-  roleId: z.number().int().positive(),
+  // 角色: 仅 USER_ROLE_MANAGE 权限可指定，其余调用方由服务端默认分配普通角色
+  roleId: z.number().int().positive().optional(),
+  // 默认 true 强制首登改密（管理员指定的密码不应被长期沿用）；显式 false 为管理员知情豁免（如 e2e 夹具）
+  mustChangePassword: z.boolean().optional(),
 })
 
 export const UpdateUserSchema = z.object({
@@ -88,7 +95,8 @@ export const ChangePasswordSchema = z.object({
 
 export const LoginSchema = z.object({
   username: UsernameSchema,
-  password: PasswordSchema,
+  // 登录不套用注册级密码策略：历史弱密码用户需能登录后走改密流程，真实性由 argon2 校验
+  password: z.string().min(1, '请输入密码').max(100),
 })
 
 export const RegisterWithCodeSchema = z.object({

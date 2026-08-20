@@ -133,15 +133,44 @@ describe('UsersController', () => {
   })
 
   describe('create', () => {
-    it('创建用户', async () => {
+    const currentUser = {
+      sub: 1,
+      username: 'admin',
+      email: 'admin@test.com',
+      roleId: 1,
+    } as TokenPayload
+
+    it('创建用户（不指定 roleId）不触发 hasPermission', async () => {
       const dto = { username: 'newuser', email: 'new@test.com', password: 'Pass1234' }
       const mockUser = { id: 1, ...dto, password: undefined }
       vi.mocked(service.create).mockResolvedValue(mockUser as never)
 
-      const result = await controller.create(dto)
+      const result = await controller.create(dto, currentUser)
 
       expect(result).toEqual(mockUser)
       expect(service.create).toHaveBeenCalledWith(dto)
+      expect(service.hasPermission).not.toHaveBeenCalled()
+    })
+
+    it('指定 roleId 且有 USER_ROLE_MANAGE 权限 → 成功', async () => {
+      const dto = { username: 'newuser', email: 'new@test.com', password: 'Pass1234', roleId: 2 }
+      const mockUser = { id: 1, ...dto, password: undefined }
+      vi.mocked(service.hasPermission).mockResolvedValue(true)
+      vi.mocked(service.create).mockResolvedValue(mockUser as never)
+
+      const result = await controller.create(dto, currentUser)
+
+      expect(result).toEqual(mockUser)
+      expect(service.hasPermission).toHaveBeenCalledWith(1, PermissionCodes.USER_ROLE_MANAGE)
+      expect(service.create).toHaveBeenCalledWith(dto)
+    })
+
+    it('指定 roleId 但无 USER_ROLE_MANAGE 权限 → 抛 ForbiddenException（防借创建接口提权）', async () => {
+      const dto = { username: 'newuser', email: 'new@test.com', password: 'Pass1234', roleId: 1 }
+      vi.mocked(service.hasPermission).mockResolvedValue(false)
+
+      await expect(controller.create(dto, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.create).not.toHaveBeenCalled()
     })
   })
 
@@ -165,17 +194,25 @@ describe('UsersController', () => {
       expect(service.hasPermission).not.toHaveBeenCalled()
     })
 
-    it('改 roleId 且有 USER_ROLE_MANAGE 权限 → 成功', async () => {
+    it('改他人 roleId 且有 USER_ROLE_MANAGE 权限 → 成功', async () => {
       const dto = { roleId: 2 }
-      const mockUser = { id: 1, roleId: 2 }
+      const mockUser = { id: 2, roleId: 2 }
       vi.mocked(service.hasPermission).mockResolvedValue(true)
       vi.mocked(service.update).mockResolvedValue(mockUser as never)
 
-      const result = await controller.update(1, dto, currentUser)
+      const result = await controller.update(2, dto, currentUser)
 
       expect(result).toEqual(mockUser)
       expect(service.hasPermission).toHaveBeenCalledWith(1, PermissionCodes.USER_ROLE_MANAGE)
-      expect(service.update).toHaveBeenCalledWith(1, dto)
+      expect(service.update).toHaveBeenCalledWith(2, dto)
+    })
+
+    it('改自己的 roleId → 一律抛 ForbiddenException（防自提权，含 admin）', async () => {
+      const dto = { roleId: 1 }
+
+      await expect(controller.update(1, dto, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.hasPermission).not.toHaveBeenCalled()
+      expect(service.update).not.toHaveBeenCalled()
     })
 
     it('改 roleId 但无 USER_ROLE_MANAGE 权限 → 抛 ForbiddenException（防提权）', async () => {

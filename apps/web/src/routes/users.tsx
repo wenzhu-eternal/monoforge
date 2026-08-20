@@ -27,7 +27,9 @@ import {
 } from '@/hooks/use-users'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
+import { PermissionCodes } from '@/lib/permissions'
 import { requireAuth } from '@/lib/route-guards'
+import { useAuthStore } from '@/store/auth-store'
 
 const { Title } = Typography
 
@@ -57,6 +59,10 @@ function UsersPage() {
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
   const restoreUser = useRestoreUser()
+
+  // 角色管理权限（创建时指定角色 / 编辑时改角色，后端要求 USER_ROLE_MANAGE）
+  const user = useAuthStore((state) => state.user)
+  const canManageRole = user?.permissions?.includes(PermissionCodes.USER_ROLE_MANAGE) ?? false
 
   const [form] = Form.useForm<CreateUser & UpdateUser & { roleId?: number }>()
 
@@ -200,11 +206,14 @@ function UsersPage() {
         // 编辑时仅提交 schema 允许的字段，避免携带 avatar/roleName/roles 等
         // 额外字段触发 Zod 校验失败（avatar 必须是合法 URL）
         const updateData: UpdateUser = {
-          email: values.email,
           nickname: values.nickname,
           phone: values.phone,
-          roleId: values.roleId,
-          status: values.status,
+        }
+        // 邮箱/角色/状态变更后端要求 USER_ROLE_MANAGE，无权限时不提交避免 403
+        if (canManageRole) {
+          updateData.email = values.email
+          updateData.roleId = values.roleId
+          updateData.status = values.status
         }
         if (values.password) {
           updateData.password = values.password
@@ -218,7 +227,10 @@ function UsersPage() {
           password: values.password,
           nickname: values.nickname,
           phone: values.phone,
-          roleId: values.roleId as number,
+        }
+        // 仅持角色管理权限时才提交 roleId（后端对越权指定返回 403）
+        if (canManageRole && values.roleId) {
+          createData.roleId = values.roleId
         }
         await createUser.mutateAsync(createData)
         messageApi.success('创建成功')
@@ -317,7 +329,7 @@ function UsersPage() {
                 label="邮箱"
                 rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
               >
-                <Input />
+                <Input disabled={!canManageRole} />
               </Form.Item>
               <Form.Item
                 name="password"
@@ -339,9 +351,16 @@ function UsersPage() {
           >
             <Input placeholder="选填" />
           </Form.Item>
-          <Form.Item name="roleId" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
+          <Form.Item
+            name="roleId"
+            label="角色"
+            rules={canManageRole ? [{ required: true, message: '请选择角色' }] : []}
+            extra={canManageRole ? undefined : '无角色管理权限，将默认分配普通用户角色'}
+          >
             <Select
               placeholder="请选择角色"
+              allowClear={!canManageRole}
+              disabled={!canManageRole}
               options={rolesData?.list.map((role) => ({
                 value: role.id,
                 label: role.name,
@@ -350,7 +369,7 @@ function UsersPage() {
           </Form.Item>
           {editingUser && (
             <Form.Item name="status" label="状态" valuePropName="checked">
-              <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+              <Switch checkedChildren="启用" unCheckedChildren="禁用" disabled={!canManageRole} />
             </Form.Item>
           )}
         </Form>
