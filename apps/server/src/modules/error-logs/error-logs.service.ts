@@ -48,6 +48,35 @@ export class ErrorLogsService {
       await this.enforceDailyIpLimit(params.ip)
     }
 
+    return this.insertLog(params)
+  }
+
+  /**
+   * 后端内部记录错误（供 ExceptionFilter 等调用）
+   * 与公开 report() 分桶：后端异常不走 IP 日限额——若共用配额，攻击者可先打满
+   * 自身 IP 配额，使后续真实攻击触发的后端 5xx 日志被拒（审计消音）
+   */
+  async record(params: {
+    message: string
+    stack?: string
+    context?: Record<string, unknown>
+    userId?: number
+    ip?: string
+    userAgent?: string
+  }): Promise<void> {
+    const isWhitelisted = await this.checkWhitelist(params.message)
+    if (isWhitelisted) return
+
+    await this.insertLog({
+      source: 'backend',
+      errorType: 'http_error',
+      ...params,
+    })
+  }
+
+  private async insertLog(
+    params: ReportErrorParams,
+  ): Promise<{ id?: number; skipped?: boolean; reason?: string }> {
     const [created] = await db
       .insert(errorLogs)
       .values({
@@ -73,29 +102,6 @@ export class ErrorLogsService {
     }
 
     return { id: created.id }
-  }
-
-  /**
-   * 后端内部记录错误（供 ExceptionFilter 等调用）
-   */
-  async record(params: {
-    message: string
-    stack?: string
-    context?: Record<string, unknown>
-    userId?: number
-    ip?: string
-    userAgent?: string
-  }): Promise<void> {
-    await this.report({
-      source: 'backend',
-      errorType: 'http_error',
-      message: params.message,
-      stack: params.stack,
-      context: params.context,
-      userId: params.userId,
-      ip: params.ip,
-      userAgent: params.userAgent,
-    })
   }
 
   async findAll(
@@ -288,17 +294,20 @@ export class ErrorLogsService {
   }
 
   // 按 IP 限制每日错误上报最多 100 条
+  // Lua 保证 INCR + 首次 EXPIRE 原子：两步分离时进程中断会导致 key 无 TTL 永驻，该 IP 永久限流
   private async enforceDailyIpLimit(ip: string): Promise<void> {
     const key = `error:report:day:${ip}`
     try {
-      const count = await this.redisService.incr(key)
-      // 首次设置过期时间（当天剩余秒数，最长不超过 86400s）
-      if (count === 1) {
-        const now = new Date()
-        const secondsUntilMidnight =
-          (24 - now.getHours()) * 3600 - now.getMinutes() * 60 - now.getSeconds()
-        await this.redisService.expire(key, Math.max(secondsUntilMidnight, 60))
-      }
+      const now = new Date()
+      const secondsUntilMidnight =
+        (24 - now.getHours()) * 3600 - now.getMinutes() * 60 - now.getSeconds()
+      const count = (await this.redisService.eval(
+        `local n = redis.call('INCR', KEYS[1])
+         if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+         return n`,
+        [key],
+        [Math.max(secondsUntilMidnight, 60)],
+      )) as number
       if (count > 100) {
         throw new ConflictException('该 IP 今日错误上报已达上限')
       }

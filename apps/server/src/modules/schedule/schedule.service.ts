@@ -143,7 +143,7 @@ export class ScheduleService {
   }
 
   /**
-   * 清理旧备份: 按修改时间排序，删除超出 MAX_BACKUPS 的旧文件
+   * 清理旧备份: 按文件名排序（backup-YYYYMMDD.sql 字典序与时间序一致），删除超出 MAX_BACKUPS 的旧文件
    */
   private async cleanOldBackups(): Promise<void> {
     try {

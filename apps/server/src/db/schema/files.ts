@@ -5,7 +5,7 @@ export const files = pgTable(
   'files',
   {
     id: serial('id').primaryKey(),
-    filename: varchar('filename', { length: 255 }).notNull(), // 磁盘存储名
+    filename: varchar('filename', { length: 255 }).notNull(), // 逻辑文件名（时间戳-随机-原名），实际磁盘路径见 path 字段
     originalName: varchar('original_name', { length: 255 }).notNull(), // 原始文件名
     mimeType: varchar('mime_type', { length: 100 }).notNull(),
     size: integer('size').notNull(), // 字节

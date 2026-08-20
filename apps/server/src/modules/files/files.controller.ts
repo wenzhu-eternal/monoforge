@@ -31,6 +31,16 @@ import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { FilesService, UPLOAD_DIR } from './files.service'
 
+// 可 inline 预览的安全白名单（图片/PDF），其余类型一律 attachment 下载防 XSS
+const INLINE_SAFE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+  'application/pdf',
+])
+
 @ApiTags('Files')
 @Controller('files')
 @UseGuards(PermissionsGuard)
@@ -111,15 +121,6 @@ export class FilesController {
       return
     }
 
-    // 可 inline 预览的安全白名单（图片/PDF），其余类型一律 attachment 下载防 XSS
-    const INLINE_SAFE_MIME_TYPES = new Set([
-      'image/jpeg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'image/bmp',
-      'application/pdf',
-    ])
     const isInlineSafe = INLINE_SAFE_MIME_TYPES.has(file.mimeType)
 
     response.setHeader('Content-Type', file.mimeType)
@@ -197,6 +198,15 @@ export class FilesController {
 
     // 路径安全校验（防 DB 篡改导致任意文件读取）
     if (!isPathSafe(file.path, UPLOAD_DIR)) {
+      response.status(404).json({ message: '文件不存在' })
+      return
+    }
+
+    // 先 stat 确认文件存在（磁盘文件缺失时 404，避免 200 + 截断内容）
+    try {
+      const statResult = await stat(file.path)
+      response.setHeader('Content-Length', statResult.size)
+    } catch {
       response.status(404).json({ message: '文件不存在' })
       return
     }

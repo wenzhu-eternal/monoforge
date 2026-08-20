@@ -65,44 +65,50 @@ export class MailService {
   }
 
   // 按收件人邮箱限流：60s 内只允许发一次，防止对同一邮箱轰炸
-  private async enforceMailRateLimit(to: string): Promise<void> {
+  // SET NX EX 原子抢占（替代原 exists 检查+事后标记的两步模式，消除并发同时发多封的竞态）
+  private async acquireMailRateLimit(to: string): Promise<boolean> {
     try {
-      if (await this.redisService.exists(`mail:limit:${to}`)) {
-        throw new ConflictException('发送过于频繁，请60秒后重试')
-      }
-    } catch (err) {
-      if (err instanceof ConflictException) throw err
+      return await this.redisService.setNx(`mail:limit:${to}`, '1', 60)
+    } catch {
       // Redis 异常时降级放行，避免阻塞主流程
-      this.logger.warn(`邮件限流检查失败，降级放行: ${to}`)
+      this.logger.warn(`邮件限流锁获取失败，降级放行: ${to}`)
+      return true
     }
   }
 
-  // 发送成功后标记限流 key，60s 后失效
-  private async markMailRateLimit(to: string): Promise<void> {
+  // 发送失败时释放限流锁，允许用户立即重试
+  private async releaseMailRateLimit(to: string): Promise<void> {
     try {
-      await this.redisService.set(`mail:limit:${to}`, '1', 60)
+      await this.redisService.del(`mail:limit:${to}`)
     } catch {
-      // 标记失败忽略，不影响发送结果
+      // 释放失败忽略，等待 60s 自然过期
     }
   }
 
   async sendWelcome(to: string, username: string): Promise<void> {
-    await this.enforceMailRateLimit(to)
-    const template = this.templates.get('welcome')
-    if (template) {
-      await this.sendHtml(
-        to,
-        `欢迎注册 ${this.appName}`,
-        template({ name: username, appName: this.appName }),
-      )
-    } else {
-      await this.send(
-        to,
-        `欢迎注册 ${this.appName}`,
-        `你好，${username}！欢迎注册 ${this.appName} 系统管理后台。`,
-      )
+    const locked = await this.acquireMailRateLimit(to)
+    if (!locked) {
+      throw new ConflictException('发送过于频繁，请60秒后重试')
     }
-    await this.markMailRateLimit(to)
+    try {
+      const template = this.templates.get('welcome')
+      if (template) {
+        await this.sendHtml(
+          to,
+          `欢迎注册 ${this.appName}`,
+          template({ name: username, appName: this.appName }),
+        )
+      } else {
+        await this.send(
+          to,
+          `欢迎注册 ${this.appName}`,
+          `你好，${username}！欢迎注册 ${this.appName} 系统管理后台。`,
+        )
+      }
+    } catch (err) {
+      await this.releaseMailRateLimit(to)
+      throw err
+    }
   }
 
   /**
@@ -110,28 +116,35 @@ export class MailService {
    * @param code 外部传入验证码（如注册流程由 auth.service 生成并存 Redis）。不传则内部随机生成（如邮件测试接口）
    */
   async sendVerificationCode(to: string, name?: string, code?: string): Promise<void> {
-    await this.enforceMailRateLimit(to)
-    const finalCode = code ?? randomInt(0, 999999).toString().padStart(6, '0')
-    const template = this.templates.get('verification')
-    if (template) {
-      await this.sendHtml(
-        to,
-        `【${this.appName}】验证码`,
-        template({
-          name: name ?? '用户',
-          appName: this.appName,
-          code: finalCode,
-          expireMinutes: 5,
-        }),
-      )
-    } else {
-      await this.send(
-        to,
-        `【${this.appName}】验证码`,
-        `你的验证码是: ${finalCode}\n\n验证码 5 分钟内有效，请勿泄露给他人。`,
-      )
+    const locked = await this.acquireMailRateLimit(to)
+    if (!locked) {
+      throw new ConflictException('发送过于频繁，请60秒后重试')
     }
-    await this.markMailRateLimit(to)
+    try {
+      const finalCode = code ?? randomInt(0, 999999).toString().padStart(6, '0')
+      const template = this.templates.get('verification')
+      if (template) {
+        await this.sendHtml(
+          to,
+          `【${this.appName}】验证码`,
+          template({
+            name: name ?? '用户',
+            appName: this.appName,
+            code: finalCode,
+            expireMinutes: 5,
+          }),
+        )
+      } else {
+        await this.send(
+          to,
+          `【${this.appName}】验证码`,
+          `你的验证码是: ${finalCode}\n\n验证码 5 分钟内有效，请勿泄露给他人。`,
+        )
+      }
+    } catch (err) {
+      await this.releaseMailRateLimit(to)
+      throw err
+    }
   }
 
   /**

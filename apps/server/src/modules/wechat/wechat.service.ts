@@ -145,8 +145,8 @@ export class WechatService {
       if (!state) {
         throw new UnauthorizedException('微信登录失败: 缺少 state')
       }
-      const cached = await this.redisService.get(`wechat:state:${state}`)
-      await this.redisService.del(`wechat:state:${state}`)
+      // getdel 原子取出并删除，防并发重放（与 refresh token 轮换同模式）
+      const cached = await this.redisService.getdel(`wechat:state:${state}`)
       if (!cached) {
         throw new UnauthorizedException('微信登录失败: state 无效或已过期')
       }

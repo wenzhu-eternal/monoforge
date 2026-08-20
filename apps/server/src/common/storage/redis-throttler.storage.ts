@@ -53,11 +53,16 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
     const totalHits = result[0]
     const isBlocked = result[1] === 1
 
+    // 用 TTL 命令取真实剩余时间（毫秒），让 429 的 Retry-After 头反映实际等待秒数；
+    // 异常值（-1 永久/-2 不存在）回退到入参 ttl。blocked 时脚本已把 key TTL 改为 blockDuration，剩余即 block 剩余
+    const realTtl = await this.redisService.ttl(redisKey)
+    const timeToExpire = realTtl > 0 ? realTtl * 1000 : ttl
+
     return {
       totalHits,
-      timeToExpire: ttl,
+      timeToExpire,
       isBlocked,
-      timeToBlockExpire: isBlocked ? blockDuration : 0,
+      timeToBlockExpire: isBlocked && blockSeconds > 0 ? Math.max(realTtl, 0) * 1000 : 0,
     }
   }
 }

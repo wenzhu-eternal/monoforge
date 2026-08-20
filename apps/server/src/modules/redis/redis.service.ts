@@ -67,6 +67,22 @@ export class RedisService implements OnModuleDestroy {
     return r === 1
   }
 
+  /**
+   * SET NX EX 原子抢占（key 不存在才设置）：限流锁防 check-then-act 竞态
+   * 返回 true=抢占成功，false=key 已存在
+   */
+  async setNx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX')
+    return result === 'OK'
+  }
+
+  /**
+   * 查询 key 剩余 TTL（秒）：-1 永久，-2 不存在。供限流返回真实剩余时间
+   */
+  async ttl(key: string): Promise<number> {
+    return this.client.ttl(key)
+  }
+
   // 原子自增（用于限流计数等场景）
   async incr(key: string): Promise<number> {
     return this.client.incr(key)

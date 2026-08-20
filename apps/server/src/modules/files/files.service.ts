@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { copyFile, mkdir, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -210,6 +211,10 @@ export class FilesService {
     // 预生成 trashPath，在同一次条件更新中同时设置 deletedAt 和 trashPath，消除 remove/restore 竞态窗口
     const trashFilename = `${Date.now()}-${file.filename}`
     const preTrashPath = join(TRASH_DIR, trashFilename)
+    // 目标路径同样过安全校验（filename 来自 DB，防篡改后 rename 逃逸到隔离目录之外）
+    if (!isPathSafe(preTrashPath, TRASH_DIR)) {
+      throw new BadRequestException('文件路径不安全')
+    }
 
     // 先 DB 条件更新抢锁（deletedAt isNull → now() + trashPath），消除"先搬盘后抢锁"的并发错配
     const [updated] = await db
@@ -222,12 +227,12 @@ export class FilesService {
       return { message: `文件 ID ${id} 已删除` }
     }
 
-    // 抢锁成功后搬盘到预生成的 trashPath；搬盘失败保留 trashPath 记录，管理员可手动恢复
+    // 抢锁成功后搬盘到预生成的 trashPath；搬盘失败保留 trashPath 记录，后续 restore 会重试搬盘
     try {
       await mkdir(TRASH_DIR, { recursive: true })
       await safeMove(file.path, preTrashPath)
     } catch (err) {
-      // 搬盘失败不阻塞软删流程，trashPath 已记录预生成路径，管理员可手动处理
+      // 搬盘失败不阻塞软删流程，文件留在原路径，trashPath 记录预生成路径供 restore 重试
       this.logger.warn(
         `磁盘文件移到隔离目录失败: ${err instanceof Error ? err.message : String(err)}`,
       )
@@ -279,13 +284,29 @@ export class FilesService {
       try {
         await safeMove(file.trashPath, file.path)
       } catch (err) {
-        this.logger.warn(`磁盘文件恢复失败: ${err instanceof Error ? err.message : String(err)}`)
-        // 搬盘失败：回滚 deletedAt 恢复为软删状态，保留 trashPath 让用户可重试
-        await db.update(files).set({ deletedAt: new Date() }).where(eq(files.id, id))
-        throw new BadRequestException('磁盘文件恢复失败，请重试')
+        // remove 时搬盘失败的场景：文件从未离开原位置，trashPath 指向不存在的隔离路径。
+        // 此时若原路径文件仍在，视为磁盘已是正确状态，直接完成恢复（否则会陷入"重试永远 ENOENT"死锁）
+        if (existsSync(file.path)) {
+          this.logger.warn(
+            `隔离目录无此文件但原路径存在，视为 remove 搬盘失败残留，直接恢复: ${file.trashPath}`,
+          )
+        } else {
+          this.logger.warn(`磁盘文件恢复失败: ${err instanceof Error ? err.message : String(err)}`)
+          // 搬盘失败：回滚 deletedAt 恢复为软删状态，保留 trashPath 让用户可重试
+          // 条件带 isNull(deletedAt)：若期间并发 remove 已重新软删（写入新 trashPath），不覆盖其状态
+          await db
+            .update(files)
+            .set({ deletedAt: new Date() })
+            .where(and(eq(files.id, id), isNull(files.deletedAt)))
+          throw new BadRequestException('磁盘文件恢复失败，请重试')
+        }
       }
-      // 搬盘成功后才清空 trashPath
-      await db.update(files).set({ trashPath: null }).where(eq(files.id, id))
+      // 搬盘成功后才清空 trashPath；
+      // 条件带 isNull(deletedAt)：若期间并发 remove 已重新软删（trashPath 指向新的隔离文件），不清空其记录
+      await db
+        .update(files)
+        .set({ trashPath: null })
+        .where(and(eq(files.id, id), isNull(files.deletedAt)))
     }
 
     return { message: `文件 ID ${id} 已恢复` }
