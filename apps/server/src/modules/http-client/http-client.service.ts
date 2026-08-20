@@ -34,7 +34,7 @@ interface RetryableConfig extends InternalAxiosRequestConfig {
 /**
  * HTTP 客户端封装: 用于调用外部 API（微信、支付、短信等）
  * - 超时控制
- * - 指数退避重试（仅 5xx 与网络错误）
+ * - 指数退避重试（仅 5xx 与网络错误，且仅 GET/HEAD 请求；POST 等写操作不重试避免重复提交）
  */
 @Injectable()
 export class HttpClientService {
