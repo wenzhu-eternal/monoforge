@@ -58,3 +58,4 @@ try {
 - 表结构变更必须 `pnpm db:generate` 生成迁移文件，禁止手写 SQL 改表
 - 迁移文件一旦提交不可修改，新增变更生成新迁移
 - 部分唯一索引用 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，不用列级 `.unique()`
+- 生产容器启动时自动执行迁移：入口为 `apps/server/src/db/migrate.ts`（编译产物 `dist/db/migrate.js`，基于 drizzle-orm migrator 运行时依赖）；`drizzle-kit` 仅用于开发期 generate/push，属 devDep 不进生产镜像

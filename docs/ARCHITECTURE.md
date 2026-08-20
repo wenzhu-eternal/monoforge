@@ -137,7 +137,7 @@ monoforge/
 
 1. **登录**: 用户名密码 → argon2 校验 → 签发 access + refresh → refresh 存 Redis
 2. **刷新**: 旧 refresh 验证 → Redis 删除旧 refresh → 签发新 access + refresh → 新 refresh 存 Redis (轮换)
-3. **登出**: 删除 Redis 中的 refresh → 清除 cookie
+3. **登出**: 删除 Redis 中全部 refresh + 批量吊销该用户所有活跃 access token（jti 黑名单）→ 清除 cookie
 
 ### 安全
 
@@ -160,6 +160,11 @@ monoforge/
 - 后端 `handleConnection`/`handleDisconnect` 在用户首次上线/全部断开时广播 `presence:update` 事件
 - 前端 `use-websocket.ts` 订阅 `presence:update` 事件，用 `queryClient.setQueryData` 增量更新
 - **不再走 10s HTTP 轮询**，状态变更 <1s 到达 UI
+
+### 多实例与权限过滤
+
+- 在线状态存 Redis Set（`ws:online:{userId}`），多实例部署下经 Redis adapter（`@socket.io/redis-adapter`）跨实例广播
+- presence 事件通过 `presence:watchers` room 定向广播：仅持 `notification:view` 或 admin 的连接加入，权限变更（60s 重校验）时动态调整 room 成员，无权限连接收不到在线状态数据
 
 ### 前端应用层心跳
 
@@ -259,10 +264,10 @@ type CreateUser = z.infer<typeof CreateUserSchema>;
 
 ### Dockerfile 策略
 
-- **单一入口**：根 `Dockerfile` 多阶段构建，同时编译 shared → server → web，最终运行 `node apps/server/dist/main.js`
+- **单一入口**：根 `Dockerfile` 多阶段构建（prod-deps → builder → runner），同时编译 shared → server → web；runner 仅带生产依赖三层 node_modules + dist 产物
+- 容器启动先执行数据库迁移（`dist/db/migrate.js`）再启动服务（`dist/main.js`），详见 [DEPLOYMENT.md](./DEPLOYMENT.md)
 - 前端 `dist` 由后端 `ServeStaticModule` 托管，无需独立 nginx 容器
 - `uploads/` 目录也由 `ServeStaticModule` 托管（`serveRoot: /uploads`），文件上传/导出的 URL 可直接访问
-- 详见 [DEPLOYMENT.md](./DEPLOYMENT.md)
 
 ### 前端构建优化
 

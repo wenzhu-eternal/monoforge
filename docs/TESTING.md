@@ -138,7 +138,7 @@ Playwright e2e 验证**前端 UI + 后端 API 全链路**，覆盖用户真实�
 apps/e2e/
 ├── package.json              # @monoforge/e2e
 ├── playwright.config.ts      # 配置 webServer 自动起 server+web
-├── global-setup.ts           # 启动前 seed 测试数据（admin 登录 + 创建 e2e-normal-user/e2e-target-user）
+├── global-setup.ts           # 启动前 seed 测试数据（admin 登录 + 创建 e2e_normal_user/e2e_target_user）
 ├── global-teardown.ts        # 清理 e2e- 前缀数据（排除夹具账号 normalUser/targetUser）
 ├── fixtures/                 # 测试夹具（账号、文件）
 ├── helpers/                  # 辅助函数（API 客户端、浏览器登录、清理）
@@ -164,6 +164,7 @@ apps/e2e/
 
 **约束**：e2e 跑时必须停 dev server + dev web（端口冲突）。
 **数据隔离**：e2e 用独立 DB（`monoforge_e2e_db`），DEV DB 完全不受影响。`playwright.config.ts` 的 `webServer.command` 启动前自动执行 `db:push && db:seed` 重置 e2e DB，确保每次跑都是干净状态。
+**用户名命名**：e2e 用户名必须用下划线（如 `e2e_normal_user`），禁止连字符——`UsernameSchema` 正则为 `^[a-zA-Z0-9_]+$`，含连字符的用户名会在 global-setup 的 `POST /users` 被 Zod 校验拒 400，导致套件 setup 阶段直接失败。
 
 ### 运行
 

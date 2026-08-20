@@ -101,6 +101,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
 - [ ] `NODE_ENV=production`
 - [ ] `JWT_SECRET` / `JWT_REFRESH_SECRET` 已设置为强随机字符串（>= 32 字符）
 - [ ] `ALLOW_ORIGIN` 已设为生产域名（非 `*`）
+- [ ] `TRUST_PROXY` 已按部署形态设置（直连 false / 一层代理 1）
 - [ ] Cookie `secure` flag 已通过环境变量开启
 - [ ] Swagger 已关闭（`NODE_ENV=production` 时自动隐藏）
 - [ ] 数据库备份已创建
@@ -122,6 +123,21 @@ docker compose logs -f server
 docker compose down
 ```
 
+### Dockerfile 多阶段构建
+
+| 阶段 | 内容 |
+|---|---|
+| `prod-deps` | 仅安装 server(+shared) 生产依赖（`--prod --ignore-scripts`），devDeps 不进镜像 |
+| `builder` | 全量安装依赖，依次编译 shared → server → web |
+| `runner` | tini 作 PID 1，复制三层 node_modules + dist 产物 + drizzle 迁移文件 |
+
+关键点：
+
+- **三层 node_modules 缺一不可**：pnpm isolated 布局下 server/shared 的直接依赖是各自 node_modules 内指向根 `.pnpm` store 的符号链接，只复制根层会 `MODULE_NOT_FOUND`
+- **启动即迁移**：容器 CMD 为 `node apps/server/dist/db/migrate.js && node apps/server/dist/main.js`——先跑迁移再启动服务；migrate 基于 drizzle-orm migrator（运行时依赖），drizzle-kit 属 devDep 不在镜像内
+- `uploads/`、`uploads-trash/`、`backups/` 目录构建时创建并 chown 给 `node` 用户（uploads-trash 挂卷持久化软删文件）
+- 以非 root `node` 用户运行，tini 负责信号转发与僵尸进程回收
+
 ### docker-compose 服务编排
 
 | 服务 | 端口 | 依赖 | 说明 |
@@ -131,6 +147,10 @@ docker compose down
 | app | 9000 | postgres, redis | NestJS 后端（含前端 dist，单一入口） |
 
 > 生产环境建议：仅启动 postgres + redis 容器，server 直接 `node apps/server/dist/main` 运行（避免多层容器网络开销）。
+
+### 反向代理信任
+
+后端前置 nginx/ngrok 等 proxy 时，必须设 `TRUST_PROXY=1`（信任一层代理），否则 Express 取到的是代理 IP，XFF 伪造可绕过基于 IP 的限流；本地直跑必须保持 `false`（详见 [CONFIGURATION.md](./CONFIGURATION.md)）。
 
 ## 回滚
 

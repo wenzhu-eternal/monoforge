@@ -18,7 +18,7 @@
 | `JWT_SECRET` | JWT access token 密钥 | 必填，长度 >= 32 |
 | `JWT_REFRESH_SECRET` | JWT refresh token 密钥 | 必填，长度 >= 32 |
 | `API_PORT` | 后端端口 | `9000` |
-| `API_PREFIX` | API 前缀 | `/api/v1` |
+| `TRUST_PROXY` | 反向代理信任（Express trust proxy）：`false` 不信任（本地直跑，防 XFF 伪造绕过 IP 限流）；`1` 信任一层代理（nginx/ngrok 前置时取真实客户端 IP） | `false` |
 | `APP_NAME` | 应用名（Swagger 标题、邮件主题、邮件模板均引用，新项目通过 .env 配置） | `MonoForge` |
 | `ALLOW_ORIGIN` | CORS 白名单 | `http://localhost:3000` |
 | `NODE_ENV` | 环境 | `development` / `production` |
@@ -29,7 +29,7 @@
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
 | `THROTTLE_LIMIT` | 时间窗口内最大请求数（生产 10；e2e 由 `playwright.config.ts` 的 webServer.env 覆盖为 1000） | `10` |
 | `SEED_ADMIN_EMAIL` | seed 创建 admin 的邮箱（可选，默认 `admin@example.com`） | `admin@example.com` |
-| `SEED_ADMIN_PASSWORD` | seed 创建 admin 的密码（可选，默认 `888888`，首次登录后请立即修改） | `888888` |
+| `SEED_ADMIN_PASSWORD` | seed 创建 admin 的密码（可选，默认 `888888`）。**未显式设置时首登强制改密**（`mustChangePassword=true`）；显式设置则视为运维知情，不强制 | `888888` |
 | `SEED_ADMIN_NICKNAME` | seed 创建 admin 的昵称（可选，默认 `Administrator`） | `Administrator` |
 
 ### 邮件服务变量
@@ -61,16 +61,17 @@ const port = portRaw ? Number(portRaw) : 587
 
 必须由环境变量控制，不能硬编码。开发环境（HTTP）必须设为 `false`，生产环境（HTTPS）必须设为 `true`。
 
-### 前端 `@shared` alias split-brain
+### 前端 `@shared` alias 统一指向源码
 
-`vite.config.ts` 的 alias 指向 `packages/shared/src`（源码，热更新即时生效），`tsconfig.json` 的 paths 指向 `packages/shared/dist`（编译产物，类型检查用）。两者不一致的根因是 TS 的 `rootDir` 规则：web 的 `rootDir` 限制为 `apps/web/src`，若 paths 指向 `packages/shared/src` 会报 `TS6059`（文件不在 rootDir 内）。统一到源码需要改用 TS project references，改动较大暂未实施。
+`vite.config.ts` 的 alias 与 `apps/web/tsconfig.json` 的 paths 均指向 `packages/shared/src`（源码）：vite 热更新即时生效，`tsc --noEmit` 类型检查也直接用源码，改 shared schema 后无需重建 dist。
 
-**缓解措施**：
+注意：web tsconfig 必须显式设 `"rootDir": "../.."`（仓库根）——否则 TS 自动推断 rootDir 为 `apps/web`，对 paths 解析进来的 `packages/shared/src` 文件报 `TS6059`。web 构建产物由 vite 生成，tsc 仅做类型检查，rootDir 指向仓库根不影响任何输出。
+
+**dist 仍需存在的场景**（`node_modules` 内 `@monoforge/shared` 包引用方，如 server 运行时）：
 - `turbo.json` 的 `build`/`lint`/`test` 均配置 `dependsOn: ["^build"]`，确保 `shared` 先于 `web`/`server` 构建到 dist
-- 根 `package.json` 的 `prepare` 脚本为 `husky && pnpm --filter=@monoforge/shared build`，`pnpm install` 后自动构建 shared 出 dist，根治 fresh clone 后直接 `tsc` / IDE 跳转找不到 dist 的问题
-- 开发时改 shared schema 后需手动执行 `pnpm --filter=shared build` 刷新 dist，否则 `tsc` 类型检查会用旧产物（vite 打包不受影响，因 alias 指向源码）
+- 根 `package.json` 的 `prepare` 脚本为 `husky && pnpm --filter=@monoforge/shared build`，`pnpm install` 后自动构建 shared 出 dist，根治 fresh clone 后 server 直接 `node dist/main.js` 找不到依赖的问题
 
-> 注：`dist/` 在 `.gitignore` 中被忽略，不入库。`prepare` 脚本 + turbo 任务图双重保证 dist 总是存在：install 时 prepare 兜底 fresh clone，build/lint/test 时 turbo `^build` 兜底依赖变更。
+> 注：`dist/` 在 `.gitignore` 中被忽略，不入库。`prepare` 脚本 + turbo 任务图双重保证 dist 总是存在。
 
 ## 前端环境变量
 

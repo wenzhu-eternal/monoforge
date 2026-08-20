@@ -27,6 +27,12 @@
 - 密码用 argon2id 哈希
 - Refresh Token 在 Redis 中存储，支持多设备登录与强制登出
 - 刷新流程：旧 refresh 验证 → Redis 删除旧 refresh → 签发新 access + refresh → 新 refresh 存 Redis（轮换）
+- **登出批量吊销**：logout 删除 Redis 中全部 refresh（`refresh:{userId}:*`）外，还必须 `revokeAllAccessTokens`——扫描 `access:active:{userId}:*` 活跃索引，逐个把 jti 写入 `access:{userId}:{jti}` 黑名单（TTL = access 剩余有效期），再删除索引。仅吊销当前请求的 token 会放行其他设备的活跃 access token
+
+### 密码策略
+
+- `PasswordSchema`（注册/创建用户/重置密码）：至少 8 位且必须同时包含字母和数字
+- `LoginSchema` 单独宽松化（仅非空校验）：历史弱密码用户仍可登录，配合 `mustChangePassword` 标记走强制改密流程，避免升级策略后存量用户被锁死
 
 ### Cookie 安全
 
@@ -75,11 +81,19 @@
 
 - **改资料**（email/nickname/avatar 等）：持 `USER_UPDATE` 即可
 - **改角色/状态**（roleId/status）：必须额外持 `USER_ROLE_MANAGE` 权限码
+- **自改角色**：`currentUser.sub === id` 且携带 `roleId` 时一律 403（含 admin），防止误操作锁死自己或借他人会话提权
+- **改邮箱**（含自改）：必须额外持 `USER_ROLE_MANAGE`——邮箱换绑是账号接管链路的一环，自改无门槛会被泄露 token 利用
+- **改他人密码**：必须额外持 `USER_ROLE_MANAGE`；改自己密码必须走 `POST /users/me/password`（验证旧密码）
+- **创建用户指定角色**（`POST /users` 传 `roleId`）：同样必须持 `USER_ROLE_MANAGE`，否则低权限用户可借创建接口直接造出管理员账号（绕过 update 校验的提权后门）
 
 controller 检查逻辑：
 
 ```ts
 if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
+  // 自改角色一律禁止（含 admin）
+  if (currentUser.sub === id && updateUserDto.roleId !== undefined) {
+    throw new ForbiddenException('不能修改自己的角色')
+  }
   const canManage = await this.usersService.hasPermission(
     currentUser.sub,
     PermissionCodes.USER_ROLE_MANAGE,
@@ -92,12 +106,35 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 `users.service.hasPermission(userId, permissionCode)` 通过 `rolePermissions` 表查询用户角色是否拥有指定权限码；ADMIN_ROLE_ID 匹配的用户（`isAdminUser`）短路返回 `true`。
 
+### 角色权限更新（防自提权）
+
+`role-permissions.service.updateRolePermissions` 必须接收调用者上下文（userId/roleId/isAdmin）并执行双重校验：
+
+- **禁止修改自身所属角色的权限**：非 admin 调用者 `caller.roleId === roleId` 时直接 403，否则可给自己加 `user:role_manage` 完成自提权闭环
+- **授予不得超过自身权限集**：非 admin 提交的权限码必须是调用者自身已持有的子集，超出部分 403（防止横向扩散未授权能力）
+- 更新使用事务（delete + insert）保证原子性，成功后按 `perm:role:{roleId}` 失效缓存
+
+### 验证码尝试计数（原子化）
+
+邮箱验证码尝试次数（`verify_code:attempts:*`）必须用 Lua 脚本原子执行 INCR + EXPIRE（首次 INCR 时设置 TTL），禁止分两次调用——否则并发下 EXPIRE 丢失会导致计数永驻 Redis。同模式适用于所有"计数 + 过期"场景（限流、错误日志 IP 限额）。
+
 ### WebSocket 模块守卫
 
 `websocket.controller` 必须在类级别挂 `@UseGuards(PermissionsGuard)`，并按接口区分鉴权：
 
 - `GET /websocket/online`（暴露在线用户 ID 列表）：必须挂 `@Permissions(NOTIFICATION_VIEW)`，否则任意登录用户可枚举在线用户 ID（信息泄露）
 - `POST /websocket/notify`（向指定用户发通知）：必须用 `@CurrentUser()` 取当前用户，并校验 `dto.userId === user.sub`——禁止任何登录用户给任意用户发通知并持久化写入
+
+### WebSocket 连接生命周期
+
+`events.gateway` 的连接管理必须遵守（多实例部署下在线状态存 Redis Set `ws:online:{userId}`）：
+
+- **原子登记**：连接数限制（SCARD 判断）+ SADD + TTL 续期必须用 Lua 脚本一次执行，禁止分步调用（并发下可超限或 key 过期）
+- **TTL 续期**：在线状态 key 设 300s TTL，由 60s 定时器持续续期，防止长连接后 key 过期导致推送不可达；连接断开时从 Set 移除，Set 空则删 key
+- **定时重校验**：每 60s 校验 `access:{userId}:{jti}` 黑名单（logout/禁用/改角色后 WS 连接必须在 1 个周期内断开）+ 用户状态 + 权限集，任一失效即断开连接
+- **presence 广播权限过滤**：presence 事件（上线/下线）通过 `presence:watchers` room 定向广播，仅持 `notification:view` 或 admin 的连接加入（`syncPresenceRoom`）；权限变更重校验时动态 join/leave，多实例部署经 Redis adapter 跨实例同步
+- **登出即断**：登出仅吊销 HTTP token 不够，WS 侧靠 jti 黑名单重校验兜底断连
+- **适配器清理**：`redis-io.adapter` 必须实现 `close()` 断开 pub/sub 连接，避免应用关闭时连接泄漏
 
 ### 前端路由守卫
 
@@ -123,6 +160,8 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - `ThrottlerModule` 必须通过 `APP_GUARD` 注册 `ThrottlerGuard` 才能生效
 - 限流参数（TTL/limit）必须用环境变量，禁止硬编码
+- **计数必须原子化**：Redis 计数 + 首次 EXPIRE 必须用 Lua 脚本一次执行（`redis-throttler.storage`、验证码尝试计数、error-logs IP 日限额同模式），分步调用在进程中断时会产生无 TTL 的永驻 key，导致永久限流
+- **邮件每邮箱 60s 限流**：用 `SET NX EX` 原子抢占（`mail.service`），禁止 exists 检查 + 事后标记的两步模式——并发请求会同时通过检查发出多封
 - error-logs 模块的只读接口（findAll/stats/grouped/whitelist）必须 `@SkipThrottle()`，避免 429
 - 单条查询接口（如 `@Get(':id')`）用 `@Throttle({ default: { limit: 60, ttl: 60000 } })` 放大限流（60 次/分钟），避免高频查详情被 429
 

@@ -5,11 +5,12 @@
 ### 入库链路
 
 1. **所有后端错误必须经 `ErrorLogsService.record()` 入库** - 禁止在 ExceptionFilter 或其他位置直接 `db.insert(errorLogs)`，以确保 `errorType` 与白名单缓存一致
-2. **5xx 入库，4xx 不入库** - 仅 `status >= 500` 时调 `errorLogsService.record()`，4xx 客户端错误不入库
-3. **WS / Cron / mail.service 异常必须入库**：catch 块必须 `rethrow`（不能吞错），并调用 `errorLogsService.record()` 入库
-4. **`mail.service` 的 `send`/`sendHtml` catch 必须抛 `new Error(...)`** - 让上层 controller 处理响应
-5. **`bootstrap()` 顶层 catch**：`main.ts` 的 `bootstrap()` 必须链 `.catch((err) => { console.error('[Bootstrap] 启动失败:', err); process.exit(1) })`
-6. **双写冗余**：错误日志同时写入数据库和日志文件（`apps/server/logs/error-YYYY-MM-DD.log`，按天滚动）
+2. **record 与 report 分桶** - 后端内部 `record()` 不走 IP 日限额（与公开 `report()` 分开）。若共用配额，攻击者可先打满自身 IP 配额，使后续真实攻击触发的后端 5xx 日志被拒（审计消音）
+3. **5xx 入库，4xx 不入库** - 仅 `status >= 500` 时调 `errorLogsService.record()`，4xx 客户端错误不入库
+4. **WS / Cron / mail.service 异常必须入库**：catch 块必须 `rethrow`（不能吞错），并调用 `errorLogsService.record()` 入库
+5. **`mail.service` 的 `send`/`sendHtml` catch 必须抛 `new Error(...)`** - 让上层 controller 处理响应
+6. **`bootstrap()` 顶层 catch**：`main.ts` 的 `bootstrap()` 必须链 `.catch((err) => { console.error('[Bootstrap] 启动失败:', err); process.exit(1) })`
+7. **双写冗余**：错误日志同时写入数据库和日志文件（`apps/server/logs/error-YYYY-MM-DD.log`，按天滚动）
 
 ### 聚合查询
 
