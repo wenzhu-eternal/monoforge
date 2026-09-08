@@ -17,11 +17,16 @@ vi.mock('node:fs', () => ({
   createWriteStream: vi.fn(() => ({ on: vi.fn() })),
 }))
 
+// getEnv mock：避免依赖真实 .env，单测内联控制环境变量
+const mockGetEnv = vi.fn()
+vi.mock('@/config/env', () => ({
+  getEnv: (...args: unknown[]) => mockGetEnv(...(args as Parameters<typeof mockGetEnv>)),
+}))
+
 const { ScheduleService } = await import('./schedule.service')
 
 describe('ScheduleService', () => {
   let service: InstanceType<typeof ScheduleService>
-  let configService: { get: ReturnType<typeof vi.fn> }
   let mailService: { sendBackupNotification: ReturnType<typeof vi.fn> }
   let errorLogsService: { record: ReturnType<typeof vi.fn> }
 
@@ -30,22 +35,12 @@ describe('ScheduleService', () => {
     mockStat.mockClear().mockResolvedValue({ size: 1024 })
     mockReaddir.mockClear().mockResolvedValue([])
     mockUnlink.mockClear().mockResolvedValue(undefined)
+    mockGetEnv.mockReset()
 
-    configService = {
-      get: vi.fn((key: string) => {
-        if (key === 'BACKUP_CMD') return undefined
-        if (key === 'DATABASE_URL') return 'postgres://user:pass@localhost:5432/db'
-        return undefined
-      }),
-    }
     mailService = { sendBackupNotification: vi.fn().mockResolvedValue(undefined) }
     errorLogsService = { record: vi.fn().mockResolvedValue(undefined) }
 
-    service = new ScheduleService(
-      configService as never,
-      mailService as never,
-      errorLogsService as never,
-    )
+    service = new ScheduleService(mailService as never, errorLogsService as never)
   })
 
   // spyOn 私有方法 spawnPgDump，避免直接 mock node:child_process（vitest 对该 CJS 内置模块 mock 不稳定）
@@ -53,8 +48,28 @@ describe('ScheduleService', () => {
     return vi.spyOn(service as never, 'spawnPgDump' as never).mockImplementation(impl as never)
   }
 
-  describe('dailyBackup - spawn 成功路径', () => {
-    it('spawnPgDump resolve → 备份成功并发送成功邮件', async () => {
+  describe('dailyBackup - ENABLE_BACKUP 开关', () => {
+    it('ENABLE_BACKUP=false → 跳过备份，不发邮件不入库', async () => {
+      mockGetEnv.mockReturnValue({
+        ENABLE_BACKUP: false,
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      const spawnSpy = mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
+
+      await service.dailyBackup()
+
+      expect(spawnSpy).not.toHaveBeenCalled()
+      expect(mailService.sendBackupNotification).not.toHaveBeenCalled()
+      expect(errorLogsService.record).not.toHaveBeenCalled()
+    })
+
+    it('ENABLE_BACKUP=true → 执行备份', async () => {
+      mockGetEnv.mockReturnValue({
+        ENABLE_BACKUP: true,
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
       mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
 
       await service.dailyBackup()
@@ -63,17 +78,49 @@ describe('ScheduleService', () => {
         true,
         expect.stringContaining('backup-'),
       )
-      // 成功路径不入库
-      expect(errorLogsService.record).not.toHaveBeenCalled()
+    })
+
+    it('ENABLE_BACKUP 为字符串 "false" → 跳过备份（验证 zod transform 后的 boolean 行为）', async () => {
+      mockGetEnv.mockReturnValue({
+        ENABLE_BACKUP: false,
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      const spawnSpy = mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
+
+      await service.dailyBackup()
+
+      expect(spawnSpy).not.toHaveBeenCalled()
     })
   })
 
-  describe('dailyBackup - spawn 失败路径', () => {
+  describe('manualBackup - 不受 ENABLE_BACKUP 开关限制', () => {
+    it('spawnPgDump resolve → 备份成功并发送成功邮件', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
+
+      await service.manualBackup()
+
+      expect(mailService.sendBackupNotification).toHaveBeenCalledWith(
+        true,
+        expect.stringContaining('backup-'),
+      )
+      // 成功路径不入库
+      expect(errorLogsService.record).not.toHaveBeenCalled()
+    })
+
     it('spawnPgDump reject（pg_dump 退出码非 0） → 入库 + 发送失败邮件', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
       mockSpawnPgDump(vi.fn().mockRejectedValue(new Error('pg_dump 退出码 1')))
 
-      // dailyBackup 内部 catch 会吞错并入库，不向外抛
-      await service.dailyBackup()
+      // doBackup 内部 catch 会吞错并入库，不向外抛
+      await service.manualBackup()
 
       // service catch 块给 record 的 message 加 "数据库备份失败:" 前缀
       expect(errorLogsService.record).toHaveBeenCalledWith(
@@ -87,9 +134,13 @@ describe('ScheduleService', () => {
     })
 
     it('spawnPgDump reject（pg_dump not found） → 入库 + 发送失败邮件', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
       mockSpawnPgDump(vi.fn().mockRejectedValue(new Error('pg_dump not found')))
 
-      await service.dailyBackup()
+      await service.manualBackup()
 
       expect(errorLogsService.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -98,14 +149,11 @@ describe('ScheduleService', () => {
       )
       expect(mailService.sendBackupNotification).toHaveBeenCalledWith(false, 'pg_dump not found')
     })
-  })
 
-  describe('dailyBackup - DATABASE_URL 未配置', () => {
-    it('抛错并入库', async () => {
-      configService.get = vi.fn(() => undefined)
+    it('DATABASE_URL 未配置 → 抛错并入库', async () => {
+      mockGetEnv.mockReturnValue({ BACKUP_CMD: undefined, DATABASE_URL: undefined })
 
-      // dailyBackup 内部 catch 会吞错并入库，不会向外抛
-      await service.dailyBackup()
+      await service.manualBackup()
 
       expect(errorLogsService.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -114,17 +162,15 @@ describe('ScheduleService', () => {
       )
       expect(mailService.sendBackupNotification).toHaveBeenCalledWith(false, 'DATABASE_URL 未配置')
     })
-  })
 
-  describe('dailyBackup - 自定义 BACKUP_CMD', () => {
     it('有 BACKUP_CMD 时不走 spawnPgDump', async () => {
-      configService.get = vi.fn((key: string) => {
-        if (key === 'BACKUP_CMD') return 'echo {filepath}'
-        return undefined
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: 'echo {filepath}',
+        DATABASE_URL: undefined,
       })
       const spawnSpy = mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
 
-      await service.dailyBackup()
+      await service.manualBackup()
 
       // 自定义命令走 exec 不走 spawnPgDump
       expect(spawnSpy).not.toHaveBeenCalled()
