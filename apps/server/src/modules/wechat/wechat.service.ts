@@ -283,9 +283,9 @@ export class WechatService {
     const username = `wx_${openId}`
     const email = `${username}@wechat.placeholder`
 
-    // 查找默认 viewer 角色
-    const viewerRole = await db.query.roles.findFirst({
-      where: and(eq(roles.name, 'viewer'), notDeleted(roles.deletedAt)),
+    // 查找默认 user 角色（seed 和 setup 均会创建）
+    const userRole = await db.query.roles.findFirst({
+      where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
     })
 
     try {
@@ -299,7 +299,7 @@ export class WechatService {
           avatar,
           status: true,
           wechatOpenId: openId,
-          roleId: viewerRole?.id,
+          roleId: userRole?.id,
         })
         .returning()
 

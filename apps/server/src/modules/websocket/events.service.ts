@@ -13,10 +13,6 @@ export class EventsService {
     await this.eventsGateway.pushToUser(userId, event, data)
   }
 
-  pushAll(event: string, data: unknown): void {
-    this.eventsGateway.pushAll(event, data)
-  }
-
   async getOnlineUserIds(): Promise<number[]> {
     return this.eventsGateway.getOnlineUserIds()
   }

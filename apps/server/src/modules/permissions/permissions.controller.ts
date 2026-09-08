@@ -104,7 +104,7 @@ export class PermissionsController {
 
   @Post(':id/restore')
   @HttpCode(HttpStatus.OK)
-  @Permissions(PermissionCodes.PERMISSION_UPDATE)
+  @Permissions(PermissionCodes.PERMISSION_DELETE)
   @ApiOperation({ summary: '恢复已删除权限' })
   @ZodSerializerDto(PermissionSchema)
   async restore(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {

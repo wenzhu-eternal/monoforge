@@ -56,7 +56,7 @@ const TABLE_MAP: Record<string, { table: Table; idField: any; deletedAtField?: a
 }
 
 const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
-  UsersController: new Set(['password', 'email', 'phone', 'wechatOpenId', 'wechatUnionId']),
+  UsersController: new Set(['password', 'email', 'phone', 'wechatOpenId']),
   RolesController: new Set(['id']),
   FilesController: new Set([]),
   ErrorLogsController: new Set([]),

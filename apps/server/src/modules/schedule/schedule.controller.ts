@@ -17,7 +17,7 @@ export class ScheduleController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '手动触发数据库备份（需 schedule:backup 权限）' })
   async triggerBackup() {
-    await this.scheduleService.dailyBackup()
+    await this.scheduleService.manualBackup()
     return { message: '备份任务已执行，请查看日志和邮件' }
   }
 }

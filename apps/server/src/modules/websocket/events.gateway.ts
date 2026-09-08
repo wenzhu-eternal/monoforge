@@ -12,9 +12,10 @@ import {
 import { and, eq } from 'drizzle-orm'
 import type { Server, Socket } from 'socket.io'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
-import { rolePermissions, users } from '@/db/schema'
+import { permissions, rolePermissions, users } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
 
 // 单用户最大 WS 连接数，防 DoS
@@ -32,18 +33,16 @@ const PRESENCE_ROOM = 'presence:watchers'
  */
 @WebSocketGateway({
   cors: {
+    // 与 main.ts HTTP CORS 行为一致: 默认放行 localhost:3000，拒绝时不抛异常只返回 false
     origin: (origin, callback) => {
-      const raw = process.env.ALLOW_ORIGIN
-      if (!raw) {
-        // 未配置时拒绝跨域（与 HTTP CORS 一致），避免放行所有来源
-        callback(new Error('CORS not configured'))
-        return
-      }
+      // 运行时（连接建立时）读取，此时 getEnv() 已完成 zod 校验
+      const raw = getEnv().ALLOW_ORIGIN || 'http://localhost:3000'
       const allowed = raw.split(',').map((s) => s.trim())
       if (!origin || allowed.includes(origin)) {
         callback(null, true)
       } else {
-        callback(new Error('Not allowed by CORS'))
+        console.warn(`[WS CORS] blocked origin: ${(origin || '').replace(/[\r\n]/g, '')}`)
+        callback(null, false)
       }
     },
     credentials: true,
@@ -209,10 +208,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  pushAll(event: string, data: unknown): void {
-    this.server.emit(event, data)
-  }
-
   /**
    * presence 事件广播：仅 presence room 内连接可收到（持 notification:view 或 admin，见 syncPresenceRoom），
    * 避免向无权限用户泄露全员在线状态
@@ -303,7 +298,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /**
    * 查询用户权限码并缓存 roleId 到 socket，并按权限维护 presence room 成员资格
    * admin 由 roleId 判断（与后端 isAdminUser 一致），无需查权限码
-   * 简化版查询（不 join permissions 过滤已删权限、不走 Redis 缓存；注：与 PermissionsGuard 不一致，待对齐）
+   * 查询口径与 PermissionsGuard / UsersService.hasPermission 一致:
+   *   rolePermissions innerJoin permissions 过滤 notDeleted(permissions.deletedAt)
    * 返回 false 表示用户被禁用或软删，调用方应断开连接；DB 异常时返回 false 避免虚假在线
    */
   private async loadUserPermissions(client: Socket, userId: number): Promise<boolean> {
@@ -327,6 +323,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const perms = await db
         .select({ permission: rolePermissions.permission })
         .from(rolePermissions)
+        .innerJoin(
+          permissions,
+          and(eq(rolePermissions.permission, permissions.code), notDeleted(permissions.deletedAt)),
+        )
         .where(eq(rolePermissions.roleId, userRecord.roleId))
       client.data.permissions = perms.map((p) => p.permission)
       client.data.isAdmin = false

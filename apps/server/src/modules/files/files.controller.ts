@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { MAX_FILE_SIZE } from '@shared/constants/files'
 import { PermissionCodes } from '@shared/constants/permissions'
 import { FileItemSchema, UploadResultSchema } from '@shared/schemas/file'
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
@@ -54,7 +55,7 @@ export class FilesController {
   @UseInterceptors(
     FileInterceptor('file', {
       dest: UPLOAD_DIR,
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: { fileSize: MAX_FILE_SIZE },
       defParamCharset: 'utf-8',
     }),
   )

@@ -1,6 +1,6 @@
 import argon2 from 'argon2'
 import { config } from 'dotenv'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { db } from './index'
 import { permissions, rolePermissions, roles, users } from './schema'
 
@@ -9,8 +9,14 @@ config({ path: '../../.env' })
 
 // admin 默认密码（首次登录后请立即修改）。新项目可通过环境变量 SEED_ADMIN_PASSWORD 覆盖
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? '888888'
-// 使用默认密码 888888 时首登强制改密，自定义密码则不强制（建议生产设 SEED_ADMIN_PASSWORD）
-const mustChangePassword = ADMIN_PASSWORD === '888888'
+// 首登强制改密：默认沿用默认密码 888888 时强制（安全默认），自定义密码则不强制。
+// 本地开发想跳过改密流程可显式设 SEED_ADMIN_MUST_CHANGE_PASSWORD=false；生产不应关闭
+const mustChangePassword =
+  process.env.SEED_ADMIN_MUST_CHANGE_PASSWORD === 'false'
+    ? false
+    : process.env.SEED_ADMIN_MUST_CHANGE_PASSWORD === 'true'
+      ? true
+      : ADMIN_PASSWORD === '888888'
 
 const defaultPermissions = [
   {
@@ -220,6 +226,8 @@ async function seed() {
   const adminNickname = process.env.SEED_ADMIN_NICKNAME ?? 'Administrator'
   const passwordHash = await argon2.hash(ADMIN_PASSWORD)
 
+  // admin 已存在时同步密码与改密标志：否则改了 SEED_ADMIN_PASSWORD /
+  // SEED_ADMIN_MUST_CHANGE_PASSWORD 后重跑 seed 不生效（onConflictDoNothing 会静默跳过）
   const [adminUser] = await db
     .insert(users)
     .values({
@@ -231,7 +239,13 @@ async function seed() {
       status: true,
       mustChangePassword,
     })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: users.username,
+      // users_username_unique 是部分唯一索引（WHERE deleted_at IS NULL），
+      // 必须带同款 targetWhere 才能被 PG 推断为冲突目标
+      targetWhere: sql`deleted_at IS NULL`,
+      set: { password: passwordHash, mustChangePassword, updatedAt: new Date() },
+    })
     .returning()
 
   console.log('Created admin user:', adminUser)

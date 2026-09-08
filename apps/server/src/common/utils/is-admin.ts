@@ -1,3 +1,5 @@
+import { getEnv } from '@/config/env'
+
 /**
  * 判断用户是否为超级管理员（基于角色 ID）
  *
@@ -6,6 +8,6 @@
  */
 export function isAdminUser(user: { roleId?: number | null } | null | undefined): boolean {
   if (!user || user.roleId == null) return false
-  const adminRoleId = Number(process.env.ADMIN_ROLE_ID) || 1
+  const adminRoleId = getEnv().ADMIN_ROLE_ID
   return user.roleId === adminRoleId
 }

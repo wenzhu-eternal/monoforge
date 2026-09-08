@@ -3,8 +3,7 @@ import { open, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { BadRequestException } from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
-
-export const MAX_FILE_SIZE = 10 * 1024 * 1024
+import { MAX_FILE_SIZE } from '@shared/constants/files'
 
 export const ALLOWED_MIME_TYPES = [
   'image/jpeg',

@@ -27,7 +27,13 @@ const envSchema = z
       ),
 
     // Redis: auth/权限缓存/限流计数强依赖，必填
-    REDIS_URL: z.string().url(),
+    REDIS_URL: z
+      .string()
+      .url()
+      .refine(
+        (url) => url.startsWith('redis://') || url.startsWith('rediss://'),
+        'REDIS_URL 必须为 redis:// 或 rediss:// 协议',
+      ),
     // Redis 密码（当前 optional 且代码未直接消费，密码通过 REDIS_URL 传递；此处保留供文档参考）
     REDIS_PASSWORD: z.string().optional(),
 
@@ -90,6 +96,16 @@ const envSchema = z
 
     // admin 角色 ID（permissions.guard 根据此值判断超级管理员，默认 1）
     ADMIN_ROLE_ID: z.coerce.number().int().positive().default(1),
+
+    // 数据库备份开关：默认关闭（开发环境不跑定时备份，避免容器未运行导致失败邮件）
+    // 生产环境设为 true 启用每日 0 点备份
+    ENABLE_BACKUP: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => v === true || v === 'true')
+      .default(false),
+
+    // 自定义备份命令（本机无 pg_dump 时用 docker exec 调用容器内的；{filepath} 为占位符）
+    BACKUP_CMD: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     // JWT 双密钥不可相同：相同值会导致 refresh 泄露即可伪造 access

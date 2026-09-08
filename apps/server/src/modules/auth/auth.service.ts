@@ -59,13 +59,14 @@ export class AuthService {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_PASSWORD])
     }
 
+    // 先检查禁用状态再校验密码，避免攻击者用正确密码确认用户被禁用
+    if (user.status === false) {
+      throw new UnauthorizedException(ErrorMessages[ErrorCodes.USER_DISABLED])
+    }
+
     const isPasswordValid = await argon2.verify(user.password, password)
     if (!isPasswordValid) {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_PASSWORD])
-    }
-
-    if (user.status === false) {
-      throw new UnauthorizedException(ErrorMessages[ErrorCodes.USER_DISABLED])
     }
 
     const tokens = await this.signTokenPair({

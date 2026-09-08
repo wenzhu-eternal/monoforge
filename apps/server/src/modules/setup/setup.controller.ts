@@ -12,6 +12,7 @@ import { Throttle } from '@nestjs/throttler'
 import { SetupResultSchema, SetupStatusSchema } from '@shared/schemas/setup'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { Public } from '@/common/decorators/public.decorator'
+import { getEnv } from '@/config/env'
 import { SetupDto } from './dto/setup.dto'
 import { SetupService } from './setup.service'
 
@@ -34,7 +35,7 @@ export class SetupController {
   @ApiOperation({ summary: '一键初始化系统（仅未初始化时可用）' })
   @ZodSerializerDto(SetupResultSchema)
   async setup(@Body() dto: SetupDto) {
-    if (process.env.ALLOW_SETUP !== 'true') {
+    if (!getEnv().ALLOW_SETUP) {
       throw new NotFoundException()
     }
     return this.setupService.initialize(dto)

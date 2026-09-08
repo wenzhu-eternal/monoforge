@@ -95,7 +95,7 @@ export class RolesController {
 
   @Post(':id/restore')
   @HttpCode(HttpStatus.OK)
-  @Permissions(PermissionCodes.ROLE_UPDATE)
+  @Permissions(PermissionCodes.ROLE_DELETE)
   @ApiOperation({ summary: '恢复已删除角色' })
   @ZodSerializerDto(RoleSchema)
   async restore(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {

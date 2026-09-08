@@ -4,8 +4,8 @@ import { mkdir, readdir, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { Injectable, Logger } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
 import { Cron } from '@nestjs/schedule'
+import { getEnv } from '@/config/env'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { MailService } from '@/modules/mail/mail.service'
 
@@ -19,17 +19,35 @@ export class ScheduleService {
   private readonly logger = new Logger(ScheduleService.name)
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly mailService: MailService,
     private readonly errorLogsService: ErrorLogsService,
   ) {}
 
   /**
-   * 每天 0 点执行数据库备份
-   * 使用 pg_dump 导出，保留最近 30 份
+   * 每天 0 点执行数据库备份（受 ENABLE_BACKUP 开关控制）
    */
   @Cron('0 0 * * *')
   async dailyBackup() {
+    // 必须用 getEnv()：ConfigService 直读 process.env 拿到的是字符串 'false'（truthy），会导致开关失效
+    const env = getEnv()
+    if (!env.ENABLE_BACKUP) {
+      this.logger.log('数据库备份未启用（ENABLE_BACKUP != true），跳过定时备份')
+      return
+    }
+    await this.doBackup()
+  }
+
+  /**
+   * 手动触发数据库备份（不受 ENABLE_BACKUP 开关限制，供 POST /schedule/backup 调用）
+   */
+  async manualBackup() {
+    await this.doBackup()
+  }
+
+  /**
+   * 实际执行备份的逻辑：pg_dump 导出 + 清理旧备份 + 邮件通知
+   */
+  private async doBackup() {
     this.logger.log('开始执行数据库备份...')
     const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const filename = `backup-${timestamp}.sql`
@@ -38,20 +56,19 @@ export class ScheduleService {
     try {
       await mkdir(BACKUP_DIR, { recursive: true })
 
+      const env = getEnv()
       // 支持自定义备份命令（如本机无 pg_dump 时用 docker exec 调用容器内的）
-      const customCmd = this.configService.get<string>('BACKUP_CMD')
-      if (customCmd) {
+      if (env.BACKUP_CMD) {
         // 自定义命令保留 exec（可能含 shell 语法如管道、变量）
         // filepath 做 shell 单引号转义：单引号内的内容不会被 shell 解释
         const safeFilepath = `'${filepath.replace(/'/g, "'\\''")}'`
-        await execAsync(customCmd.replace('{filepath}', safeFilepath))
+        await execAsync(env.BACKUP_CMD.replace('{filepath}', safeFilepath))
       } else {
-        const databaseUrl = this.configService.get<string>('DATABASE_URL')
-        if (!databaseUrl) {
+        if (!env.DATABASE_URL) {
           throw new Error('DATABASE_URL 未配置')
         }
         // pg_dump 用 spawn 参数数组，避免 shell 注入
-        await this.spawnPgDump(databaseUrl, filepath)
+        await this.spawnPgDump(env.DATABASE_URL, filepath)
       }
 
       const stats = await stat(filepath)
