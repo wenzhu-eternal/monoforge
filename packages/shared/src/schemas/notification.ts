@@ -11,4 +11,23 @@ export const NotificationSchema = z.object({
   deletedAt: z.coerce.date().nullable().optional(),
 })
 
+export const WebSocketOnlineSchema = z.object({
+  count: z.number(),
+  userIds: z.array(z.number()),
+})
+
+export const WebSocketMeSchema = z.object({
+  userId: z.number(),
+  online: z.boolean(),
+})
+
+export const WebSocketNotifyResultSchema = z.object({
+  message: z.string(),
+  notification: NotificationSchema,
+  delivered: z.boolean(),
+})
+
 export type Notification = z.infer<typeof NotificationSchema>
+export type WebSocketOnline = z.infer<typeof WebSocketOnlineSchema>
+export type WebSocketMe = z.infer<typeof WebSocketMeSchema>
+export type WebSocketNotifyResult = z.infer<typeof WebSocketNotifyResultSchema>
