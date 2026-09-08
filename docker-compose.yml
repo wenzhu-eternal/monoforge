@@ -49,6 +49,7 @@ services:
   e2e-postgres:
     image: postgres:16-alpine
     container_name: mf-e2e-postgres
+    profiles: ['e2e']
     restart: unless-stopped
     ports:
       - '127.0.0.1:5433:5432'
@@ -92,7 +93,7 @@ services:
       - ALLOW_INSECURE_COOKIE=${ALLOW_INSECURE_COOKIE:-false}
       - ALLOW_SETUP=${ALLOW_SETUP:-false}
       - ADMIN_ROLE_ID=${ADMIN_ROLE_ID:-1}
-      - TRUST_PROXY=${TRUST_PROXY:-1}
+      - TRUST_PROXY=${TRUST_PROXY:-false}
       - APP_NAME=${APP_NAME:-MonoForge}
       - MAIL_HOST=${MAIL_HOST:-}
       - MAIL_PORT=${MAIL_PORT:-}

@@ -26,8 +26,9 @@
 2. **错误提示**：加载失败用 `message.useMessage()` + `useEffect` 监听 `isError` 弹 toast，不再用 `<Alert>` 常驻；`contextHolder` 紧跟外层组件
 3. **布局**：顶部不再用 `<Card>` 包裹 Table，标题行右侧放主操作按钮（如"新建"/"上传"）
 4. **antd 中文化**：`__root.tsx` 的 `ConfigProvider` 必须配 `locale={zhCN}`，所有 Modal/Popconfirm 默认显示"确定/取消"，不再为每个弹窗单独写 `okText/cancelText`
-5. **菜单跳转**：`handleMenuClick` 必须判断 `key.startsWith('/')` 才跳转，分组节点 key（如 `'system'`/`'log'`/`'content'`）不触发 `navigate`
-6. **菜单可见性**：admin 专属菜单（如邮件发送）基于 `user?.roles?.some(r => r.name === 'admin')` 判断；普通业务菜单基于 `hasPermission(Permissions.XXX)`
+5. **Table 空状态**：所有 `<Table>` 必须显式配 `locale={{ emptyText: '暂无数据' }}`（或用 `<Empty>` 组件），不依赖 antd 默认英文文案，保证中文化一致性
+6. **菜单跳转**：`handleMenuClick` 必须判断 `key.startsWith('/')` 才跳转，分组节点 key（如 `'system'`/`'log'`/`'content'`）不触发 `navigate`
+7. **菜单可见性**：admin 专属菜单（如邮件发送）基于 `user?.roles?.some(r => r.name === 'admin')` 判断；普通业务菜单基于 `hasPermission(Permissions.XXX)`
 
 ## 前端表单规范
 
@@ -45,6 +46,23 @@
 
 - ADMIN_ROLE_ID 匹配的用户（`isAdminUser(user)`）的删除按钮必须 `disabled`，Popconfirm 也禁用并提示「初始管理员账号不可删除」
 - 后端 `users.service.remove` 也要二次校验 `if (isAdminUser(existingUser)) throw new ConflictException(...)`
+
+### 校验规则复用 shared schema（禁止手写重复规则）
+
+- **禁止在 antd `rules` 里手写与后端 schema 重复的约束**（长度、正则等）。曾出现前端 `min: 6` 放行、后端 `PasswordSchema` 要求 8 位 + 含字母数字，用户提交后才拿到 400「Validation failed」
+- **做法**：在 `apps/web/src/lib/form-rules.ts` 里用 `safeParse` 把 shared schema 包成 antd `Rule`，各表单直接复用（如 `passwordRule`）。schema 改动自动同步到所有表单
+- **例外**：登录表单不套注册级密码强度规则（`LoginSchema.password` 只 `min(1)`），否则历史弱密码用户无法登录并走改密流程
+
+### 页面组件拆分（数据 hook 下沉到 AuthenticatedLayout 内层）
+
+- **禁止在 `AuthenticatedLayout` 外层调用 query hook**（如 `useXxxQuery`）：`AuthenticatedLayout` 的 `mustChangePassword` / 权限重定向在内层执行，若 query hook 在外层，`mustChangePassword=true` 的用户一进页面就会触发白名单外的业务请求，被 401 拦截器踢回登录页
+- **做法**：每个页面拆成外层 `XxxPage`（仅 `<AuthenticatedLayout><XxxContent /></AuthenticatedLayout>`）+ 内层 `XxxContent`（承载所有 query hook、state、handler、JSX）。mutation hook 留在哪一层不影响（mount 时不发请求），但为一致性也放内层
+- **参照实现**：`apps/web/src/routes/dashboard.tsx`（`DashboardPage` + `DashboardContent`）
+
+### 常量复用 shared（禁止前后端各自维护同一数值）
+
+- **文件大小限制、分页默认值等跨端共享数值**：必须放到 `packages/shared/src/constants/`，前后端各自导入。曾出现前端硬编码 `"单文件最大 10MB"` 文案与后端 `MAX_FILE_SIZE` 各自维护导致漂移
+- **做法**：shared 定义常量（如 `MAX_FILE_SIZE`、`DEFAULT_PAGE_SIZE`），后端 `re-export` 或直接导入，前端导入并用于文案生成
 
 ## Zod DTO 桥接规范
 

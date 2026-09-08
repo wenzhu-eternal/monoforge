@@ -21,7 +21,7 @@
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": false,
     "allowImportingTsExtensions": false,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": false
   },
   "exclude": ["node_modules", "dist", "build", "coverage"]
 }

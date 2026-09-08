@@ -24,9 +24,8 @@ MonoForge 全栈 Monorepo 是一个可复用的中后台全栈脚手架，基于
 | UI | Ant Design | ^6.5.0 |
 | 样式 | Tailwind CSS | v4 ^4.3.1 |
 | 本地态 | Zustand | ^5.0.14 |
-| 表单 | react-hook-form | ^7.80.0 |
-| Lint/Format | Biome | ^2.5.1 |
-| Monorepo | pnpm + Turborepo | turbo ^2.10.0 |
+| Lint/Format | Biome | ^2.5.2 |
+| Monorepo | pnpm + Turborepo | turbo ^2.10.3 |
 | 测试 | Vitest | ^4.1.9 |
 
 ---
@@ -240,7 +239,7 @@ import { CreateUserSchema } from '@monoforge/shared/schemas';
 export class CreateUserDto extends createZodDto(CreateUserSchema) {}
 ```
 
-**前端**: `z.infer` 派生 TS 类型 + `zodResolver` 做表单校验
+**前端**: `z.infer` 派生 TS 类型 + shared schema 复用于 antd Form validator
 
 ```typescript
 // 前端类型派生

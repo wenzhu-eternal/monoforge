@@ -13,6 +13,9 @@
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL 连接串（DEV） | `postgresql://monoforge_user:monoforge_password@localhost:5432/monoforge_database` |
 | `E2E_DATABASE_URL` | e2e 专用 PostgreSQL 连接串（独立容器，DEV DB 零污染） | `postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db` |
+| `E2E_POSTGRES_USER` | e2e-postgres 容器用户名 | `e2e_user` |
+| `E2E_POSTGRES_PASSWORD` | e2e-postgres 容器密码 | `e2e_password` |
+| `E2E_POSTGRES_DB` | e2e-postgres 容器库名 | `monoforge_e2e_db` |
 | `REDIS_URL` | Redis 连接串（含密码：`redis://:password@host:port`） | `redis://localhost:6379` |
 | `REDIS_PASSWORD` | Redis 密码（docker-compose 强制必填；代码通过 REDIS_URL 消费，此项供文档/部署参考） | `your_redis_password` |
 | `JWT_SECRET` | JWT access token 密钥 | 必填，长度 >= 32 |
@@ -26,11 +29,14 @@
 | `ALLOW_INSECURE_COOKIE` | 生产环境允许非 secure cookie（ngrok/单容器 HTTP 调试场景；生产强制 COOKIE_SECURE 除非此项为 true） | `false` |
 | `ALLOW_SETUP` | 首次部署初始化开关（true 时允许调用 /setup 接口创建管理员，初始化后建议设为 false） | `false` |
 | `ADMIN_ROLE_ID` | admin 角色 ID（PermissionsGuard 超级管理员旁路判定用，seed 创建的 admin 默认 id=1） | `1` |
+| `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制） | `false` |
+| `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，需做 shell 单引号转义防注入） | - |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
 | `THROTTLE_LIMIT` | 时间窗口内最大请求数（生产 10；e2e 由 `playwright.config.ts` 的 webServer.env 覆盖为 1000） | `10` |
 | `SEED_ADMIN_EMAIL` | seed 创建 admin 的邮箱（可选，默认 `admin@example.com`） | `admin@example.com` |
 | `SEED_ADMIN_PASSWORD` | seed 创建 admin 的密码（可选，默认 `888888`）。**未显式设置时首登强制改密**（`mustChangePassword=true`）；显式设置则视为运维知情，不强制 | `888888` |
 | `SEED_ADMIN_NICKNAME` | seed 创建 admin 的昵称（可选，默认 `Administrator`） | `Administrator` |
+| `SEED_ADMIN_MUST_CHANGE_PASSWORD` | 首登强制改密开关（可选）。不设时按密码推断（默认密码强制、自定义密码不强制）；显式 `false` 跳过改密流程（仅本地开发，生产勿关）；显式 `true` 强制 | 未设置 |
 
 ### 邮件服务变量
 
@@ -80,10 +86,13 @@ const port = portRaw ? Number(portRaw) : 587
 | `VITE_API_BASE_URL` | API 基础地址（同源留空，分离部署配完整 URL） | `''` |
 | `VITE_APP_NAME` | 品牌名（侧边栏 Logo、页面标题） | `MonoForge` |
 | `VITE_APP_SHORT_NAME` | 品牌简称（侧边栏折叠态显示） | `MF` |
+| `VITE_DEV_HOST` | Vite dev server 绑定主机（默认 `localhost`，局域网调试可设 `0.0.0.0`） | `localhost` |
+| `VITE_ENABLE_MOCK` | 启用 MSW mock（开发阶段无后端时使用，生产禁用） | `false` |
 
 ### 品牌配置
 
 - 品牌名统一由 `apps/web/src/config/brand.ts` 管理，禁止在组件中硬编码
+- `brand.ts` 通过 `apps/web/src/lib/env.ts` 的 `env` 对象读取 `VITE_APP_NAME` / `VITE_APP_SHORT_NAME` / `VITE_ENABLE_MOCK`，不直接读 `import.meta.env`（统一经 zod schema 校验）
 - 新项目接入时修改 `.env` 的 `VITE_APP_NAME` / `VITE_APP_SHORT_NAME` 即可
 - `index.html` 的 `<title>` 使用 `%VITE_APP_NAME%` 由 Vite 注入
 
@@ -132,6 +141,14 @@ export const SendVerificationCodeMailSchema = z.object({
 ### 端口强转
 
 `MAIL_PORT` 必须用 `Number()` 强转，详见「配置陷阱」章节。
+
+## Docker 构建变量
+
+| 变量 | 说明 | 示例 |
+|---|---|---|
+| `BUILD_HTTP_PROXY` | 构建 Docker 镜像时的 HTTP 代理（仅 `docker build` 时需要，不影响运行时） | `http://host.docker.internal:7897` |
+
+> 仅在构建镜像需要代理访问外网时配置，留空则直连。传递给 `--build-arg HTTP_PROXY=...`。
 
 ## ngrok 部署
 
