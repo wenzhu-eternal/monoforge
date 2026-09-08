@@ -14,7 +14,8 @@
 monoforge/
 ├── apps/
 │   ├── web/          # 前端 (React 19 + Vite 8 + antd6 + TanStack)
-│   └── server/       # 后端 (NestJS 11 + Drizzle + PostgreSQL)
+│   ├── server/       # 后端 (NestJS 11 + Drizzle + PostgreSQL)
+│   └── e2e/          # 端到端测试 (Playwright)
 ├── packages/
 │   ├── shared/       # zod schemas + 派生类型 + 常量/错误码
 ├── docs/             # 技术规范文档（见下方索引）
@@ -51,6 +52,8 @@ pnpm security               # 安全 + 兼容性 + 规范检测（详见 docs/TE
 pnpm db:generate            # 生成迁移文件
 pnpm db:migrate             # 执行迁移
 pnpm db:seed                # 种子数据
+pnpm db:backup              # 备份数据库（pg_dump）
+pnpm db:restore             # 恢复数据库备份（psql 原生格式）
 
 # Docker
 docker compose up           # 启动所有服务

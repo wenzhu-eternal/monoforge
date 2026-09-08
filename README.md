@@ -18,9 +18,8 @@
 | UI | Ant Design | ^6.5.0 |
 | 样式 | Tailwind CSS | v4 ^4.3.1 |
 | 本地态 | Zustand | ^5.0.14 |
-| 表单 | react-hook-form | ^7.80.0 |
-| Lint/Format | Biome | ^2.5.1 |
-| Monorepo | pnpm + Turborepo | turbo ^2.10.0 |
+| Lint/Format | Biome | ^2.5.2 |
+| Monorepo | pnpm + Turborepo | turbo ^2.10.3 |
 | 测试 | Vitest | ^4.1.9 |
 
 ## 快速开始
@@ -28,6 +27,7 @@
 ### 环境要求
 
 - Node.js >= 20.0.0
+- Docker & Docker Compose（用于 PostgreSQL/Redis/生产构建）
 - PostgreSQL 16
 - Redis 7
 - pnpm
@@ -45,6 +45,8 @@ pnpm install
 ```bash
 cp .env.example .env
 ```
+
+> **重要**：`JWT_SECRET` 和 `JWT_REFRESH_SECRET` 是占位符，必须替换为随机密钥（`openssl rand -base64 48`），否则服务启动时会拒绝运行。
 
 ### 启动开发服务
 
@@ -108,7 +110,8 @@ docker compose up redis     # 只启动 Redis
 monoforge/
 ├── apps/
 │   ├── web/          # 前端 (React 19 + Vite 8 + antd6 + TanStack)
-│   └── server/       # 后端 (NestJS 11 + Drizzle + PostgreSQL)
+│   ├── server/       # 后端 (NestJS 11 + Drizzle + PostgreSQL)
+│   └── e2e/          # 端到端测试 (Playwright)
 ├── packages/
 │   ├── shared/       # zod schemas + 派生类型 + 常量/错误码
 ├── docs/             # 技术规范文档
@@ -130,6 +133,35 @@ monoforge/
 1. 新增 service/controller 必须配套单测
 2. bug 修复先写复现测试
 3. 所有 AI 改动须经 `pnpm test` + Biome 通过方可提交
+
+## 基于 Monoforge 创建新项目
+
+1. **修改项目标识**
+   - 根目录 `package.json` 的 `name` 字段
+   - `.env` 的 `APP_NAME`、`VITE_APP_NAME`、`VITE_APP_SHORT_NAME`
+   - `Dockerfile` 中的应用名（如有）
+
+2. **替换密钥**
+   - 生成 JWT 双密钥：`openssl rand -base64 48`（分别填入 `JWT_SECRET` 和 `JWT_REFRESH_SECRET`）
+   - 修改 `POSTGRES_PASSWORD`、`REDIS_PASSWORD`
+
+3. **初始化管理员**
+   - 方式一（推荐）：启动服务后访问 `/setup`，填管理员账号密码
+   - 方式二：`pnpm db:seed`（使用 `.env` 中的 `SEED_ADMIN_*`）
+
+4. **添加新模块**
+   - 后端：`apps/server/src/modules/` 下新建模块目录（参照 `users` 模块结构），在 `app.module.ts` 注册
+   - 前端：`apps/web/src/routes/` 下新建路由，`apps/web/src/hooks/` 下新建对应 hook
+   - 共享契约：`packages/shared/src/schemas/` 下新建 zod schema，前后端共享
+
+5. **启动验证**
+   ```bash
+   docker compose up -d postgres redis
+   pnpm install
+   pnpm db:migrate
+   pnpm db:seed
+   pnpm dev
+   ```
 
 ## 相关文档
 
