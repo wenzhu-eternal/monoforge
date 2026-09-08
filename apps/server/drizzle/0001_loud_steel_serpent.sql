@@ -1,1 +1,0 @@
-ALTER TABLE "error_whitelist" ADD COLUMN "match_type" varchar(20) DEFAULT 'message' NOT NULL;

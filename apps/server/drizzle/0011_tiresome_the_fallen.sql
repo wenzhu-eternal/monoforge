@@ -1,1 +1,0 @@
-ALTER TABLE "files" ADD COLUMN "trash_path" varchar;

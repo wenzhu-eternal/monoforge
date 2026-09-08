@@ -1,1 +1,0 @@
-ALTER TABLE "permissions" ADD COLUMN "routes" json DEFAULT '[]'::json;
