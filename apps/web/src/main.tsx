@@ -3,6 +3,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { APP_NAME } from '@/config/brand'
 import { bootstrapAuth } from '@/lib/api'
+import { env } from '@/lib/env'
 import { installGlobalErrorHandlers } from '@/lib/error-reporter'
 import './index.css'
 import { routeTree } from './routeTree.gen'
@@ -20,7 +21,7 @@ declare module '@tanstack/react-router' {
 
 // MSW 仅在显式开启 mock 时启用（VITE_ENABLE_MOCK=true），避免开发环境总拦截请求
 async function enableMocking() {
-  if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK === 'true') {
+  if (import.meta.env.DEV && env.VITE_ENABLE_MOCK === 'true') {
     const { worker } = await import('./mocks/browser')
     return worker.start({
       onUnhandledRequest: 'bypass',

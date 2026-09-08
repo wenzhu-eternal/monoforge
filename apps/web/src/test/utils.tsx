@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 
-export function createQueryWrapper() {
+function createQueryWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0, networkMode: 'offlineFirst' },

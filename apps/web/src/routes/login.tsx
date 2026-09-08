@@ -5,6 +5,7 @@ import { APP_NAME } from '@/config/brand'
 import { useLogin } from '@/hooks/use-auth'
 import { useRegister, useSendRegisterCode } from '@/hooks/use-register'
 import { extractErrorMessage } from '@/lib/error'
+import { emailRule, passwordRule, usernameRule } from '@/lib/form-rules'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Title } = Typography
@@ -40,9 +41,11 @@ function LoginPage() {
 
   const onLoginSubmit = async (values: { username: string; password: string }) => {
     try {
-      await loginMutation.mutateAsync(values)
+      const data = await loginMutation.mutateAsync(values)
       messageApi.success('登录成功')
-      navigate({ to: '/dashboard' })
+      // 强制改密用户直达改密页：后端 AuthGuard 只放行改密/个人信息/登出，
+      // 若先进 /dashboard 会触发白名单外请求 401 → refresh 也被拒 → 拦截器 logout 弹回登录页
+      navigate({ to: data.user.mustChangePassword ? '/change-password' : '/dashboard' })
     } catch (error: unknown) {
       messageApi.error(extractErrorMessage(error, '登录失败，请检查账号密码'))
     }
@@ -122,10 +125,7 @@ function LoginPage() {
                   <Form.Item
                     label="用户名"
                     name="username"
-                    rules={[
-                      { required: true, message: '请输入用户名' },
-                      { min: 3, max: 50, message: '用户名长度 3-50 个字符' },
-                    ]}
+                    rules={[{ required: true, message: '请输入用户名' }, usernameRule]}
                   >
                     <Input placeholder="请输入用户名" />
                   </Form.Item>
@@ -134,7 +134,7 @@ function LoginPage() {
                     name="password"
                     rules={[
                       { required: true, message: '请输入密码' },
-                      { min: 6, max: 100, message: '密码至少 6 个字符' },
+                      { max: 100, message: '密码最多 100 个字符' },
                     ]}
                   >
                     <Input.Password placeholder="请输入密码" />
@@ -165,10 +165,7 @@ function LoginPage() {
                   <Form.Item
                     label="邮箱"
                     name="email"
-                    rules={[
-                      { required: true, message: '请输入邮箱' },
-                      { type: 'email', message: '请输入有效的邮箱地址' },
-                    ]}
+                    rules={[{ required: true, message: '请输入邮箱' }, emailRule]}
                   >
                     <Input placeholder="请输入邮箱" />
                   </Form.Item>
@@ -196,20 +193,14 @@ function LoginPage() {
                   <Form.Item
                     label="用户名"
                     name="username"
-                    rules={[
-                      { required: true, message: '请输入用户名' },
-                      { min: 3, max: 50, message: '用户名长度 3-50 个字符' },
-                    ]}
+                    rules={[{ required: true, message: '请输入用户名' }, usernameRule]}
                   >
                     <Input placeholder="请输入用户名" />
                   </Form.Item>
                   <Form.Item
                     label="密码"
                     name="password"
-                    rules={[
-                      { required: true, message: '请输入密码' },
-                      { min: 6, max: 100, message: '密码至少 6 个字符' },
-                    ]}
+                    rules={[{ required: true, message: '请输入密码' }, passwordRule]}
                   >
                     <Input.Password placeholder="请输入密码" />
                   </Form.Item>

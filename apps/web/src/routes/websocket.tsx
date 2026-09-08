@@ -30,7 +30,20 @@ export const Route = createFileRoute('/websocket')({
   component: WebSocketPage,
 })
 
+/**
+ * 业务数据请求必须放在 AuthenticatedLayout 内层子组件：
+ * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
+ * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
+ */
 function WebSocketPage() {
+  return (
+    <AuthenticatedLayout>
+      <WebSocketContent />
+    </AuthenticatedLayout>
+  )
+}
+
+function WebSocketContent() {
   const user = useAuthStore((state) => state.user)
   const { connected, onlineUsers, me, receivedNotifications, sendNotify } = useWebSocketDemo()
   const [messageApi, contextHolder] = message.useMessage()
@@ -58,7 +71,7 @@ function WebSocketPage() {
   const initialValues = user?.id ? { userId: user.id, title: '', content: '' } : undefined
 
   return (
-    <AuthenticatedLayout>
+    <>
       {contextHolder}
       <Title level={3} className="mb-2">
         WebSocket 演示
@@ -196,6 +209,6 @@ function WebSocketPage() {
           </Card>
         </Col>
       </Row>
-    </AuthenticatedLayout>
+    </>
   )
 }

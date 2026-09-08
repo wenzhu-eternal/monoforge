@@ -1,25 +1,9 @@
-import type { Notification } from '@shared'
+import type { Notification, WebSocketMe, WebSocketNotifyResult, WebSocketOnline } from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { wsClient } from '@/lib/ws'
 import { useAuthStore } from '@/store/auth-store'
-
-interface OnlineResponse {
-  count: number
-  userIds: number[]
-}
-
-interface MeResponse {
-  userId: number
-  online: boolean
-}
-
-interface NotifyResponse {
-  message: string
-  notification: Notification
-  delivered: boolean
-}
 
 /**
  * WebSocket 连接 hook: 组件挂载且已登录时连接，卸载或登出时断开
@@ -82,7 +66,7 @@ export function useWebSocketDemo() {
   const onlineQuery = useQuery({
     queryKey: ['websocket', 'online'],
     queryFn: async () => {
-      const response = await api.get<{ data: OnlineResponse }>('/api/v1/websocket/online')
+      const response = await api.get<{ data: WebSocketOnline }>('/api/v1/websocket/online')
       return response.data.data!
     },
     enabled: isAuthenticated,
@@ -91,7 +75,7 @@ export function useWebSocketDemo() {
   const meQuery = useQuery({
     queryKey: ['websocket', 'me'],
     queryFn: async () => {
-      const response = await api.get<{ data: MeResponse }>('/api/v1/websocket/me')
+      const response = await api.get<{ data: WebSocketMe }>('/api/v1/websocket/me')
       return response.data.data!
     },
     enabled: isAuthenticated,
@@ -115,7 +99,7 @@ export function useWebSocketDemo() {
     const onPresenceUpdate = (data: unknown) => {
       const { userId, online } = data as { userId: number; online: boolean }
 
-      queryClient.setQueryData<OnlineResponse>(['websocket', 'online'], (old) => {
+      queryClient.setQueryData<WebSocketOnline>(['websocket', 'online'], (old) => {
         if (!old) return old
         const set = new Set(old.userIds)
         if (online) {
@@ -126,7 +110,7 @@ export function useWebSocketDemo() {
         return { count: set.size, userIds: Array.from(set) }
       })
 
-      queryClient.setQueryData<MeResponse>(['websocket', 'me'], (old) => {
+      queryClient.setQueryData<WebSocketMe>(['websocket', 'me'], (old) => {
         if (!old) return old
         return old.userId === userId ? { ...old, online } : old
       })
@@ -145,7 +129,7 @@ export function useWebSocketDemo() {
       title: string
       content?: string
     }) => {
-      const response = await api.post<{ data: NotifyResponse }>('/api/v1/websocket/notify', {
+      const response = await api.post<{ data: WebSocketNotifyResult }>('/api/v1/websocket/notify', {
         userId: input.userId,
         type: input.type ?? 'test',
         title: input.title,

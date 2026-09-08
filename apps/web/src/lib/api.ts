@@ -29,7 +29,7 @@ const processQueue = (error: unknown, token: string | null) => {
 }
 
 /**
- * 应用初始化时调用：若 isAuthenticated 但 token 为空（页面刷新后），
+ * 应用初始化时调用：若 isAuthenticated 但 token 为空（旧版本遗留的持久化数据），
  * 主动用 httpOnly cookie refresh token 恢复 access token，
  * 减少首个请求 401 的概率。
  */
@@ -82,6 +82,17 @@ api.interceptors.response.use(
       !window.location.pathname.startsWith('/login')
     ) {
       window.location.href = '/403'
+      return Promise.reject(error)
+    }
+
+    // 强制改密场景：后端 AuthGuard 对白名单外接口返回此 401，token 本身有效，
+    // 不能走 refresh/logout 流程（refresh 同样被拒会导致弹回 /login），直接引导到改密页
+    if (
+      error.response?.status === 401 &&
+      error.response?.data?.message === '请先修改默认密码' &&
+      !window.location.pathname.startsWith('/change-password')
+    ) {
+      window.location.href = '/change-password'
       return Promise.reject(error)
     }
 

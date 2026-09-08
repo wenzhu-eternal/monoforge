@@ -1,4 +1,11 @@
-import type { ApiResponse, PaginatedResponse, Permission, RouteMeta } from '@shared'
+import type {
+  ApiResponse,
+  CreatePermission,
+  PaginatedResponse,
+  Permission,
+  RouteMeta,
+  UpdatePermission,
+} from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
@@ -45,12 +52,7 @@ export function useRoutes() {
 export function useCreatePermission() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (data: {
-      code: string
-      name: string
-      description?: string
-      routes?: string[]
-    }) => {
+    mutationFn: async (data: CreatePermission) => {
       const res = await api.post<ApiResponse<Permission>>('/api/v1/permissions', data)
       return res.data.data
     },
@@ -63,13 +65,7 @@ export function useCreatePermission() {
 export function useUpdatePermission() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number
-      data: { code?: string; name?: string; description?: string; routes?: string[] }
-    }) => {
+    mutationFn: async ({ id, data }: { id: number; data: UpdatePermission }) => {
       const res = await api.patch<ApiResponse<Permission>>(`/api/v1/permissions/${id}`, data)
       return res.data.data
     },

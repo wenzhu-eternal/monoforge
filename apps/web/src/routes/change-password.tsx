@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { APP_NAME } from '@/config/brand'
 import { useChangePassword, useLogout } from '@/hooks/use-auth'
 import { extractErrorMessage } from '@/lib/error'
+import { passwordRule } from '@/lib/form-rules'
 import { requireAuth } from '@/lib/route-guards'
 import { useAuthStore } from '@/store/auth-store'
 
@@ -81,10 +82,7 @@ function ChangePasswordPage() {
           <Form.Item
             label="新密码"
             name="newPassword"
-            rules={[
-              { required: true, message: '请输入新密码' },
-              { min: 6, max: 100, message: '密码至少 6 个字符' },
-            ]}
+            rules={[{ required: true, message: '请输入新密码' }, passwordRule]}
           >
             <Input.Password placeholder="请输入新密码" />
           </Form.Item>

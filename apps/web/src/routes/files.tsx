@@ -1,3 +1,4 @@
+import { MAX_FILE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import type { UploadProps } from 'antd'
 import {
@@ -37,7 +38,20 @@ export const Route = createFileRoute('/files')({
   component: FilesPage,
 })
 
+/**
+ * 业务数据请求必须放在 AuthenticatedLayout 内层子组件：
+ * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
+ * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
+ */
 function FilesPage() {
+  return (
+    <AuthenticatedLayout>
+      <FilesContent />
+    </AuthenticatedLayout>
+  )
+}
+
+function FilesContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -232,7 +246,7 @@ function FilesPage() {
   ]
 
   return (
-    <AuthenticatedLayout>
+    <>
       {contextHolder}
       <div className="flex justify-between items-center mb-4">
         <Title level={3}>文件管理</Title>
@@ -242,7 +256,7 @@ function FilesPage() {
       </div>
 
       <Alert
-        title="支持上传图片（jpg/png/gif/webp）、文档（pdf/doc/xls）、文本、压缩包等，单文件最大 10MB"
+        title={`支持上传图片（jpg/png/gif/webp）、文档（pdf/doc/xls）、文本、压缩包等，单文件最大 ${MAX_FILE_SIZE / 1024 / 1024}MB`}
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
@@ -280,6 +294,6 @@ function FilesPage() {
           style={{ display: 'none' }}
         />
       )}
-    </AuthenticatedLayout>
+    </>
   )
 }

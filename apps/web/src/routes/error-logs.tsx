@@ -1,3 +1,4 @@
+import type { WhitelistMatchType } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
@@ -512,7 +513,7 @@ function LogsTab() {
 
 interface WhitelistFormValues {
   pattern: string
-  matchType: 'message' | 'url'
+  matchType: WhitelistMatchType
   description?: string
   isActive: boolean
 }
@@ -744,7 +745,10 @@ function WhitelistTab() {
           <Form.Item
             name="pattern"
             label="匹配模式"
-            rules={[{ required: true, message: '请输入匹配模式' }]}
+            rules={[
+              { required: true, message: '请输入匹配模式' },
+              { max: 500, message: '匹配模式最多 500 个字符' },
+            ]}
             extra="匹配类型为消息时，错误消息包含此字符串则过滤；为 URL 时，请求 URL 包含此字符串则过滤"
           >
             <Input placeholder="如 ECONNRESET 或 /api/v1/health" />

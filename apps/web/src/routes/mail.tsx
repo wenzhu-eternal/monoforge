@@ -1,9 +1,11 @@
+import type { SendVerificationCodeMail, SendWelcomeMail } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import { Button, Divider, Form, Input, message, Radio, Space, Typography } from 'antd'
 import { useState } from 'react'
 import { useSendVerificationCodeMail, useSendWelcomeMail } from '@/hooks/use-mail'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
+import { emailRule } from '@/lib/form-rules'
 import { requireAuth } from '@/lib/route-guards'
 
 const { Title, Text } = Typography
@@ -15,26 +17,16 @@ export const Route = createFileRoute('/mail')({
 
 type MailType = 'welcome' | 'verification-code'
 
-interface WelcomeFormValues {
-  to: string
-  username: string
-}
-
-interface VerificationCodeFormValues {
-  to: string
-  name?: string
-}
-
 function MailPage() {
   const [mailType, setMailType] = useState<MailType>('welcome')
   const [messageApi, contextHolder] = message.useMessage()
   const welcomeMutation = useSendWelcomeMail()
   const verificationMutation = useSendVerificationCodeMail()
 
-  const [welcomeForm] = Form.useForm<WelcomeFormValues>()
-  const [verificationForm] = Form.useForm<VerificationCodeFormValues>()
+  const [welcomeForm] = Form.useForm<SendWelcomeMail>()
+  const [verificationForm] = Form.useForm<SendVerificationCodeMail>()
 
-  const handleSendWelcome = async (values: WelcomeFormValues) => {
+  const handleSendWelcome = async (values: SendWelcomeMail) => {
     try {
       const res = await welcomeMutation.mutateAsync(values)
       messageApi.success(res.message)
@@ -44,7 +36,7 @@ function MailPage() {
     }
   }
 
-  const handleSendVerificationCode = async (values: VerificationCodeFormValues) => {
+  const handleSendVerificationCode = async (values: SendVerificationCodeMail) => {
     try {
       const res = await verificationMutation.mutateAsync(values)
       messageApi.success(res.message)
@@ -78,22 +70,21 @@ function MailPage() {
         <Divider style={{ margin: '8px 0' }} />
 
         {mailType === 'welcome' ? (
-          <Form<WelcomeFormValues>
-            form={welcomeForm}
-            layout="vertical"
-            onFinish={handleSendWelcome}
-          >
+          <Form<SendWelcomeMail> form={welcomeForm} layout="vertical" onFinish={handleSendWelcome}>
             <Form.Item
               name="to"
               label="收件人邮箱"
-              rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
+              rules={[{ required: true, message: '请输入邮箱' }, emailRule]}
             >
               <Input placeholder="user@example.com" />
             </Form.Item>
             <Form.Item
               name="username"
               label="用户名"
-              rules={[{ required: true, message: '请输入用户名' }]}
+              rules={[
+                { required: true, message: '请输入用户名' },
+                { max: 50, message: '用户名最多 50 个字符' },
+              ]}
             >
               <Input placeholder="请输入收件人用户名" />
             </Form.Item>
@@ -106,7 +97,7 @@ function MailPage() {
             </Form.Item>
           </Form>
         ) : (
-          <Form<VerificationCodeFormValues>
+          <Form<SendVerificationCodeMail>
             form={verificationForm}
             layout="vertical"
             onFinish={handleSendVerificationCode}
@@ -114,7 +105,7 @@ function MailPage() {
             <Form.Item
               name="to"
               label="收件人邮箱"
-              rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
+              rules={[{ required: true, message: '请输入邮箱' }, emailRule]}
             >
               <Input placeholder="user@example.com" />
             </Form.Item>

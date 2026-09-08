@@ -4,6 +4,7 @@ import {
   Button,
   Checkbox,
   Divider,
+  Empty,
   Form,
   Input,
   Modal,
@@ -62,7 +63,12 @@ function RolePermissionCodes({ roleId }: { roleId: number }) {
   )
 }
 
-function RolesPage() {
+/**
+ * 业务数据请求必须放在 AuthenticatedLayout 内层子组件：
+ * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
+ * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
+ */
+function RolesContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [editingRole, setEditingRole] = useState<Role | null>(null)
@@ -275,7 +281,7 @@ function RolesPage() {
   const allSelected = allPermissions && selectedPermissionCodes.length === allPermissions.length
 
   return (
-    <AuthenticatedLayout>
+    <>
       {contextHolder}
       <div className="flex justify-between items-center mb-4">
         <Title level={3}>角色管理</Title>
@@ -297,6 +303,7 @@ function RolesPage() {
         dataSource={data?.list}
         rowKey="id"
         loading={isLoading}
+        locale={{ emptyText: <Empty description="暂无角色" /> }}
         pagination={{
           current: page,
           pageSize,
@@ -325,7 +332,10 @@ function RolesPage() {
           <Form.Item
             name="name"
             label="角色名"
-            rules={[{ required: true, message: '请输入角色名' }]}
+            rules={[
+              { required: true, message: '请输入角色名' },
+              { max: 50, message: '角色名最多 50 个字符' },
+            ]}
           >
             <Input disabled={!!editingRole} />
           </Form.Item>
@@ -380,6 +390,14 @@ function RolesPage() {
           )}
         </div>
       </Modal>
+    </>
+  )
+}
+
+function RolesPage() {
+  return (
+    <AuthenticatedLayout>
+      <RolesContent />
     </AuthenticatedLayout>
   )
 }

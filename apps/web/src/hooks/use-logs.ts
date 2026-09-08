@@ -14,11 +14,14 @@ import { api } from '@/lib/api'
 
 export type { AuditLog, ErrorLog, ErrorLogGroup, ErrorWhitelist }
 
-// 日志查询参数（不使用 shared 的 PaginationQuery，避免 order 必填约束）
+// 日志查询参数（复用 PaginationQuery 基础结构，仅含 page/pageSize/keyword，不需要 sort/order）
 export interface LogQuery {
   page: number
   pageSize: number
   keyword?: string
+  userId?: number
+  action?: string
+  resource?: string
 }
 
 export const useAuditLogs = (params: LogQuery) => {

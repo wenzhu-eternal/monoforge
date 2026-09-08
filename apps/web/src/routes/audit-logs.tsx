@@ -1,5 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Empty, message, Table, Tag, Tooltip, Typography } from 'antd'
+import {
+  Button,
+  Empty,
+  Form,
+  Input,
+  message,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState } from 'react'
 import { type AuditLog, useAuditLogs } from '@/hooks/use-logs'
@@ -42,13 +54,34 @@ function formatValue(v: unknown): string {
   return String(v)
 }
 
+/**
+ * 业务数据请求必须放在 AuthenticatedLayout 内层子组件：
+ * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
+ * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
+ */
 function AuditLogsPage() {
+  return (
+    <AuthenticatedLayout>
+      <AuditLogsContent />
+    </AuthenticatedLayout>
+  )
+}
+
+function AuditLogsContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [filters, setFilters] = useState<{
+    userId?: number
+    action?: string
+    resource?: string
+    keyword?: string
+  }>({})
+  const [searchForm] = Form.useForm()
   const [messageApi, contextHolder] = message.useMessage()
   const { data, isLoading, isError, error } = useAuditLogs({
     page,
     pageSize,
+    ...filters,
   })
 
   useEffect(() => {
@@ -56,6 +89,27 @@ function AuditLogsPage() {
       messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
     }
   }, [isError, error, messageApi])
+
+  const handleSearch = (values: {
+    userId?: string
+    action?: string
+    resource?: string
+    keyword?: string
+  }) => {
+    setFilters({
+      userId: values.userId ? Number(values.userId) : undefined,
+      action: values.action || undefined,
+      resource: values.resource || undefined,
+      keyword: values.keyword || undefined,
+    })
+    setPage(1)
+  }
+
+  const handleReset = () => {
+    searchForm.resetFields()
+    setFilters({})
+    setPage(1)
+  }
 
   const columns: ColumnsType<AuditLog> = [
     {
@@ -135,9 +189,41 @@ function AuditLogsPage() {
   ]
 
   return (
-    <AuthenticatedLayout>
+    <>
       {contextHolder}
       <Title level={3}>审计日志</Title>
+
+      <Form form={searchForm} layout="inline" onFinish={handleSearch} style={{ marginBottom: 16 }}>
+        <Form.Item name="userId" label="用户ID">
+          <Input placeholder="用户ID" style={{ width: 120 }} allowClear />
+        </Form.Item>
+        <Form.Item name="action" label="动作">
+          <Select
+            placeholder="全部"
+            style={{ width: 100 }}
+            allowClear
+            options={[
+              { label: '创建', value: '创建' },
+              { label: '更新', value: '更新' },
+              { label: '删除', value: '删除' },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name="resource" label="资源">
+          <Input placeholder="资源" style={{ width: 120 }} allowClear />
+        </Form.Item>
+        <Form.Item name="keyword" label="关键词">
+          <Input placeholder="关键词" style={{ width: 150 }} allowClear />
+        </Form.Item>
+        <Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={isLoading}>
+              搜索
+            </Button>
+            <Button onClick={handleReset}>重置</Button>
+          </Space>
+        </Form.Item>
+      </Form>
 
       <Table<AuditLog>
         rowKey="id"
@@ -158,6 +244,6 @@ function AuditLogsPage() {
           },
         }}
       />
-    </AuthenticatedLayout>
+    </>
   )
 }

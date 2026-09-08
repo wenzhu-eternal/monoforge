@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
   Divider,
+  Empty,
   Form,
   Input,
   Modal,
@@ -27,6 +28,7 @@ import {
 } from '@/hooks/use-users'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
+import { emailRule, passwordRule, phoneRule, usernameRule } from '@/lib/form-rules'
 import { PermissionCodes } from '@/lib/permissions'
 import { requireAuth } from '@/lib/route-guards'
 import { useAuthStore } from '@/store/auth-store'
@@ -38,7 +40,20 @@ export const Route = createFileRoute('/users')({
   component: UsersPage,
 })
 
+/**
+ * 业务数据请求必须放在 AuthenticatedLayout 内层子组件：
+ * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
+ * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
+ */
 function UsersPage() {
+  return (
+    <AuthenticatedLayout>
+      <UsersContent />
+    </AuthenticatedLayout>
+  )
+}
+
+function UsersContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [editingUser, setEditingUser] = useState<User | null>(null)
@@ -250,7 +265,7 @@ function UsersPage() {
   }
 
   return (
-    <AuthenticatedLayout>
+    <>
       {contextHolder}
       <div className="flex justify-between items-center mb-4">
         <Title level={3}>用户管理</Title>
@@ -271,6 +286,7 @@ function UsersPage() {
         dataSource={data?.list}
         rowKey="id"
         loading={isLoading}
+        locale={{ emptyText: <Empty description="暂无用户" /> }}
         pagination={{
           current: page,
           pageSize,
@@ -296,24 +312,21 @@ function UsersPage() {
               <Form.Item
                 name="username"
                 label="用户名"
-                rules={[
-                  { required: true, message: '请输入用户名' },
-                  { min: 3, max: 50, message: '用户名 3-50 个字符' },
-                ]}
+                rules={[{ required: true, message: '请输入用户名' }, usernameRule]}
               >
                 <Input />
               </Form.Item>
               <Form.Item
                 name="email"
                 label="邮箱"
-                rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
+                rules={[{ required: true, message: '请输入邮箱' }, emailRule]}
               >
                 <Input />
               </Form.Item>
               <Form.Item
                 name="password"
                 label="密码"
-                rules={[{ required: true, min: 6, message: '密码至少 6 个字符' }]}
+                rules={[{ required: true, message: '请输入密码' }, passwordRule]}
               >
                 <Input.Password />
               </Form.Item>
@@ -327,14 +340,14 @@ function UsersPage() {
               <Form.Item
                 name="email"
                 label="邮箱"
-                rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
+                rules={[{ required: true, message: '请输入邮箱' }, emailRule]}
               >
                 <Input disabled={!canManageRole} />
               </Form.Item>
               <Form.Item
                 name="password"
                 label="新密码"
-                rules={[{ min: 6, message: '密码至少 6 个字符' }]}
+                rules={[passwordRule]}
                 extra="留空则不修改密码"
               >
                 <Input.Password placeholder="留空则不修改" />
@@ -344,11 +357,7 @@ function UsersPage() {
           <Form.Item name="nickname" label="昵称">
             <Input />
           </Form.Item>
-          <Form.Item
-            name="phone"
-            label="手机号"
-            rules={[{ pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' }]}
-          >
+          <Form.Item name="phone" label="手机号" rules={[phoneRule]}>
             <Input placeholder="选填" />
           </Form.Item>
           <Form.Item
@@ -374,6 +383,6 @@ function UsersPage() {
           )}
         </Form>
       </Modal>
-    </AuthenticatedLayout>
+    </>
   )
 }

@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { APP_NAME } from '@/config/brand'
 import { useSetup, useSetupStatus } from '@/hooks/use-setup'
 import { extractErrorMessage } from '@/lib/error'
+import { emailRule, passwordRule, usernameRule } from '@/lib/form-rules'
 
 const { Title, Paragraph } = Typography
 
@@ -72,36 +73,23 @@ function SetupPage() {
           <Form.Item
             label="管理员用户名"
             name="username"
-            rules={[
-              { required: true, message: '请输入用户名' },
-              { min: 3, max: 50, message: '用户名长度 3-50 个字符' },
-              {
-                pattern: /^[a-zA-Z0-9_]+$/,
-                message: '用户名只能包含字母、数字、下划线',
-              },
-            ]}
+            rules={[{ required: true, message: '请输入用户名' }, usernameRule]}
           >
             <Input placeholder="字母/数字/下划线" />
           </Form.Item>
           <Form.Item
             label="邮箱"
             name="email"
-            rules={[
-              { required: true, message: '请输入邮箱' },
-              { type: 'email', message: '邮箱格式不正确' },
-            ]}
+            rules={[{ required: true, message: '请输入邮箱' }, emailRule]}
           >
             <Input placeholder="admin@example.com" />
           </Form.Item>
           <Form.Item
             label="密码"
             name="password"
-            rules={[
-              { required: true, message: '请输入密码' },
-              { min: 6, max: 100, message: '密码至少 6 个字符' },
-            ]}
+            rules={[{ required: true, message: '请输入密码' }, passwordRule]}
           >
-            <Input.Password placeholder="至少 6 个字符" />
+            <Input.Password placeholder="至少 8 位，需含字母和数字" />
           </Form.Item>
           <Form.Item label="昵称（可选）" name="nickname">
             <Input placeholder="可选" />

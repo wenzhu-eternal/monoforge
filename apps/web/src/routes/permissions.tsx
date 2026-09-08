@@ -4,6 +4,7 @@ import {
   Button,
   Checkbox,
   Divider,
+  Empty,
   Form,
   Input,
   Modal,
@@ -38,6 +39,19 @@ export const Route = createFileRoute('/permissions')({
 })
 
 function PermissionCodesPage() {
+  return (
+    <AuthenticatedLayout>
+      <PermissionCodesContent />
+    </AuthenticatedLayout>
+  )
+}
+
+/**
+ * 业务数据请求必须放在 AuthenticatedLayout 内层子组件：
+ * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
+ * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
+ */
+function PermissionCodesContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [editingPermission, setEditingPermission] = useState<Permission | null>(null)
@@ -254,7 +268,7 @@ function PermissionCodesPage() {
   }
 
   return (
-    <AuthenticatedLayout>
+    <>
       {contextHolder}
       <div className="flex justify-between items-center mb-4">
         <Title level={3}>权限管理</Title>
@@ -275,6 +289,7 @@ function PermissionCodesPage() {
         dataSource={data?.list}
         rowKey="id"
         loading={isLoading}
+        locale={{ emptyText: <Empty description="暂无权限码" /> }}
         pagination={{
           current: page,
           pageSize,
@@ -302,14 +317,20 @@ function PermissionCodesPage() {
           <Form.Item
             name="code"
             label="权限码"
-            rules={[{ required: true, message: '请输入权限码' }]}
+            rules={[
+              { required: true, message: '请输入权限码' },
+              { max: 50, message: '权限码最多 50 个字符' },
+            ]}
           >
             <Input placeholder="如: user:view" disabled={!!editingPermission} />
           </Form.Item>
           <Form.Item
             name="name"
             label="权限名"
-            rules={[{ required: true, message: '请输入权限名' }]}
+            rules={[
+              { required: true, message: '请输入权限名' },
+              { max: 100, message: '权限名最多 100 个字符' },
+            ]}
           >
             <Input placeholder="如: 查看用户" />
           </Form.Item>
@@ -364,6 +385,6 @@ function PermissionCodesPage() {
           )}
         </div>
       </Modal>
-    </AuthenticatedLayout>
+    </>
   )
 }

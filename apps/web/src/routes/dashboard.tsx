@@ -12,7 +12,20 @@ export const Route = createFileRoute('/dashboard')({
   component: DashboardPage,
 })
 
+/**
+ * 业务数据请求必须放在 AuthenticatedLayout 内层子组件：
+ * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
+ * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
+ */
 function DashboardPage() {
+  return (
+    <AuthenticatedLayout>
+      <DashboardContent />
+    </AuthenticatedLayout>
+  )
+}
+
+function DashboardContent() {
   const { data, isLoading, isError, error } = useDashboardStats()
   const [messageApi, contextHolder] = message.useMessage()
 
@@ -23,7 +36,7 @@ function DashboardPage() {
   }, [isError, error, messageApi])
 
   return (
-    <AuthenticatedLayout>
+    <>
       {contextHolder}
       <Title level={3}>仪表盘</Title>
       <Spin spinning={isLoading}>
@@ -45,6 +58,6 @@ function DashboardPage() {
           </Col>
         </Row>
       </Spin>
-    </AuthenticatedLayout>
+    </>
   )
 }
