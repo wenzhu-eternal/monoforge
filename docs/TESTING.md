@@ -233,10 +233,10 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 
 1. **TypeScript 类型检查**：`pnpm -r exec tsc --noEmit`
 2. **Biome lint**：`pnpm lint`
-3. **软删除过滤审计**：扫描所有 service 是否有 `findFirst/findMany/count()` 缺 `notDeleted`
+3. **软删除过滤审计**：扫描所有 service 的 `findFirst/findMany/count()` 是否有软删除过滤。采用函数级扫描（向前回溯 25 行 + 向后 8 行），识别 `notDeleted` / `maybeDeleted` / `includeDeleted` / `deletedFilter` 四种写法（过滤条件常预先计算为变量后复用）。白名单：`restore()` / `*Raw()` 方法与显式注明「故意不过滤」的查询需读取软删记录，属正确设计
 4. **前端 catch 块审计**：扫描所有 `.tsx` 是否有 `catch {}` 不读 error
-5. **环境变量完整性**：对比 `.env` 与 `.env.example` 关键变量
-6. **依赖安全扫描**：`pnpm audit --prod`
+5. **环境变量完整性**：对比根 `.env` 与 `.env.example` 的 `[必填]` 变量（项目采用单一根 `.env`，由 `apps/server/src/env-loader.ts` 加载；`[可选]` 变量有默认值，缺失不校验）
+6. **依赖安全扫描**：`pnpm audit --prod`（国内镜像源不实现 audit 端点时自动跳过，如需扫描请切换至官方 registry）
 7. **文档链接有效性**：检查所有 markdown 内部链接指向真实文件
 8. **Zod DTO 桥接审计**：扫描 controller 是否有裸 `@Body()`
 9. **废弃 API 调用扫描**：用 TypeScript compiler API 的 `DiagnosticTag.Deprecated` 扫描源码中调用了 `@deprecated` 符号的位置（`tsc --noEmit` 不会输出、但 IDE 会划删除线的项），脚本为 `scripts/check-deprecated.cjs`

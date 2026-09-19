@@ -251,6 +251,7 @@ export class WechatService {
    * 查/建用户: openId 已存在则返回，不存在则建（用户名 wx_{完整 openId}，邮箱占位符）
    */
   private async findOrCreateUser(openId: string, nickname?: string, avatar?: string) {
+    // 故意不过滤 deletedAt：需查到软删用户才能抛"账号已注销"，否则会被当新用户重建触发 openId 唯一索引冲突
     const existing = await db.query.users.findFirst({
       where: eq(users.wechatOpenId, openId),
     })

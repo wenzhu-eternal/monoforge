@@ -64,14 +64,23 @@ else
 fi
 
 section "3. 软删除过滤审计"
-echo "  → 扫描所有 service.ts 中缺失 notDeleted 的查询..."
+echo "  → 扫描所有 service.ts 中缺失软删除过滤的查询..."
 
 SOFT_DELETE_ISSUES=""
-# 多行扫描：findFirst/findMany/count 调用后 8 行内必须出现 notDeleted
-# 排除 audit.service（故意查全量，含已删除记录）
+# 函数级扫描：软删除过滤常在查询前若干行预先计算（如 const deletedFilter = maybeDeleted(...)），
+# 故需向前回溯 25 行 + 向后 8 行，覆盖 notDeleted/maybeDeleted/includeDeleted/deletedFilter 四种写法。
+# 白名单：restore()/*Raw() 方法与显式注明"故意不过滤"的查询需读取软删记录，属正确设计。
+# 排除 audit.service（审计日志故意查全量）
 while IFS= read -r file; do
   while IFS=: read -r line_num _; do
-    if ! sed -n "${line_num},$((line_num + 8))p" "$file" | grep -q 'notDeleted'; then
+    START=$((line_num > 25 ? line_num - 25 : 1))
+    WINDOW=$(sed -n "${START},$((line_num + 8))p" "$file")
+
+    if echo "$WINDOW" | grep -qE 'async (restore|[a-zA-Z]*Raw)\(|故意不过滤|不带 deletedAt 过滤'; then
+      continue
+    fi
+
+    if ! echo "$WINDOW" | grep -qE 'notDeleted|maybeDeleted|includeDeleted|deletedFilter'; then
       content=$(sed -n "${line_num}p" "$file")
       if ! echo "$content" | grep -qE '^\s*//'; then
         SOFT_DELETE_ISSUES="${SOFT_DELETE_ISSUES}${file}:${line_num}: ${content}\n"
@@ -81,9 +90,9 @@ while IFS= read -r file; do
 done < <(find apps/server/src/modules -name "*.service.ts" -not -name "audit.service.ts" -type f)
 
 if [ -z "$SOFT_DELETE_ISSUES" ]; then
-  check_pass "所有 service 的 findFirst/findMany 都有 notDeleted 过滤"
+  check_pass "所有 service 查询都有软删除过滤（或已标注故意不过滤）"
 else
-  check_warn "以下查询可能缺 notDeleted（需人工复核，可能是 audit 故意不过滤）："
+  check_warn "以下查询可能缺软删除过滤（需人工复核）："
   echo -e "$SOFT_DELETE_ISSUES"
 fi
 
@@ -117,22 +126,24 @@ else
 fi
 
 section "5. 环境变量完整性"
-echo "  → 对比 .env 与 .env.example..."
+echo "  → 对比根 .env 与 .env.example 的 [必填] 变量..."
 
-if [ ! -f apps/server/.env ]; then
-  check_warn "apps/server/.env 不存在（开发环境必需）"
+# 项目采用单一根 .env（apps/server/src/env-loader.ts 加载 ../../.env），不在 apps/server/ 下单独放 .env
+if [ ! -f .env ]; then
+  check_warn "根目录 .env 不存在（开发环境必需，可从 .env.example 复制）"
 elif [ ! -f .env.example ]; then
   check_warn ".env.example 不存在（文档必需）"
 else
+  # 仅校验 [必填] 变量；[可选] 变量有默认值，缺失不影响启动
   ENV_DIFF=$(comm -23 \
-    <(grep -E '^[A-Z_]+=' .env.example | cut -d= -f1 | sort) \
-    <(grep -E '^[A-Z_]+=' apps/server/.env | cut -d= -f1 | sort) \
+    <(grep -E '^[A-Z_]+=' .env.example | grep '\[必填\]' | cut -d= -f1 | sort) \
+    <(grep -E '^[A-Z_]+=' .env | cut -d= -f1 | sort) \
     2>/dev/null || true)
 
   if [ -z "$ENV_DIFF" ]; then
-    check_pass ".env 包含 .env.example 所有变量"
+    check_pass "根 .env 包含 .env.example 所有 [必填] 变量"
   else
-    check_warn ".env 缺少以下变量（.env.example 中有）："
+    check_fail ".env 缺少以下 [必填] 变量（服务将启动失败）："
     echo "$ENV_DIFF" | sed 's/^/    /'
   fi
 fi
@@ -142,7 +153,10 @@ echo "  → pnpm audit --prod..."
 if pnpm audit --prod > /tmp/audit.log 2>&1; then
   check_pass "无已知高危依赖漏洞"
 else
-  if grep -q -E '(high|critical)' /tmp/audit.log; then
+  # 国内镜像源（npmmirror 等）不实现 audit 端点，非真实漏洞，跳过以免噪音
+  if grep -q 'ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS' /tmp/audit.log; then
+    check_pass "当前 registry 不支持 audit 端点，已跳过（如需扫描请切换至官方 registry）"
+  elif grep -q -E '(high|critical)' /tmp/audit.log; then
     check_fail "发现高危依赖漏洞（见 /tmp/audit.log）"
     grep -E '(high|critical)' /tmp/audit.log | head -10
   else

@@ -38,6 +38,8 @@
 | `SEED_ADMIN_NICKNAME` | seed 创建 admin 的昵称（可选，默认 `Administrator`） | `Administrator` |
 | `SEED_ADMIN_MUST_CHANGE_PASSWORD` | 首登强制改密开关（可选）。不设时按密码推断（默认密码强制、自定义密码不强制）；显式 `false` 跳过改密流程（仅本地开发，生产勿关）；显式 `true` 强制 | 未设置 |
 
+> **Docker 部署提醒**：新增后端环境变量时，除在 `env.ts` 声明外，还须在 `docker-compose.yml` 的 `app.environment` 中显式透传，否则容器内读不到该变量（根 `.env` 仅对本地直跑生效）。
+
 ### 邮件服务变量
 
 | 变量 | 说明 | 示例 |

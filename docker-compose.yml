@@ -102,6 +102,9 @@ services:
       - MAIL_FROM=${MAIL_FROM:-}
       - THROTTLE_TTL=${THROTTLE_TTL:-60}
       - THROTTLE_LIMIT=${THROTTLE_LIMIT:-10}
+      # 定时备份开关与自定义备份命令；不透传则容器内读不到，每日 0 点 cron 会照常执行备份
+      - ENABLE_BACKUP=${ENABLE_BACKUP:-false}
+      - BACKUP_CMD=${BACKUP_CMD:-}
       - WEAPP_APPID=${WEAPP_APPID:-}
       - WEAPP_SECRET=${WEAPP_SECRET:-}
       - WECHAT_REDIRECT_URI=${WECHAT_REDIRECT_URI:-}
