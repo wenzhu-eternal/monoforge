@@ -105,7 +105,17 @@ const envSchema = z
       .default(false),
 
     // 自定义备份命令（本机无 pg_dump 时用 docker exec 调用容器内的；{filepath} 为占位符）
-    BACKUP_CMD: z.string().optional(),
+    // 安全约束：必须含 {filepath}、长度 ≤500、禁止换行/命令拼接（;/&&/||/反引号/$()），降低 .env 被改即 RCE 面
+    BACKUP_CMD: z
+      .string()
+      .max(500)
+      .refine((v) => v.includes('{filepath}'), 'BACKUP_CMD 必须包含 {filepath} 占位符')
+      .refine(
+        (v) =>
+          !/[\r\n`]/.test(v) && !/\$\(/.test(v) && !/;/.test(v) && !/&&/.test(v) && !/\|\|/.test(v),
+        'BACKUP_CMD 禁止换行/反引号/$()/;/&&/||（如需管道请改走默认 pg_dump）',
+      )
+      .optional(),
   })
   .superRefine((data, ctx) => {
     // JWT 双密钥不可相同：相同值会导致 refresh 泄露即可伪造 access

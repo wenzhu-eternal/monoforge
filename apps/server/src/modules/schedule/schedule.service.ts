@@ -59,10 +59,11 @@ export class ScheduleService {
       const env = getEnv()
       // 支持自定义备份命令（如本机无 pg_dump 时用 docker exec 调用容器内的）
       if (env.BACKUP_CMD) {
-        // 自定义命令保留 exec（可能含 shell 语法如管道、变量）
-        // filepath 做 shell 单引号转义：单引号内的内容不会被 shell 解释
+        // 自定义命令保留 exec（可能含重定向如 docker exec … > {filepath}）；已在 env 层做白名单校验，
+        // 此处再加超时防 cron 挂死，并告警提示审计
+        this.logger.warn('使用自定义 BACKUP_CMD 执行备份，请确保该命令来源可信')
         const safeFilepath = `'${filepath.replace(/'/g, "'\\''")}'`
-        await execAsync(env.BACKUP_CMD.replace('{filepath}', safeFilepath))
+        await execAsync(env.BACKUP_CMD.replace('{filepath}', safeFilepath), { timeout: 300_000 })
       } else {
         if (!env.DATABASE_URL) {
           throw new Error('DATABASE_URL 未配置')
@@ -112,8 +113,13 @@ export class ScheduleService {
   private spawnPgDump(databaseUrl: string, filepath: string): Promise<void> {
     const url = new URL(databaseUrl)
     const dbName = url.pathname.replace(/^\//, '')
+    if (!/^[A-Za-z0-9_]+$/.test(dbName)) {
+      throw new Error('DATABASE_URL 库名非法，仅允许字母/数字/下划线')
+    }
+    // 仅透传最小环境 + PG*，避免全量 process.env（含 JWT/MAIL 密钥）泄露给子进程
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
+      PATH: process.env.PATH,
+      LANG: process.env.LANG,
       PGHOST: url.hostname,
       PGPORT: url.port || '5432',
       PGUSER: decodeURIComponent(url.username),
