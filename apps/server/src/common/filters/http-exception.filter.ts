@@ -65,8 +65,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = exception.message
       }
 
-      // 5xx 错误入库（4xx 视为客户端错误，不记录）
-      shouldRecordToDb = status >= 500
+      // 5xx 入库；401/403/429 安全相关（爆破/越权/限流）也入库，其余 4xx 不记
+      shouldRecordToDb = status >= 500 || status === 401 || status === 403 || status === 429
     } else if (exception instanceof Error) {
       // 非业务异常（未捕获的运行时错误）入库
       shouldRecordToDb = true
@@ -81,7 +81,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     // 异步入库错误日志（不阻塞响应），白名单过滤与缓存交给 ErrorLogsService
     if (shouldRecordToDb) {
-      this.recordErrorLog(exception, request).catch((err) => {
+      this.recordErrorLog(exception, request, status).catch((err) => {
         this.logger.error('[ErrorLogs] 入库失败:', err)
       })
     }
@@ -98,7 +98,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
    * - 自动补 source: 'backend' / errorType: 'http_error'
    * - 复用 Redis 白名单缓存
    */
-  private async recordErrorLog(exception: unknown, request: Request): Promise<void> {
+  private async recordErrorLog(
+    exception: unknown,
+    request: Request,
+    status?: number,
+  ): Promise<void> {
     const message = exception instanceof Error ? exception.message : String(exception)
     const stack = exception instanceof Error ? exception.stack : undefined
 
@@ -108,6 +112,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     await this.errorLogsService.record({
       message,
       stack,
+      statusCode: status,
       context: {
         method: request.method,
         url: request.url,
