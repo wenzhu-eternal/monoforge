@@ -5,6 +5,10 @@
   "type": "module",
   "description": "MonoForge 全栈 monorepo - 前后端共享zod契约",
   "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": "10.32.1"
+  },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
