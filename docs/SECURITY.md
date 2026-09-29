@@ -37,6 +37,8 @@
 
 - **登出批量吊销**：logout 删除 Redis 中全部 refresh（`refresh:{userId}:*`）外，还必须 `revokeAllAccessTokens`——扫描 `access:active:{userId}:*` 活跃索引，逐个把 jti 写入 `access:{userId}:{jti}` 黑名单（TTL = access 剩余有效期），再删除索引。仅吊销当前请求的 token 会放行其他设备的活跃 access token
 
+- **前端登出必须清空查询缓存**：后端吊销 token 只解决服务端会话，客户端 React Query 缓存仍在内存中（默认 `gcTime` 5 分钟）。若登出只清 zustand，下一个用户在同一浏览器标签登录后，会先渲染上一个用户的 `users`/`files`/`error-logs` 等缓存数据，造成跨账号数据泄漏。统一走 `clearUserScopedState()`（`apps/web/src/lib/auth-cleanup.ts`）：同时执行 `useAuthStore.logout()` + `queryClient.clear()`。**所有登出入口（用户主动登出、改密后登出、refresh 失败、bootstrapAuth 失败）必须调用该函数，禁止直接调 `logout()`**
+
 ### 密码策略
 
 - `PasswordSchema`（注册/创建用户/重置密码）：至少 8 位且必须同时包含字母和数字
