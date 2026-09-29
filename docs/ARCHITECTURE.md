@@ -43,7 +43,7 @@ monoforge/
 │       └── drizzle/
 ├── packages/
 │   └── shared/                   # zod schemas + 派生类型 + 常量/错误码
-│       └── schemas/               # user.ts / role.ts / auth.ts / error-log.ts / audit-log.ts / pagination.ts
+│       └── schemas/               # auth/dashboard/user/audit/file/permission/setup/notification/pagination/error-log/role/mail/wechat + index
 ├── docs/                          # 技术规范文档
 ├── scripts/security-check.sh     # 安全检测脚本
 ├── docker-compose.yml
@@ -218,13 +218,20 @@ src/routes/
 ### zod Schema 单一源
 
 ```
-packages/shared/schemas/
-├── user.schema.ts        # 用户相关 schema
-├── role.schema.ts        # 角色相关 schema
-├── auth.schema.ts        # 认证相关 schema
-├── error-log.schema.ts   # 错误日志 schema
-├── audit-log.schema.ts   # 审计日志 schema
-└── pagination.schema.ts  # 统一分页 schema
+packages/shared/src/schemas/
+├── auth.ts             # 认证相关 schema
+├── dashboard.ts        # 看板 schema
+├── user.ts             # 用户相关 schema
+├── role.ts             # 角色相关 schema
+├── permission.ts       # 权限相关 schema
+├── file.ts             # 文件 schema
+├── mail.ts             # 邮件 schema
+├── notification.ts     # 通知 schema
+├── setup.ts            # 初始化 schema
+├── wechat.ts           # 微信 schema
+├── audit.ts            # 审计日志 schema
+├── error-log.ts        # 错误日志 schema
+└── pagination.ts       # 统一分页 schema
 ```
 
 ### 使用方式
@@ -234,7 +241,7 @@ packages/shared/schemas/
 ```typescript
 // 后端 DTO 校验
 import { createZodDto } from 'nestjs-zod';
-import { CreateUserSchema } from '@monoforge/shared/schemas';
+import { CreateUserSchema } from '@shared';
 
 export class CreateUserDto extends createZodDto(CreateUserSchema) {}
 ```
@@ -243,7 +250,7 @@ export class CreateUserDto extends createZodDto(CreateUserSchema) {}
 
 ```typescript
 // 前端类型派生
-import { CreateUserSchema } from '@monoforge/shared/schemas';
+import { CreateUserSchema } from '@shared';
 import type { z } from 'zod';
 
 type CreateUser = z.infer<typeof CreateUserSchema>;
