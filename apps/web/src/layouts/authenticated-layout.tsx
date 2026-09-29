@@ -16,6 +16,7 @@ import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME } from '@/config/brand'
 import { useCurrentUser, useLogout } from '@/hooks/use-auth'
+import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { PermissionCodes } from '@/lib/permissions'
 import { getRequiredPermission } from '@/lib/route-guards'
 import { useAuthStore } from '@/store/auth-store'
@@ -155,9 +156,9 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   }
 
   const handleLogout = () => {
-    // 先同步清空本地登录态再跳转，避免 /login 的 beforeLoad 读到旧值反弹回 /dashboard；
-    // 后端登出（清 refreshToken cookie）异步进行，useLogout 的 onSuccess 会再次 logout()（幂等）
-    useAuthStore.getState().logout()
+    // 先同步清空本地登录态与全量查询缓存再跳转，避免 /login 的 beforeLoad 读到旧值反弹回 /dashboard，
+    // 也防止下一个登录用户读到上一个用户的缓存数据；后端登出（清 refreshToken cookie）异步进行
+    clearUserScopedState()
     logoutMutation.mutate()
     navigate({ to: '/login' })
   }

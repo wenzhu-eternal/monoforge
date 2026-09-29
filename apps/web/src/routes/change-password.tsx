@@ -3,6 +3,7 @@ import { Button, Card, Form, Input, message, Typography } from 'antd'
 import { useEffect } from 'react'
 import { APP_NAME } from '@/config/brand'
 import { useChangePassword, useLogout } from '@/hooks/use-auth'
+import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { extractErrorMessage } from '@/lib/error'
 import { passwordRule } from '@/lib/form-rules'
 import { requireAuth } from '@/lib/route-guards'
@@ -49,9 +50,9 @@ function ChangePasswordPage() {
         newPassword: values.newPassword,
       })
       messageApi.success('密码修改成功，请重新登录')
-      // 改密成功后立即清空本地登录态（旧 token 已全部吊销），跳转交给下方 isAuthenticated 兜底 effect；
+      // 改密成功后立即清空本地登录态与查询缓存（旧 token 已全部吊销），跳转交给下方 isAuthenticated 兜底 effect；
       // 后端登出（清 refreshToken cookie）异步进行
-      useAuthStore.getState().logout()
+      clearUserScopedState()
       logoutMutation.mutate()
       navigate({ to: '/login' })
     } catch (error) {

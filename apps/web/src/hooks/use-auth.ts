@@ -2,6 +2,7 @@ import type { ApiResponse, AuthResponse, ChangePassword, Login, User } from '@sh
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { api } from '@/lib/api'
+import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { useAuthStore } from '@/store/auth-store'
 
 export const useLogin = () => {
@@ -19,8 +20,6 @@ export const useLogin = () => {
 }
 
 export const useLogout = () => {
-  const { logout } = useAuthStore()
-
   return useMutation({
     mutationFn: async () => {
       try {
@@ -30,7 +29,7 @@ export const useLogout = () => {
       }
     },
     onSuccess: () => {
-      logout()
+      clearUserScopedState()
     },
   })
 }

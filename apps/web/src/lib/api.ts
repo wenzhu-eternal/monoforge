@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useAuthStore } from '@/store/auth-store'
+import { clearUserScopedState } from './auth-cleanup'
 import { env } from './env'
 
 export const api = axios.create({
@@ -55,7 +56,7 @@ export async function bootstrapAuth(): Promise<void> {
     const { accessToken } = response.data.data
     useAuthStore.getState().setToken(accessToken)
   } catch {
-    useAuthStore.getState().logout()
+    clearUserScopedState()
   }
 }
 
@@ -141,7 +142,7 @@ api.interceptors.response.use(
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
-        useAuthStore.getState().logout()
+        clearUserScopedState()
         window.location.href = '/login'
         return Promise.reject(refreshError)
       } finally {
