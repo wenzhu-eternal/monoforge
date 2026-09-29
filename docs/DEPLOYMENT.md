@@ -104,6 +104,9 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
 - [ ] `TRUST_PROXY` 已按部署形态设置（直连 false / 一层代理 1）
 - [ ] Cookie `secure` flag 已通过环境变量开启
 - [ ] Swagger 已关闭（`NODE_ENV=production` 时自动隐藏）
+- [ ] `ALLOW_SETUP=false`（初始化入口已关闭，防止重复初始化覆盖 admin）
+- [ ] `SEED_ADMIN_MUST_CHANGE_PASSWORD=true`（生产强制改密，勿用种子密码长期运行）
+- [ ] `ALLOW_INSECURE_COOKIE=false`（HTTPS 生产必须，HTTP 调试才显式放开）
 - [ ] 数据库备份已创建
 - [ ] 迁移已执行（`pnpm db:migrate`）
 - [ ] `pnpm test` 通过
