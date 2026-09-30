@@ -29,6 +29,8 @@ export const useUploadFile = () => {
       formData.append('file', file)
       const response = await api.post<ApiResponse<UploadResult>>('/api/v1/files/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        // M10：大文件上传不受全局 15s 超时限制（axios timeout: 0 = 不超时）
+        timeout: 0,
       })
       return response.data.data!
     },
@@ -68,6 +70,8 @@ export const useRestoreFile = () => {
 export async function previewFile(id: number): Promise<string> {
   const response = await api.get(`/api/v1/files/${id}/preview`, {
     responseType: 'blob',
+    // M10：大文件预览/下载不受全局 15s 超时限制
+    timeout: 0,
   })
   return URL.createObjectURL(response.data)
 }
@@ -75,6 +79,7 @@ export async function previewFile(id: number): Promise<string> {
 export async function downloadFile(id: number, filename: string): Promise<void> {
   const response = await api.get(`/api/v1/files/${id}/download`, {
     responseType: 'blob',
+    timeout: 0,
   })
   const url = URL.createObjectURL(response.data)
   const a = document.createElement('a')

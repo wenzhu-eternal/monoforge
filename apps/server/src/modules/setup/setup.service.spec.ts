@@ -111,6 +111,7 @@ describe('SetupService', () => {
                     { id: 1, name: 'admin', description: '系统管理员' },
                     { id: 2, name: 'editor', description: '编辑' },
                     { id: 3, name: 'viewer', description: '访客' },
+                    { id: 4, name: 'user', description: '普通用户' },
                   ]),
                 }),
               }),
@@ -134,6 +135,53 @@ describe('SetupService', () => {
 
       expect(result).toEqual({ message: '初始化成功', adminUsername: 'admin' })
       expect(mockDb.transaction).toHaveBeenCalledOnce()
+    })
+
+    it('初始化同时创建 user 角色并仅授 mail:send（与 seed 对齐，公开注册可用）', async () => {
+      vi.mocked(mockDb.select).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ count: 0 }]),
+        }),
+      } as never)
+
+      const insertMock = vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([
+              { id: 1, name: 'admin', description: '系统管理员' },
+              { id: 4, name: 'user', description: '普通用户' },
+            ]),
+          }),
+        }),
+      })
+      vi.mocked(mockDb.transaction).mockImplementation(
+        async (cb: (tx: unknown) => Promise<unknown>) => {
+          const tx = {
+            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+            select: vi.fn().mockReturnValue({
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([{ count: 0 }]),
+              }),
+            }),
+            insert: insertMock,
+            query: {
+              roles: {
+                findFirst: vi.fn().mockResolvedValue({ id: 1, name: 'admin' }),
+              },
+            },
+          }
+          return cb(tx)
+        },
+      )
+
+      await service.initialize({
+        username: 'admin',
+        email: 'admin@example.com',
+        password: 'secret123',
+      })
+
+      // roles 插入 + rolePermissions 授权 + users 建户 = 3 次 insert
+      expect(insertMock).toHaveBeenCalledTimes(3)
     })
 
     it('唯一约束冲突（code=23505）时抛 ConflictException', async () => {

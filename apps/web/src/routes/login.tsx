@@ -1,6 +1,6 @@
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { Button, Form, Input, message, Tabs, Typography } from 'antd'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { APP_NAME } from '@/config/brand'
 import { useLogin } from '@/hooks/use-auth'
 import { useRegister, useSendRegisterCode } from '@/hooks/use-register'
@@ -29,6 +29,16 @@ function LoginPage() {
   const [messageApi, contextHolder] = message.useMessage()
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login')
   const [countdown, setCountdown] = useState(0)
+  // L13：倒计时 timer 引用，卸载时清理（原 setInterval 无卸载清理，切页后仍在跑）
+  const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (countdownTimer.current) {
+        clearInterval(countdownTimer.current)
+        countdownTimer.current = null
+      }
+    }
+  }, [])
 
   const [loginForm] = Form.useForm<{ username: string; password: string }>()
   const [registerForm] = Form.useForm<{
@@ -58,10 +68,16 @@ function LoginPage() {
       await sendCodeMutation.mutateAsync({ email })
       messageApi.success('验证码已发送')
       setCountdown(60)
-      const timer = setInterval(() => {
+      if (countdownTimer.current) {
+        clearInterval(countdownTimer.current)
+      }
+      countdownTimer.current = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
-            clearInterval(timer)
+            if (countdownTimer.current) {
+              clearInterval(countdownTimer.current)
+              countdownTimer.current = null
+            }
             return 0
           }
           return prev - 1

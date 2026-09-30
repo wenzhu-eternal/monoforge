@@ -21,6 +21,30 @@ export const useRoles = (params: PaginationQuery) => {
   })
 }
 
+/**
+ * L15：角色下拉全量加载（逐页拉取，不受单页 100 上限截断；角色数少，staleTime 60s 降请求）
+ */
+export const useAllRoles = () => {
+  return useQuery({
+    queryKey: ['roles', 'all'],
+    queryFn: async () => {
+      const all: Role[] = []
+      let page = 1
+      for (;;) {
+        const response = await api.get<ApiResponse<PaginatedResponse<Role>>>('/api/v1/roles', {
+          params: { page, pageSize: 100, order: 'desc' },
+        })
+        const data = response.data.data!
+        all.push(...data.list)
+        if (all.length >= data.total || data.list.length === 0) break
+        page += 1
+      }
+      return all
+    },
+    staleTime: 60_000,
+  })
+}
+
 export const useRole = (id: number) => {
   return useQuery({
     queryKey: ['roles', id],

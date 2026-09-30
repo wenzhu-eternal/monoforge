@@ -3,6 +3,7 @@ import {
   type ExecutionContext,
   ForbiddenException,
   Injectable,
+  Logger,
 } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
@@ -31,6 +32,8 @@ interface AuthenticatedRequest extends Request {
  */
 @Injectable()
 export class PermissionsGuard implements CanActivate {
+  private readonly logger = new Logger(PermissionsGuard.name)
+
   constructor(
     private readonly reflector: Reflector,
     private readonly redisService: RedisService,
@@ -102,7 +105,10 @@ export class PermissionsGuard implements CanActivate {
         )
         .where(eq(rolePermissions.roleId, userRecord.roleId))
       permissionCodes = userPermissions.map((p) => p.permission)
-      void this.redisService.set(cacheKey, JSON.stringify(permissionCodes), 300)
+      // M5：缓存回写失败只告警，绝不能 unhandledRejection 拖垮进程（权限以 DB 为准）
+      void this.redisService
+        .set(cacheKey, JSON.stringify(permissionCodes), 300)
+        .catch((err) => this.logger.warn(`权限缓存回写失败: ${err}`))
     }
 
     const hasAll = requiredPermissions.every((p) => permissionCodes.includes(p))

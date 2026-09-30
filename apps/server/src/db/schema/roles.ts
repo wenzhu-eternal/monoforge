@@ -7,12 +7,12 @@ export const roles = pgTable(
     id: serial('id').primaryKey(),
     name: varchar('name', { length: 50 }).notNull(),
     description: text('description'),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at')
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
-    deletedAt: timestamp('deleted_at'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [uniqueIndex('roles_name_unique').on(t.name).where(sql`deleted_at IS NULL`)],
 )

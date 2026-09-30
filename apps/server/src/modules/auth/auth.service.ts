@@ -1,6 +1,8 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -45,29 +47,46 @@ export class AuthService {
     private readonly mailService: MailService,
   ) {}
 
+  // L1：登录防用户枚举——不存在/禁用与密码错误返回同一文案；不存在时仍做一次
+  // dummy verify 拉平时序（否则响应耗时直接暴露用户名是否存在）
+  // L2：账户级失败封顶 10 次/15min（IP 限流 5/min 可被代理池绕过，账户锁补位）
+  private static readonly DUMMY_HASH =
+    '$argon2id$v=19$m=65536,t=3,p=4$spADZX2IPkQojufmYn/DUA$8JJg6hKKTYvy9oEBcQuxynyW8KDX2WuCNUoAML23iwA'
+  private static readonly LOGIN_FAIL_LIMIT = 10
+  private static readonly LOGIN_FAIL_TTL = 15 * 60
+
   async login(
     username: string,
     password: string,
   ): Promise<
     TokenPair & { user: Omit<User, 'password'> & { permissions: string[]; roles: RoleBrief[] } }
   > {
+    await this.enforceLoginAttemptLimit(username)
+
     const user = await db.query.users.findFirst({
       where: and(eq(users.username, username), notDeleted(users.deletedAt)),
     })
 
     if (!user) {
+      await argon2.verify(AuthService.DUMMY_HASH, password).catch(() => false)
+      await this.recordLoginFailure(username)
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_PASSWORD])
     }
 
-    // 先检查禁用状态再校验密码，避免攻击者用正确密码确认用户被禁用
+    // 禁用状态与密码错误同文案：独立 USER_DISABLED 文案会直接确认用户存在
     if (user.status === false) {
-      throw new UnauthorizedException(ErrorMessages[ErrorCodes.USER_DISABLED])
+      await argon2.verify(user.password, password).catch(() => false)
+      await this.recordLoginFailure(username)
+      throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_PASSWORD])
     }
 
     const isPasswordValid = await argon2.verify(user.password, password)
     if (!isPasswordValid) {
+      await this.recordLoginFailure(username)
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_PASSWORD])
     }
+
+    await this.clearLoginFailures(username)
 
     const tokens = await this.signTokenPair({
       sub: user.id,
@@ -86,6 +105,44 @@ export class AuthService {
     return {
       ...tokens,
       user: { ...userWithoutPassword, permissions, roles: role ? [role] : [] },
+    }
+  }
+
+  /**
+   * L2：账户级登录失败封顶。Redis 故障降级放行（登录是核心路径，不因缓存抖动锁死用户）。
+   */
+  private async enforceLoginAttemptLimit(username: string): Promise<void> {
+    try {
+      const fails = await this.redisService.get(`login:fail:${username}`)
+      if (fails && Number(fails) >= AuthService.LOGIN_FAIL_LIMIT) {
+        throw new HttpException('登录失败次数过多，请 15 分钟后重试', HttpStatus.TOO_MANY_REQUESTS)
+      }
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+    }
+  }
+
+  private async recordLoginFailure(username: string): Promise<void> {
+    try {
+      // Lua 保证 INCR + 首次 EXPIRE 原子：两步之间崩溃会导致 key 永驻、无 TTL，
+      // 计数涨满后该账户被 429 永久锁死（同文件 register 尝试计数同款写法）
+      await this.redisService.eval(
+        `local n = redis.call('INCR', KEYS[1])
+         if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+         return n`,
+        [`login:fail:${username}`],
+        [AuthService.LOGIN_FAIL_TTL],
+      )
+    } catch {
+      // 计数失败忽略，本次登录已按失败处理
+    }
+  }
+
+  private async clearLoginFailures(username: string): Promise<void> {
+    try {
+      await this.redisService.del(`login:fail:${username}`)
+    } catch {
+      // 清理失败忽略，等待 TTL 过期
     }
   }
 
@@ -125,7 +182,7 @@ export class AuthService {
 
     // 首登未改密用户拒绝续期，强制重新登录改密
     if (user.mustChangePassword) {
-      throw new UnauthorizedException('请先修改默认密码')
+      throw new UnauthorizedException(ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD])
     }
 
     const tokens = await this.signTokenPair({
@@ -257,19 +314,24 @@ export class AuthService {
       return { message: '验证码已发送' }
     }
 
-    const lastSendTime = await this.redisService.get(`register:code:limit:${email}`)
-    if (lastSendTime) {
+    // M6：60s 限流 SET NX EX 原子抢占（与 mail 层 acquireMailRateLimit 对齐），消除双击并发下两封邮件竞态
+    const acquired = await this.redisService.setNx(`register:code:limit:${email}`, '1', 60)
+    if (!acquired) {
       throw new ConflictException('验证码发送过于频繁，请 60 秒后重试')
     }
 
     const code = randomInt(0, 999999).toString().padStart(6, '0')
     const expiresIn = 5 * 60
 
-    await this.redisService.set(`register:code:${email}`, code, expiresIn)
-    await this.redisService.set(`register:code:limit:${email}`, '1', 60)
-
-    // 发送邮件（传入 auth 生成的 code，确保与 Redis 存储一致）
-    await this.mailService.sendVerificationCode(email, '注册用户', code)
+    // P2-7：set(code) 失败同样释锁（原只覆盖邮件发送抛错，Redis 抖动会导致用户 60s 内无法重试）
+    try {
+      await this.redisService.set(`register:code:${email}`, code, expiresIn)
+      // 发送邮件（传入 auth 生成的 code，确保与 Redis 存储一致）
+      await this.mailService.sendVerificationCode(email, '注册用户', code)
+    } catch (err) {
+      await this.redisService.del(`register:code:limit:${email}`)
+      throw err
+    }
 
     this.logger.log(`注册验证码已发送: ${email}`)
     return { message: '验证码已发送' }

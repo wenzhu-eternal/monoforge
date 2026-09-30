@@ -105,15 +105,15 @@ const envSchema = z
       .default(false),
 
     // 自定义备份命令（本机无 pg_dump 时用 docker exec 调用容器内的；{filepath} 为占位符）
-    // 安全约束：必须含 {filepath}、长度 ≤500、禁止换行/命令拼接（;/&&/||/反引号/$()），降低 .env 被改即 RCE 面
+    // 安全约束：必须含 {filepath}、长度 ≤500；禁止换行/命令拼接（;/&/&&/||)/管道/变量展开/反引号，
+    // 与文案一致：如需管道请改走默认 pg_dump（仅允许 `>` 重定向给 docker exec 用法）
     BACKUP_CMD: z
       .string()
       .max(500)
       .refine((v) => v.includes('{filepath}'), 'BACKUP_CMD 必须包含 {filepath} 占位符')
       .refine(
-        (v) =>
-          !/[\r\n`]/.test(v) && !/\$\(/.test(v) && !/;/.test(v) && !/&&/.test(v) && !/\|\|/.test(v),
-        'BACKUP_CMD 禁止换行/反引号/$()/;/&&/||（如需管道请改走默认 pg_dump）',
+        (v) => !/[\r\n`$|;&]/.test(v),
+        'BACKUP_CMD 禁止换行/反引号/变量展开($)/管道(|)/命令拼接(;，&,&&,||)（如需管道请改走默认 pg_dump）',
       )
       .optional(),
   })

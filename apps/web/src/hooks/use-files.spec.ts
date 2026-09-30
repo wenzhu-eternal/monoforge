@@ -60,6 +60,8 @@ describe('use-files hooks', () => {
 
       expect(apiMock.post).toHaveBeenCalledWith('/api/v1/files/upload', expect.any(FormData), {
         headers: { 'Content-Type': 'multipart/form-data' },
+        // 大文件上传不受全局 15s 超时限制（M10）
+        timeout: 0,
       })
       expect(res).toEqual(mockResult)
     })
@@ -84,7 +86,10 @@ describe('use-files hooks', () => {
 
       const url = await previewFile(1)
 
-      expect(apiMock.get).toHaveBeenCalledWith('/api/v1/files/1/preview', { responseType: 'blob' })
+      expect(apiMock.get).toHaveBeenCalledWith('/api/v1/files/1/preview', {
+        responseType: 'blob',
+        timeout: 0,
+      })
       expect(url).toMatch(/^blob:/)
       URL.revokeObjectURL(url)
     })
@@ -100,7 +105,10 @@ describe('use-files hooks', () => {
 
       await downloadFile(1, 'test.png')
 
-      expect(apiMock.get).toHaveBeenCalledWith('/api/v1/files/1/download', { responseType: 'blob' })
+      expect(apiMock.get).toHaveBeenCalledWith('/api/v1/files/1/download', {
+        responseType: 'blob',
+        timeout: 0,
+      })
       expect(clickSpy).toHaveBeenCalled()
       clickSpy.mockRestore()
     })

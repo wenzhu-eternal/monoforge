@@ -151,7 +151,7 @@ export class FilesController {
     const range = response.req.headers.range
     if (range) {
       const parsed = parseRange(range as string, statResult.size)
-      if (parsed) {
+      if (parsed && parsed !== 'ignore') {
         const { start, end } = parsed
         response.status(206)
         response.setHeader('Content-Range', `bytes ${start}-${end}/${statResult.size}`)
@@ -161,8 +161,12 @@ export class FilesController {
         stream.pipe(response)
         return
       }
-      response.status(416).setHeader('Content-Range', `bytes */${statResult.size}`).end()
-      return
+      // M3：多区间请求本服务不支持，按 RFC 9110 忽略 Range 走下方 200 全量；
+      // 仅单区间越界（start >= size）返回 416
+      if (parsed !== 'ignore') {
+        response.status(416).setHeader('Content-Range', `bytes */${statResult.size}`).end()
+        return
+      }
     }
 
     response.setHeader('Content-Length', statResult.size)
@@ -249,7 +253,13 @@ export class FilesController {
   }
 }
 
-function parseRange(range: string, size: number): { start: number; end: number } | null {
+/**
+ * M3：RFC 9110 语义——end 越界截断为 size-1（206）；start 越界才 416；
+ * 多区间（本服务不支持）返回 'ignore' 由调用方忽略 Range 返回 200 全量。
+ */
+function parseRange(range: string, size: number): { start: number; end: number } | 'ignore' | null {
+  // 多区间直接忽略（不支持 multipart/byteranges）
+  if (range.includes(',')) return 'ignore'
   const match = range.trim().match(/^bytes=(\d*)-(\d*)$/)
   if (!match) return null
   const startStr = match[1] ?? ''
@@ -270,7 +280,9 @@ function parseRange(range: string, size: number): { start: number; end: number }
     if (start >= size) return null
     return { start, end }
   }
-  const end = Number.parseInt(endStr, 10)
-  if (!Number.isFinite(end) || end < start || end >= size) return null
-  return { start, end }
+  const endRaw = Number.parseInt(endStr, 10)
+  if (!Number.isFinite(endRaw) || endRaw < start) return null
+  // end 越界截断（播放器常发 bytes=0-999999），start 越界才 416
+  if (start >= size) return null
+  return { start, end: Math.min(endRaw, size - 1) }
 }

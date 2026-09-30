@@ -43,12 +43,12 @@ export const ReportErrorSchema = z.object({
   errorType: ErrorType.optional(),
   message: z.string().min(1).max(2000),
   stack: z.string().max(3000).optional(),
-  file: z.string().optional(),
-  line: z.number().optional(),
-  column: z.number().optional(),
-  url: z.string().optional(),
-  method: z.string().optional(),
-  statusCode: z.number().optional(),
+  file: z.string().max(500).optional(),
+  line: z.number().int().optional(),
+  column: z.number().int().optional(),
+  url: z.string().max(500).optional(),
+  method: z.string().max(10).optional(),
+  statusCode: z.number().int().optional(),
   context: z
     .record(z.string(), z.unknown())
     .optional()

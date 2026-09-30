@@ -44,7 +44,12 @@ export const useCurrentUser = () => {
       return response.data.data!
     },
     enabled: !!token,
-    retry: false,
+    // M11：瞬时网络抖动重试 2 次；401/403 不重试（拦截器已跳转，勿浪费请求）
+    retry: (count, error) => {
+      const status = (error as { response?: { status?: number } })?.response?.status
+      if (status === 401 || status === 403) return false
+      return count < 2
+    },
   })
 
   useEffect(() => {

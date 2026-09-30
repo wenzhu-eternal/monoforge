@@ -30,10 +30,10 @@ export const errorLogs = pgTable(
     ip: varchar('ip', { length: 45 }),
     userAgent: text('user_agent'),
     isResolved: boolean('is_resolved').default(false).notNull(),
-    resolvedAt: timestamp('resolved_at'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     resolvedBy: integer('resolved_by').references(() => users.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
     index('idx_error_logs_resolved_created').on(t.isResolved, t.createdAt),

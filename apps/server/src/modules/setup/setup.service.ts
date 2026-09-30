@@ -5,12 +5,14 @@ import * as argon2 from 'argon2'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
-import { roles, users } from '@/db/schema'
+import { rolePermissions, roles, users } from '@/db/schema'
 
 const DEFAULT_ROLES = [
   { name: 'admin', description: '系统管理员，拥有全部权限' },
   { name: 'editor', description: '编辑者，可管理业务数据' },
   { name: 'viewer', description: '访客，仅可查看' },
+  // M1：公开注册/默认建户/微信注册硬性要求 roles.name='user' 存在，setup 必须与 seed 对齐
+  { name: 'user', description: '普通用户，通过注册进入系统' },
 ]
 
 @Injectable()
@@ -69,6 +71,19 @@ export class SetupService {
 
         if (!adminRole) {
           throw new BadRequestException('默认角色创建失败')
+        }
+
+        // 与 seed 对齐：user 角色仅 mail:send（user:view 会泄露全员敏感字段）
+        const userRole =
+          createdRoles.find((r) => r.name === 'user') ??
+          (await tx.query.roles.findFirst({
+            where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
+          }))
+        if (userRole) {
+          await tx
+            .insert(rolePermissions)
+            .values([{ roleId: userRole.id, permission: 'mail:send' }])
+            .onConflictDoNothing()
         }
 
         await tx.insert(users).values({

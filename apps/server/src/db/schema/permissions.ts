@@ -9,12 +9,12 @@ export const permissions = pgTable(
     name: varchar('name', { length: 100 }).notNull(),
     description: text('description'),
     routes: jsonb('routes').$type<string[]>().default([]),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at')
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
-    deletedAt: timestamp('deleted_at'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [uniqueIndex('permissions_code_unique').on(t.code).where(sql`deleted_at IS NULL`)],
 )

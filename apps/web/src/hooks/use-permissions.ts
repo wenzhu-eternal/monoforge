@@ -124,6 +124,8 @@ export function useUpdateRolePermissions() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['role-permissions'] })
+      // M13：角色权限变化后当前用户菜单/守卫也可能变化，刷新 auth.me（30s stale 内否则继续放行旧权限）
+      queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
     },
   })
 }

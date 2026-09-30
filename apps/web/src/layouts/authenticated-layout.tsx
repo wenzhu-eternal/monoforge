@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons'
 import { Navigate, useLocation, useNavigate } from '@tanstack/react-router'
 import type { MenuProps } from 'antd'
-import { Avatar, Dropdown, Layout, Menu, Space, Typography } from 'antd'
+import { Avatar, Button, Dropdown, Layout, Menu, Result, Space, Spin, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { APP_NAME, APP_SHORT_NAME } from '@/config/brand'
@@ -49,17 +49,39 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
 
   // 自动刷新用户信息（含 permissions/roles 字段，供权限校验使用）
-  const { isLoading, isError } = useCurrentUser()
+  const { isLoading, isError, refetch } = useCurrentUser()
 
   // 等待用户信息加载完成后再判断权限
+  // M11：加载中/失败给明确 UI（原 return null 永久白屏，瞬时抖动即不可恢复）
   if (isLoading) {
-    return null
+    return (
+      <Layout style={{ minHeight: '100vh' }}>
+        <Content style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Spin size="large" tip="加载用户信息…" />
+        </Content>
+      </Layout>
+    )
   }
 
   // useCurrentUser 失败时不使用 localStorage 中可能过期的 permissions 旧值
   // 401/403 已由 axios 拦截器跳转 /login 或 /403，此处兜底网络异常等场景，避免用旧权限放行受保护内容
   if (isError) {
-    return null
+    return (
+      <Layout style={{ minHeight: '100vh' }}>
+        <Content style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Result
+            status="warning"
+            title="用户信息加载失败"
+            subTitle="可能是网络异常，点击重试"
+            extra={
+              <Button type="primary" onClick={() => refetch()}>
+                重新加载
+              </Button>
+            }
+          />
+        </Content>
+      </Layout>
+    )
   }
 
   const hasPermission = (permission: string) => {
@@ -118,7 +140,12 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
 
   const menuItems: MenuProps['items'] = [
     { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
-    { key: '/websocket', icon: <ThunderboltOutlined />, label: 'WebSocket 演示' },
+    // M12：路由守卫要求 notification:view，无权限不渲染（原无条件渲染点进去被甩 /403）
+    hasPermission(PermissionCodes.NOTIFICATION_VIEW) && {
+      key: '/websocket',
+      icon: <ThunderboltOutlined />,
+      label: 'WebSocket 演示',
+    },
     // 邮件发送需要 mail:send 权限
     hasPermission(PermissionCodes.MAIL_SEND) && {
       key: '/mail',

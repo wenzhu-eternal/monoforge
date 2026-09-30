@@ -54,8 +54,12 @@ export const useUpdateUser = () => {
       const response = await api.patch<ApiResponse<User>>(`/api/v1/users/${id}`, data)
       return response.data.data!
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      // M13：改了用户角色时刷新 auth.me，否则 30s 内菜单/守卫仍按旧权限放行
+      if (variables.data.roleId !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
+      }
     },
   })
 }

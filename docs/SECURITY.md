@@ -227,3 +227,5 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - 用户输入的字段（如 nickname、description）禁止 HTML 原样存储
 
+- **H6 风险声明（已评估，接受现状）**：accessToken 经 zustand persist 落 `localStorage`，XSS 可直接窃取。接受理由：有效期仅 15 分钟 + refresh 走 httpOnly cookie + `XssPipe`/CSP 纵深；内存方案虽能缩小窃取面，但每次刷新页强制 silent refresh，反而把 reload 可用性押在 refresh 上（cookie 过期即开页登出），且不解决刷新有效性问题（轮换/吊销/cookie 传输在服务端）。若未来威胁模型变化再迁移内存 + silent refresh。
+

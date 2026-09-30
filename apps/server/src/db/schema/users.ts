@@ -27,12 +27,12 @@ export const users = pgTable(
     status: boolean('status').default(true).notNull(),
     // 首登/重置后强制改密标记，改密成功后置 false
     mustChangePassword: boolean('must_change_password').default(false).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at')
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
-    deletedAt: timestamp('deleted_at'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
     uniqueIndex('users_username_unique').on(t.username).where(sql`deleted_at IS NULL`),

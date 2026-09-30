@@ -34,11 +34,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <Result
           status="error"
-          title="Something went wrong"
+          title="页面出错了"
           subTitle={this.state.error?.message}
           extra={
             <Button type="primary" onClick={this.handleReset}>
-              Try Again
+              重试
             </Button>
           }
         />

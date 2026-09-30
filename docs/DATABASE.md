@@ -10,6 +10,7 @@
 6. **外键引用列用 `integer` 不用 `serial`** - `serial` 会创建多余的自增序列且无外键约束，引用列（如 `audit_logs.user_id` / `error_logs.user_id`）必须用 `integer`。可空的外键引用列不加 `.notNull()`（如 `error_logs.user_id` 允许未登录用户上报错误）
 7. **唯一约束冲突兜底** - service 层 `create` 方法必须 `try/catch` 包裹 `db.insert`，捕获 23505 错误码转 `ConflictException`，防止 TOCTOU 竞态（先查询再插入之间被并发插入）
 8. **删除前外键校验** - 删除实体前必须检查未软删的外键引用（如 `users.roleId` → `roles`，`rolePermissions.roleId` → `roles`），存在引用则抛 `ConflictException`
+9. **时间列统一 timestamptz** - 所有 `timestamp` 列必须 `timestamp('col', { withTimezone: true })`，禁止无时区 timestamp（Node 按本地时区解析无时区时间戳，直连开发机显示偏差；`@Cron` 在 UTC 容器与北京时间差 8 小时）。存量库执行 `0001` 迁移前先 `pnpm db:backup`，ALTER 按会话时区解释旧值，staging 先验
 
 ## 软删除过滤铁律
 

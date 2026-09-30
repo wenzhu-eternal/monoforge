@@ -5,7 +5,7 @@ import type { Role } from '@shared/schemas/role'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
-import { roles, users } from '@/db/schema'
+import { rolePermissions, roles, users } from '@/db/schema'
 
 @Injectable()
 export class RolesService {
@@ -89,8 +89,16 @@ export class RolesService {
     const [updated] = await db
       .update(roles)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(roles.id, id))
+      // P2-5：与 users.update 同口径，并发软删行不再误更新
+      .where(and(eq(roles.id, id), notDeleted(roles.deletedAt)))
       .returning()
+      .catch((error: unknown) => {
+        // M9：并发改名撞唯一索引时转 409（预检 dup 后仍有竞态窗口）
+        if (isUniqueViolation(error)) {
+          throw new ConflictException('角色名已存在（并发冲突）')
+        }
+        throw error
+      })
 
     if (!updated) {
       throw new NotFoundException(`更新角色 ID ${id} 失败`)
@@ -119,6 +127,10 @@ export class RolesService {
     }
 
     await db.update(roles).set({ deletedAt: new Date() }).where(eq(roles.id, id))
+
+    // L11：软删角色同步清绑定——残留绑定会让权限删除校验计入幽灵引用（角色列表已删、权限却删不掉）；
+    // 恢复角色后由管理员重新授权，不自动复活旧绑定
+    await db.delete(rolePermissions).where(eq(rolePermissions.roleId, id))
 
     return { message: `角色 ID ${id} 已删除` }
   }

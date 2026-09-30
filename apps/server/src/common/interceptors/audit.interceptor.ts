@@ -8,7 +8,8 @@ import {
 import { Reflector } from '@nestjs/core'
 import { and, eq, isNull, type Table } from 'drizzle-orm'
 import type { Observable } from 'rxjs'
-import { tap } from 'rxjs'
+import { from, tap } from 'rxjs'
+import { switchMap } from 'rxjs/operators'
 import { db } from '@/db'
 import { errorLogs, files, notifications, roles, users } from '@/db/schema'
 import { AuditService } from '@/modules/audit/audit.service'
@@ -63,6 +64,41 @@ const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
   NotificationsController: new Set([]),
 }
 
+// 响应侧敏感字段：绝不能进 audit_logs.new_value
+//（H2：登录/微信登录响应曾把 accessToken 整体入库，持 audit:view 可冒充用户）
+const SENSITIVE_RESPONSE_KEYS = new Set([
+  'accessToken',
+  'refreshToken',
+  'password',
+  'wechatOpenId',
+  'verificationCode',
+])
+const MASKED = '***MASKED***'
+
+/**
+ * newValue 脱敏：复用 SENSITIVE_COLUMNS 表级规则 + 响应级 token 掩码。
+ * 登录审计照常记录行为（action/resource/用户/IP），仅凭据字段掩码。
+ */
+function sanitizeNewValue(
+  value: Record<string, unknown> | undefined,
+  rawResource: string,
+): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object') return value
+  const tableSensitive = SENSITIVE_COLUMNS[rawResource]
+  const scrub = (obj: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = SENSITIVE_RESPONSE_KEYS.has(k) || tableSensitive?.has(k) ? MASKED : v
+    }
+    return out
+  }
+  return Array.isArray(value)
+    ? (value.map((i) =>
+        typeof i === 'object' && i ? scrub(i as Record<string, unknown>) : i,
+      ) as unknown as Record<string, unknown>)
+    : scrub(value)
+}
+
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditInterceptor.name)
@@ -97,48 +133,50 @@ export class AuditInterceptor implements NestInterceptor {
     const shouldFetchOldValue =
       ['PATCH', 'DELETE'].includes(method) && resourceId && TABLE_MAP[rawResource]
 
-    const oldValuePromise = shouldFetchOldValue
-      ? this.fetchOldValue(rawResource, Number(resourceId))
-      : Promise.resolve(undefined)
+    // L8：旧值必须在写操作执行前读到——原先 fetch 与 handler 并发，高压下 SELECT 可能排在
+    // UPDATE/DELETE 之后完成，oldValue 读到新值。改串行（多一次 SELECT 延迟，换审计准确性）。
+    // 非取旧值路径（POST 创建等）同样记录，仅 oldValue 为空——绝不能直接 return 造成审计丢失。
+    const recordTap = (oldValue: Record<string, unknown> | undefined) => ({
+      next: (data: unknown) => {
+        this.auditService
+          .record({
+            userId: userId ?? 0,
+            action,
+            resource,
+            resourceId: resourceId ? Number(resourceId) : undefined,
+            oldValue,
+            newValue: sanitizeNewValue(
+              ((data as Record<string, unknown>)?.data as Record<string, unknown> | undefined) ??
+                (data as Record<string, unknown> | undefined),
+              rawResource,
+            ),
+            ip,
+            userAgent,
+          })
+          .catch((err) => this.logger.error('记录审计日志失败:', err))
+      },
+      error: () => {
+        this.auditService
+          .record({
+            userId: userId ?? 0,
+            action,
+            resource,
+            resourceId: resourceId ? Number(resourceId) : undefined,
+            oldValue,
+            newValue: undefined,
+            ip,
+            userAgent,
+          })
+          .catch((err) => this.logger.error('记录审计日志(失败)失败:', err))
+      },
+    })
 
-    return next.handle().pipe(
-      tap({
-        next: (data) => {
-          oldValuePromise
-            .then((oldValue) => {
-              return this.auditService.record({
-                userId: userId ?? 0,
-                action,
-                resource,
-                resourceId: resourceId ? Number(resourceId) : undefined,
-                oldValue,
-                newValue:
-                  ((data as Record<string, unknown>)?.data as
-                    | Record<string, unknown>
-                    | undefined) ?? (data as Record<string, unknown> | undefined),
-                ip,
-                userAgent,
-              })
-            })
-            .catch((err) => this.logger.error('记录审计日志失败:', err))
-        },
-        error: () => {
-          oldValuePromise
-            .then((oldValue) => {
-              return this.auditService.record({
-                userId: userId ?? 0,
-                action,
-                resource,
-                resourceId: resourceId ? Number(resourceId) : undefined,
-                oldValue,
-                newValue: undefined,
-                ip,
-                userAgent,
-              })
-            })
-            .catch((err) => this.logger.error('记录审计日志(失败)失败:', err))
-        },
-      }),
+    if (!shouldFetchOldValue) {
+      return next.handle().pipe(tap(recordTap(undefined)))
+    }
+
+    return from(this.fetchOldValue(rawResource, Number(resourceId))).pipe(
+      switchMap((oldValue) => next.handle().pipe(tap(recordTap(oldValue)))),
     )
   }
 

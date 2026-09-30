@@ -3,7 +3,7 @@ import type { ErrorLog, ErrorLogGroup, ErrorStats, ErrorWhitelist } from '@share
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
-import { maybeDeleted, notDeleted } from '@/db/helpers'
+import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { errorLogs } from '@/db/schema'
 import { errorWhitelist } from '@/db/schema/error-whitelist'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -54,24 +54,54 @@ export class ErrorLogsService {
   /**
    * 后端内部记录错误（供 ExceptionFilter 等调用）
    * 与公开 report() 分桶：后端异常不走 IP 日限额——若共用配额，攻击者可先打满
-   * 自身 IP 配额，使后续真实攻击触发的后端 5xx 日志被拒（审计消音）
+   * 自身 IP 配额，使后续真实攻击触发的后端 5xx 日志被拒（审计消音）。
+   * N1：4xx（扫描/过期 token/限流）按端点分钟级封顶 20 条，防限流器反成 DB 写入放大器
    */
   async record(params: {
     message: string
     stack?: string
+    statusCode?: number
+    url?: string
+    method?: string
     context?: Record<string, unknown>
     userId?: number
     ip?: string
     userAgent?: string
   }): Promise<void> {
-    const isWhitelisted = await this.checkWhitelist(params.message)
+    // url 一并传入白名单：url 类规则对后端路径生效，可按端点降噪
+    const isWhitelisted = await this.checkWhitelist(params.message, params.url)
     if (isWhitelisted) return
+
+    if (params.statusCode && params.statusCode < 500) {
+      const allowed = await this.enforceRecordMinuteCap(params.statusCode, params.url)
+      if (!allowed) return
+    }
 
     await this.insertLog({
       source: 'backend',
       errorType: 'http_error',
       ...params,
     })
+  }
+
+  /**
+   * record() 分钟级封顶：key=状态码+端点路径+分钟，超 20 条丢弃。
+   * Redis 故障降级放行（宁可多记不漏记）。
+   */
+  private async enforceRecordMinuteCap(statusCode: number, url?: string): Promise<boolean> {
+    try {
+      // P2-6：数字段折叠为 :id，避免 /users/1…/99999 打爆 key 空间
+      const path = ((url ?? 'unknown').split('?')[0] ?? 'unknown').replace(/\d+/g, ':id')
+      const minute = new Date().toISOString().slice(0, 16)
+      const key = `err:record:${statusCode}:${path}:${minute}`
+      const n = await this.redisService.incr(key)
+      if (n === 1) {
+        await this.redisService.expire(key, 120)
+      }
+      return n <= 20
+    } catch {
+      return true
+    }
   }
 
   private async insertLog(
@@ -411,18 +441,26 @@ export class ErrorLogsService {
     description?: string
     isActive?: boolean
   }): Promise<ErrorWhitelist> {
-    const [created] = await db
-      .insert(errorWhitelist)
-      .values({
-        pattern: data.pattern,
-        matchType: (data.matchType as 'message' | 'url') ?? 'message',
-        description: data.description,
-        isActive: data.isActive ?? true,
-      })
-      .returning()
+    // M9：并发撞 (match_type, pattern) 唯一索引时转 409（原直接 500）
+    try {
+      const [created] = await db
+        .insert(errorWhitelist)
+        .values({
+          pattern: data.pattern,
+          matchType: (data.matchType as 'message' | 'url') ?? 'message',
+          description: data.description,
+          isActive: data.isActive ?? true,
+        })
+        .returning()
 
-    await this.invalidateWhitelistCache()
-    return created as ErrorWhitelist
+      await this.invalidateWhitelistCache()
+      return created as ErrorWhitelist
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('白名单规则已存在')
+      }
+      throw error
+    }
   }
 
   async updateWhitelist(
@@ -452,6 +490,13 @@ export class ErrorLogsService {
       .set(updateData)
       .where(eq(errorWhitelist.id, id))
       .returning()
+      .catch((error: unknown) => {
+        // M9：并发改到相同规则时转 409
+        if (isUniqueViolation(error)) {
+          throw new ConflictException('白名单规则已存在')
+        }
+        throw error
+      })
 
     if (!updated) {
       throw new NotFoundException(`更新白名单 ID ${id} 失败`)
@@ -492,6 +537,13 @@ export class ErrorLogsService {
       .set({ deletedAt: null })
       .where(eq(errorWhitelist.id, id))
       .returning()
+      .catch((error: unknown) => {
+        // M9：恢复时已有同规则生效记录，转 409
+        if (isUniqueViolation(error)) {
+          throw new ConflictException('白名单规则已存在，无法恢复')
+        }
+        throw error
+      })
 
     if (!restored) {
       throw new NotFoundException('恢复白名单失败')

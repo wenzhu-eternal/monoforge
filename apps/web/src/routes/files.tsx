@@ -55,6 +55,16 @@ function FilesContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  // 预览 blob 卸载兜底：直接切路由时回收，否则驻留到页签关闭
+  useEffect(() => {
+    return () => {
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
+    }
+  }, [])
   const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error } = useFiles({ page, pageSize })
@@ -86,7 +96,11 @@ function FilesContent() {
   const handlePreview = async (record: FileItem) => {
     try {
       const url = await previewFile(record.id)
-      setPreviewUrl(url)
+      // L12：连续预览先回收旧 objectURL，否则旧 blob 常驻内存
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return url
+      })
     } catch (err) {
       messageApi.error(extractErrorMessage(err, '预览失败'))
     }

@@ -12,6 +12,7 @@ vi.mock('@/db', () => ({
     insert: vi.fn(),
     update: vi.fn(),
     select: vi.fn(),
+    delete: vi.fn(),
   },
 }))
 
@@ -193,6 +194,10 @@ describe('RolesService', () => {
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),
         }),
+      } as never)
+      // 软删同步清 rolePermissions 绑定
+      vi.mocked(mockDb.delete).mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
       } as never)
 
       const result = await service.remove(2)

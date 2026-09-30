@@ -4,7 +4,7 @@ import type { DashboardStats } from '@shared/schemas/dashboard'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { User, UserListItem } from '@shared/schemas/user'
 import * as argon2 from 'argon2'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
@@ -42,7 +42,8 @@ export class UsersService {
           roleName: roles.name,
         })
         .from(users)
-        .leftJoin(roles, eq(users.roleId, roles.id))
+        // L6：软删角色不参与关联（原 leftJoin 会残留已删角色名，与角色列表自相矛盾）
+        .leftJoin(roles, and(eq(users.roleId, roles.id), isNull(roles.deletedAt)))
         .where(and(deletedFilter))
         .limit(safePageSize)
         .offset(offset)
@@ -220,13 +221,16 @@ export class UsersService {
     const updateData: Record<string, unknown> = { ...rest, updatedAt: new Date() }
     if (rawPassword) {
       updateData.password = await argon2.hash(rawPassword)
+      // L3：经管理端重置密码后强制用户下次改密（与 create 默认 mustChangePassword=true 对齐）
+      updateData.mustChangePassword = true
     }
 
     try {
       const [updatedUser] = await db
         .update(users)
         .set(updateData)
-        .where(eq(users.id, id))
+        // L10：带 notDeleted 守卫，并发软删行上不再误更新（落空走 NotFound）
+        .where(and(eq(users.id, id), notDeleted(users.deletedAt)))
         .returning()
 
       if (!updatedUser) {
@@ -305,7 +309,8 @@ export class UsersService {
     await db
       .update(users)
       .set({ password: hashedPassword, mustChangePassword: false, updatedAt: new Date() })
-      .where(eq(users.id, userId))
+      // L10：同 update，并发软删时落空（0 行），后续吊销按无用户处理由调用方 404 前置保证
+      .where(and(eq(users.id, userId), notDeleted(users.deletedAt)))
 
     // 改密后吊销所有 token，强制重新登录
     await this.redisService.deleteByPattern(`refresh:${userId}:*`)
@@ -355,7 +360,8 @@ export class UsersService {
       throw new ConflictException(ErrorMessages[ErrorCodes.INITIAL_ADMIN_CANNOT_DELETE])
     }
 
-    // 外键引用校验: files.uploadedBy 无级联删除策略，需检查是否有关联文件
+    // L7：files.uploadedBy 为 ON DELETE SET NULL（见 schema/files.ts），DB 层不会阻塞删用户；
+    // 此处前置检查是为保留文件归属信息，仍有关联文件时拒绝删除，由管理员先迁移归属
     const referencedFiles = await db
       .select({ id: files.id })
       .from(files)

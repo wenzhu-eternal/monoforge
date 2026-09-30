@@ -2,6 +2,29 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import Redis from 'ioredis'
 
+/** per-user key 前缀：`refresh:<userId>:<jti>` / `access:active:<userId>:<jti>` */
+interface UserPattern {
+  prefix: string
+  userId: string
+}
+
+/**
+ * 解析 per-user 吊销模式 `prefix:<userId>:*`，非该形状返回 null（保持原 glob 语义）
+ */
+function parseUserPattern(pattern: string): UserPattern | null {
+  const m = /^(refresh|access:active):(\d+):\*$/.exec(pattern)
+  return m ? { prefix: m[1] as string, userId: m[2] as string } : null
+}
+
+/**
+ * 精确段匹配：`refresh:1` 只接受 `refresh:1:<单段>`，拒绝 `refresh:10:...`
+ */
+function isExactUserKey(key: string, { prefix, userId }: UserPattern): boolean {
+  const head = `${prefix}:${userId}:`
+  if (!key.startsWith(head)) return false
+  return !key.slice(head.length).includes(':')
+}
+
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name)
@@ -96,16 +119,22 @@ export class RedisService implements OnModuleDestroy {
 
   /**
    * 删除匹配模式的所有 key（用 SCAN 避免阻塞，禁用 KEYS）
+   *
+   * per-user 精确段过滤：Redis glob 的 `*` 跨 `:` 匹配，`refresh:1:*` 会同时命中
+   * `refresh:10:*`。形如 `prefix:<userId>:*` 的模式在删除前必须过滤到精确段
+   * （`prefix:<userId>:[^:]+`），否则 user 1 登出会误删 user 10/100 的 token。
    */
   async deleteByPattern(pattern: string): Promise<number> {
+    const userPattern = parseUserPattern(pattern)
     let cursor = '0'
     let deleted = 0
     do {
       const [next, keys] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100)
       cursor = next
-      if (keys.length > 0) {
-        await this.client.del(...keys)
-        deleted += keys.length
+      const targets = userPattern ? keys.filter((k) => isExactUserKey(k, userPattern)) : keys
+      if (targets.length > 0) {
+        await this.client.del(...targets)
+        deleted += targets.length
       }
     } while (cursor !== '0')
     return deleted
@@ -113,15 +142,17 @@ export class RedisService implements OnModuleDestroy {
 
   /**
    * 扫描匹配模式的所有 key（用 SCAN 避免阻塞，仅读取不删除）
-   * 供 access token 批量吊销等场景使用
+   * 供 access token 批量吊销等场景使用，同样做 per-user 精确段过滤
+   * （否则截出的 jti 错位，黑名单写到无效 key 上）
    */
   async scanKeys(pattern: string): Promise<string[]> {
+    const userPattern = parseUserPattern(pattern)
     let cursor = '0'
     const result: string[] = []
     do {
       const [next, keys] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100)
       cursor = next
-      result.push(...keys)
+      result.push(...(userPattern ? keys.filter((k) => isExactUserKey(k, userPattern)) : keys))
     } while (cursor !== '0')
     return result
   }

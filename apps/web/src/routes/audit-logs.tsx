@@ -97,7 +97,11 @@ function AuditLogsContent() {
     keyword?: string
   }) => {
     setFilters({
-      userId: values.userId ? Number(values.userId) : undefined,
+      // L14：用户ID仅纯数字才进请求（原 NaN 直接进请求，后端 400）；非法输入静默转全量，配合输入框 trim
+      userId:
+        values.userId && /^\d+$/.test(values.userId.trim())
+          ? Number(values.userId.trim())
+          : undefined,
       action: values.action || undefined,
       resource: values.resource || undefined,
       keyword: values.keyword || undefined,

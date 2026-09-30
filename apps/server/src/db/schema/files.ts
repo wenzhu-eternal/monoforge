@@ -12,8 +12,8 @@ export const files = pgTable(
     path: text('path').notNull(), // 磁盘绝对路径
     uploadedBy: integer('uploaded_by').references(() => users.id, { onDelete: 'set null' }), // 上传者
     trashPath: varchar('trash_path', { length: 255 }), // 软删时隔离文件路径
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
     index('idx_files_uploaded_by').on(t.uploadedBy),

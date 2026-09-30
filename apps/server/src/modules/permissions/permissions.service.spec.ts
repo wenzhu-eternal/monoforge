@@ -167,6 +167,14 @@ describe('PermissionsService', () => {
   describe('remove', () => {
     it('should soft delete permission', async () => {
       vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue({ id: 1 } as never)
+      // 绑定校验 join 未删角色：无引用时放行
+      vi.mocked(mockDb.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ count: 0 }]),
+          }),
+        }),
+      } as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),

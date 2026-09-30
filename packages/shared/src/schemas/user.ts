@@ -10,6 +10,7 @@ export const PhoneSchema = z
 export const UserEmailSchema = z
   .string()
   .email()
+  .max(100, '邮箱最多 100 个字符')
   .refine((email) => !email.endsWith('@wechat.placeholder'), '该邮箱域为系统保留')
 
 // 用户名统一正则：与 SetupSchema 保持一致，防注入空格/控制符/HTML

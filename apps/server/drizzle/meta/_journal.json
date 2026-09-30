@@ -8,6 +8,13 @@
       "when": 1788794306477,
       "tag": "0000_dizzy_blue_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790755840353,
+      "tag": "0001_secret_frank_castle",
+      "breakpoints": true
     }
   ]
 }

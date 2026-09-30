@@ -149,6 +149,41 @@ describe('ErrorLogsService', () => {
       expect(valuesCall.source).toBe('backend')
       expect(valuesCall.errorType).toBe('http_error')
     })
+
+    it('4xx 超分钟封顶（21 次）时丢弃不入库（N1）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      redisServiceMock.incr.mockResolvedValue(21)
+      vi.mocked(mockDb.insert).mockClear()
+
+      await service.record({
+        message: 'Unauthorized',
+        statusCode: 401,
+        url: '/api/v1/users',
+      })
+
+      expect(mockDb.insert).not.toHaveBeenCalled()
+    })
+
+    it('4xx 未超封顶时正常入库并透传 statusCode/url', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      redisServiceMock.incr.mockResolvedValue(3)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 6 }]),
+        }),
+      } as never)
+
+      await service.record({
+        message: 'Unauthorized',
+        statusCode: 401,
+        url: '/api/v1/users',
+      })
+
+      const valuesCall = vi.mocked(mockDb.insert).mock.results[0].value.values.mock
+        .calls[0][0] as Record<string, unknown>
+      expect(valuesCall.statusCode).toBe(401)
+      expect(valuesCall.url).toBe('/api/v1/users')
+    })
   })
 
   describe('resolve', () => {

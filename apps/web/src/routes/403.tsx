@@ -13,10 +13,10 @@ function ForbiddenPage() {
       <Result
         status="403"
         title="403"
-        subTitle="Sorry, you are not authorized to access this page."
+        subTitle="抱歉，你没有权限访问该页面。"
         extra={
           <Button type="primary" onClick={() => navigate({ to: '/dashboard' })}>
-            Back Home
+            返回首页
           </Button>
         }
       />

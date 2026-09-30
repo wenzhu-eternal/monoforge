@@ -113,6 +113,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message,
       stack,
       statusCode: status,
+      url: request.url,
+      method: request.method,
       context: {
         method: request.method,
         url: request.url,

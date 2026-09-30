@@ -18,12 +18,12 @@ export const errorWhitelist = pgTable(
     matchType: varchar('match_type', { length: 20 }).default('message').notNull(), // message | url
     description: text('description'),
     isActive: boolean('is_active').default(true).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at')
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
-    deletedAt: timestamp('deleted_at'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
     index('idx_error_whitelist_is_active').on(t.isActive).where(sql`is_active = true`),

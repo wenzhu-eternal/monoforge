@@ -113,8 +113,10 @@ export class ScheduleService {
   private spawnPgDump(databaseUrl: string, filepath: string): Promise<void> {
     const url = new URL(databaseUrl)
     const dbName = url.pathname.replace(/^\//, '')
-    if (!/^[A-Za-z0-9_]+$/.test(dbName)) {
-      throw new Error('DATABASE_URL 库名非法，仅允许字母/数字/下划线')
+    // N3：库名经 PGDATABASE 环境变量传递（非 shell 拼接）本无注入面，仅拒绝空值与路径/空白等非法字符；
+    // 合法 PG 库名可含连字符（如 my-db），原 ^\w+$ 过度校验直接导致备份抛错
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_$-]*$/.test(dbName)) {
+      throw new Error('DATABASE_URL 库名非法')
     }
     // 仅透传最小环境 + PG*，避免全量 process.env（含 JWT/MAIL 密钥）泄露给子进程
     const env: NodeJS.ProcessEnv = {

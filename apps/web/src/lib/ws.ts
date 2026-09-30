@@ -20,6 +20,12 @@ class WsClient {
     if (this.socket?.connected) {
       return this.socket
     }
+    // M14：握手窗口/残留实例先关闭再建新连接（原直接覆盖引用，旧 socket 泄漏成服务端幽灵会话；
+    // token 轮换恰逢握手时新旧双连接、在线人数重复）。只关 socket 不清 listeners，
+    // 建新连接后重绑（disconnect 的 clear 仅留给登出/卸载路径，否则订阅永久丢失）。
+    if (this.socket) {
+      this.closeSocket()
+    }
 
     // 未配置 API 地址时回退到当前页面 origin（同源部署场景）
     const baseURL = env.VITE_API_BASE_URL || window.location.origin
@@ -58,16 +64,30 @@ class WsClient {
       this.stopHeartbeat()
     })
 
+    // 重绑历史订阅到新 socket（connect 内 closeSocket 不清 listeners，全靠这里恢复）
+    for (const [event, handlers] of this.listeners) {
+      for (const handler of handlers) {
+        this.socket.on(event, handler as (...args: unknown[]) => void)
+      }
+    }
+
     return this.socket
   }
 
-  disconnect(): void {
+  /**
+   * 仅关闭底层 socket（停心跳、解绑、置空），保留 listeners 注册表供重连后重绑。
+   */
+  private closeSocket(): void {
     this.stopHeartbeat()
     if (this.socket) {
       this.socket.removeAllListeners()
       this.socket.disconnect()
       this.socket = null
     }
+  }
+
+  disconnect(): void {
+    this.closeSocket()
     this.listeners.clear()
   }
 

@@ -114,6 +114,11 @@ export function validateFilename(filename: string): void {
     throw new BadRequestException('文件名包含非法字符')
   }
 
+  // DB original_name varchar(255)：超长原名先 400 拦掉，避免 PG 22001 500
+  if (decoded.length > 255) {
+    throw new BadRequestException('文件名过长（最多 255 个字符）')
+  }
+
   const ext = decoded.split('.').pop()?.toLowerCase() ?? ''
   if (DANGEROUS_EXTENSIONS.includes(ext)) {
     throw new BadRequestException(`不允许上传 ${ext} 类型文件`)

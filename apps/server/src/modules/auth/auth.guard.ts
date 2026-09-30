@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { Reflector } from '@nestjs/core'
 import { JwtService } from '@nestjs/jwt'
+import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { Request } from 'express'
 import { IS_PUBLIC_KEY } from '@/common/decorators/public.decorator'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -69,7 +70,7 @@ export class AuthGuard implements CanActivate {
           { method: 'POST', path: '/api/v1/auth/logout' }, // 登出
         ]
         if (!allowed.some((p) => method === p.method && path === p.path)) {
-          throw new UnauthorizedException('请先修改默认密码')
+          throw new UnauthorizedException(ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD])
         }
       }
 

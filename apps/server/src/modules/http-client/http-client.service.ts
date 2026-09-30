@@ -60,16 +60,23 @@ export class HttpClientService {
     const maxRetries = options.maxRetries ?? this.defaultMaxRetries
     const retryBaseDelay = options.retryBaseDelay ?? this.defaultRetryBaseDelay
 
-    // 请求拦截: 注入重试元数据（仅首次请求，重试时 __retryCount 已存在则保留）
+    // 请求拦截: 注入重试元数据（M2：调用方 per-request 值优先，仅缺省填实例默认；
+    // 原先无条件覆写导致 get(url, {maxRetries: 0}) 禁重试无效）
     instance.interceptors.request.use((config) => {
       const cfg = config as RetryableConfig
       if (cfg.__retryCount === undefined) {
         cfg.__retryCount = 0
       }
-      cfg.__maxRetries = maxRetries
-      cfg.__retryBaseDelay = retryBaseDelay
-      const method = (cfg.method ?? 'get').toLowerCase()
-      cfg.__retryOn5xx = method === 'get' || method === 'head'
+      if (cfg.__maxRetries === undefined) {
+        cfg.__maxRetries = maxRetries
+      }
+      if (cfg.__retryBaseDelay === undefined) {
+        cfg.__retryBaseDelay = retryBaseDelay
+      }
+      if (cfg.__retryOn5xx === undefined) {
+        const method = (cfg.method ?? 'get').toLowerCase()
+        cfg.__retryOn5xx = method === 'get' || method === 'head'
+      }
       return cfg
     })
 

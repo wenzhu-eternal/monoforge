@@ -1,3 +1,4 @@
+import { ErrorCodes, ErrorMessages } from '@shared'
 import axios from 'axios'
 import { useAuthStore } from '@/store/auth-store'
 import { clearUserScopedState } from './auth-cleanup'
@@ -87,10 +88,11 @@ api.interceptors.response.use(
     }
 
     // 强制改密场景：后端 AuthGuard 对白名单外接口返回此 401，token 本身有效，
-    // 不能走 refresh/logout 流程（refresh 同样被拒会导致弹回 /login），直接引导到改密页
+    // 不能走 refresh/logout 流程（refresh 同样被拒会导致弹回 /login），直接引导到改密页。
+    // L16：用共享常量判定（原手写中文全等匹配，文案一改即失效）
     if (
       error.response?.status === 401 &&
-      error.response?.data?.message === '请先修改默认密码' &&
+      error.response?.data?.message === ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD] &&
       !window.location.pathname.startsWith('/change-password')
     ) {
       window.location.href = '/change-password'
@@ -120,6 +122,8 @@ api.interceptors.response.use(
             },
           })
         }).then((token) => {
+          // 排队请求重试前同样标记，避免再次 401 时重入刷新循环（H5）
+          originalRequest._retry = true
           originalRequest.headers.Authorization = `Bearer ${token}`
           return api(originalRequest)
         })

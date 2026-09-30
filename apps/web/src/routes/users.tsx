@@ -18,7 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
-import { useRoles } from '@/hooks/use-roles'
+import { useAllRoles } from '@/hooks/use-roles'
 import {
   useCreateUser,
   useDeleteUser,
@@ -65,11 +65,7 @@ function UsersContent() {
     pageSize,
     order: 'desc',
   })
-  const { data: rolesData } = useRoles({
-    page: 1,
-    pageSize: 100,
-    order: 'desc',
-  })
+  const { data: allRoles } = useAllRoles()
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
@@ -370,7 +366,7 @@ function UsersContent() {
               placeholder="请选择角色"
               allowClear={!canManageRole}
               disabled={!canManageRole}
-              options={rolesData?.list.map((role) => ({
+              options={allRoles?.map((role) => ({
                 value: role.id,
                 label: role.name,
               }))}

@@ -1,19 +1,24 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { Permission } from '@shared/schemas/permission'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
-import { permissions, rolePermissions } from '@/db/schema'
+import { permissions, rolePermissions, roles } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
 export class PermissionsService {
+  private readonly logger = new Logger(PermissionsService.name)
+
   constructor(private readonly redisService: RedisService) {}
 
   // 权限码变更（改名/软删/恢复）会影响所有引用该码的角色缓存，统一失效
+  // M5：失效失败只告警（下次读 DB 自愈），绝不能 unhandledRejection 拖垮进程
   private invalidateRolePermissionCache(): void {
-    void this.redisService.deleteByPattern('perm:role:*')
+    void this.redisService
+      .deleteByPattern('perm:role:*')
+      .catch((err) => this.logger.warn(`角色权限缓存失效失败: ${err}`))
   }
   async findAll(
     page = 1,
@@ -118,26 +123,32 @@ export class PermissionsService {
     }
 
     // 改 code 时在事务中同步 role_permissions 绑定（该表以 code 字符串关联角色）:
-    // 不同步则旧绑定成为孤儿记录，innerJoin 匹配不到，引用角色会静默失去该权限
+    // 不同步则旧绑定成为孤儿记录，innerJoin 匹配不到，引用角色会静默失去该权限。
+    // M4：必须先更新主表再改绑定——原先顺序下主表更新落空（并发软删）时绑定已改且已提交，无回滚。
     let updated: Permission | undefined
     if (data.code && data.code !== existing.code) {
       updated = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(permissions)
+          .set({ ...data, updatedAt: new Date() })
+          .where(and(eq(permissions.id, id), notDeleted(permissions.deletedAt)))
+          .returning()
+        // 主表落空（并发软删/删除）直接抛，事务回滚，rolePermissions 保持旧码不断链
+        if (!row) {
+          throw new NotFoundException(`更新权限 ID ${id} 失败`)
+        }
         await tx
           .update(rolePermissions)
           .set({ permission: data.code as string })
           .where(eq(rolePermissions.permission, existing.code))
-        const [row] = await tx
-          .update(permissions)
-          .set({ ...data, updatedAt: new Date() })
-          .where(eq(permissions.id, id))
-          .returning()
         return row
       })
     } else {
       const [row] = await db
         .update(permissions)
         .set({ ...data, updatedAt: new Date() })
-        .where(eq(permissions.id, id))
+        // P2-5：与改码分支同口径，并发软删行不再误更新
+        .where(and(eq(permissions.id, id), notDeleted(permissions.deletedAt)))
         .returning()
       updated = row
     }
@@ -157,11 +168,12 @@ export class PermissionsService {
       throw new NotFoundException(`权限 ID ${id} 不存在`)
     }
 
-    // 绑定校验: 检查是否被角色引用
+    // 绑定校验: 仅统计未软删角色的引用（L11：已删角色的残留绑定是幽灵引用，不应阻塞删除）
     const bindings = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(rolePermissions)
-      .where(eq(rolePermissions.permission, existing.code))
+      .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
+      .where(and(eq(rolePermissions.permission, existing.code), notDeleted(roles.deletedAt)))
     const count = bindings[0]?.count ?? 0
     if (count > 0) {
       throw new ConflictException(`该权限仍被 ${count} 个角色引用，无法删除`)
