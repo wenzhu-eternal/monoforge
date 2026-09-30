@@ -13,7 +13,7 @@ export async function reportFrontendError(payload: ReportError): Promise<void> {
     let context = payload.context
     if (context) {
       const keys = Object.keys(context).slice(0, 20)
-      const trimmed: Record<string, unknown> = {}
+      let trimmed: Record<string, unknown> = {}
       for (const k of keys) trimmed[k] = context[k]
       if (JSON.stringify(trimmed).length > 10240) {
         trimmed.__truncated = true
@@ -21,6 +21,11 @@ export async function reportFrontendError(payload: ReportError): Promise<void> {
           trimmed[k] =
             typeof trimmed[k] === 'string' ? (trimmed[k] as string).slice(0, 500) : trimmed[k]
           if (JSON.stringify(trimmed).length <= 10240) break
+        }
+        // 兜底：非字符串大对象值（如嵌套请求体）字符串截断救不回来时，
+        // 整体序列化截断保证错误仍可入库检索，避免静默丢失（M7 残余）
+        if (JSON.stringify(trimmed).length > 10240) {
+          trimmed = { __truncated: true, raw: JSON.stringify(trimmed).slice(0, 9000) }
         }
       }
       context = trimmed

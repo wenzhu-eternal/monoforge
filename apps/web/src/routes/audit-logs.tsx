@@ -125,9 +125,13 @@ function AuditLogsContent() {
     {
       title: '用户',
       width: 150,
-      render: (_, record) => (
-        <span>{record.username ? `${record.username}(${record.userId})` : record.userId}</span>
-      ),
+      render: (_, record) =>
+        // userId 0 为匿名哨兵（登录失败等无身份请求），展示为 - 而非 0
+        record.username ? (
+          <span>{`${record.username}(${record.userId})`}</span>
+        ) : (
+          <span>{record.userId ? record.userId : '-'}</span>
+        ),
     },
     {
       title: '动作',
@@ -138,12 +142,17 @@ function AuditLogsContent() {
           创建: 'green',
           更新: 'blue',
           删除: 'red',
+          登录: 'cyan',
+          注册: 'green',
+          登出: 'default',
+          刷新令牌: 'blue',
+          发送验证码: 'purple',
         }
         return <Tag color={colorMap[v] ?? 'default'}>{v}</Tag>
       },
     },
     { title: '资源', dataIndex: 'resource', width: 100 },
-    { title: '资源ID', dataIndex: 'resourceId', width: 80, render: (v: number | null) => v ?? '-' },
+    { title: '资源ID', dataIndex: 'resourceId', width: 80, render: (v: number | null) => v || '-' },
     {
       title: '旧值',
       dataIndex: 'oldValue',
@@ -196,6 +205,11 @@ function AuditLogsContent() {
     <>
       {contextHolder}
       <Title level={3}>审计日志</Title>
+      {/* 审计值中令牌/密码/邮箱/手机号等敏感字段已脱敏为 ***（N4），用户身份以"用户"列为准 */}
+      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+        旧值/新值中的敏感字段（令牌、密码、邮箱、手机号等）已脱敏为
+        ***，如需定位具体用户请参考"用户"列。
+      </Text>
 
       <Form form={searchForm} layout="inline" onFinish={handleSearch} style={{ marginBottom: 16 }}>
         <Form.Item name="userId" label="用户ID">
