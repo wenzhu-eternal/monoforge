@@ -1,8 +1,16 @@
 import { ErrorCodes, ErrorMessages } from '@shared'
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/store/auth-store'
 import { clearUserScopedState } from './auth-cleanup'
 import { env } from './env'
+
+/**
+ * 扩展 axios 请求配置：允许调用方声明 403 时不整页跳转，由页面自行展示无权限
+ * （如仪表盘统计）。新页面有同类需求时在各自调用处声明即可，拦截器不再逐 URL 豁免。
+ */
+export interface ApiRequestConfig extends AxiosRequestConfig {
+  skipForbiddenRedirect?: boolean
+}
 
 export const api = axios.create({
   baseURL: env.VITE_API_BASE_URL,
@@ -77,11 +85,14 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config as typeof error.config & { _retry?: boolean }
 
-    // 403 统一跳转 /403，与前端 AuthenticatedLayout 行为一致
+    // 403 统一跳转 /403，与前端 AuthenticatedLayout 行为一致。
+    // 例外：调用方声明 skipForbiddenRedirect 的请求（如仪表盘统计）由页面右侧内容区
+    // 自行展示无权限，菜单照常显示，不整页跳转。
     if (
       error.response?.status === 403 &&
       !window.location.pathname.startsWith('/403') &&
-      !window.location.pathname.startsWith('/login')
+      !window.location.pathname.startsWith('/login') &&
+      !(originalRequest as ApiRequestConfig | undefined)?.skipForbiddenRedirect
     ) {
       window.location.href = '/403'
       return Promise.reject(error)
@@ -109,7 +120,8 @@ api.interceptors.response.use(
         // 排队等待 refresh 完成，加 15s 超时避免永久挂起
         return new Promise((resolve, reject) => {
           const timer = setTimeout(() => {
-            reject(new Error('Refresh token timeout'))
+            // N5：中文文案（原英文裸文案经 extractErrorMessage 直接透传给用户）
+            reject(new Error('登录状态刷新超时，请重新登录'))
           }, 15000)
           failedQueue.push({
             resolve: (v) => {
