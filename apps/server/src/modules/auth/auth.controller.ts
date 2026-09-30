@@ -16,6 +16,7 @@ import { AuthResponseSchema, RefreshTokenResponseSchema } from '@shared/schemas/
 import { UserSchema } from '@shared/schemas/user'
 import type { Request, Response } from 'express'
 import { ZodSerializerDto } from 'nestjs-zod'
+import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Public } from '@/common/decorators/public.decorator'
 import { getRefreshTokenCookieOptions } from '@/common/utils/cookie-options'
@@ -34,6 +35,7 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @AuditAction('登录')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登录' })
@@ -55,6 +57,7 @@ export class AuthController {
 
   @Post('send-register-code')
   @Public()
+  @AuditAction('发送验证码')
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '发送注册验证码' })
@@ -64,6 +67,7 @@ export class AuthController {
 
   @Post('register')
   @Public()
+  @AuditAction('注册')
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户注册' })
@@ -90,6 +94,7 @@ export class AuthController {
 
   @Post('refresh')
   @Public()
+  @AuditAction('刷新令牌')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '刷新访问令牌' })
@@ -116,6 +121,7 @@ export class AuthController {
 
   @Post('logout')
   @ApiBearerAuth()
+  @AuditAction('登出')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登出' })
   async logout(@CurrentUser() user: TokenPayload, @Res({ passthrough: true }) response: Response) {

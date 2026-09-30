@@ -66,37 +66,53 @@ const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
 
 // 响应侧敏感字段：绝不能进 audit_logs.new_value
 //（H2：登录/微信登录响应曾把 accessToken 整体入库，持 audit:view 可冒充用户）
+// N4：email/phone 是 PII，任何响应层级出现都掩码（登录响应的 user 嵌套对象原扁平扫描漏掩）
 const SENSITIVE_RESPONSE_KEYS = new Set([
   'accessToken',
   'refreshToken',
   'password',
   'wechatOpenId',
   'verificationCode',
+  'email',
+  'phone',
 ])
 const MASKED = '***MASKED***'
+// 审计响应为可序列化 DTO，正常嵌套不超过 2-3 层；超限原样返回防御循环引用
+const MASK_DEPTH_LIMIT = 5
 
 /**
- * newValue 脱敏：复用 SENSITIVE_COLUMNS 表级规则 + 响应级 token 掩码。
- * 登录审计照常记录行为（action/resource/用户/IP），仅凭据字段掩码。
+ * newValue 脱敏：复用 SENSITIVE_COLUMNS 表级规则 + 响应级 token/PII 掩码。
+ * 登录审计照常记录行为（action/resource/用户/IP），仅凭据与隐私字段掩码。
  */
-function sanitizeNewValue(
+export function sanitizeNewValue(
   value: Record<string, unknown> | undefined,
   rawResource: string,
 ): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object') return value
   const tableSensitive = SENSITIVE_COLUMNS[rawResource]
-  const scrub = (obj: Record<string, unknown>): Record<string, unknown> => {
+  const scrub = (obj: Record<string, unknown>, depth: number): Record<string, unknown> => {
+    if (depth > MASK_DEPTH_LIMIT) return obj
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(obj)) {
-      out[k] = SENSITIVE_RESPONSE_KEYS.has(k) || tableSensitive?.has(k) ? MASKED : v
+      if (SENSITIVE_RESPONSE_KEYS.has(k) || tableSensitive?.has(k)) {
+        out[k] = MASKED
+      } else if (Array.isArray(v)) {
+        out[k] = v.map((i) =>
+          i && typeof i === 'object' ? scrub(i as Record<string, unknown>, depth + 1) : i,
+        )
+      } else if (v && typeof v === 'object') {
+        out[k] = scrub(v as Record<string, unknown>, depth + 1)
+      } else {
+        out[k] = v
+      }
     }
     return out
   }
   return Array.isArray(value)
     ? (value.map((i) =>
-        typeof i === 'object' && i ? scrub(i as Record<string, unknown>) : i,
+        typeof i === 'object' && i ? scrub(i as Record<string, unknown>, 1) : i,
       ) as unknown as Record<string, unknown>)
-    : scrub(value)
+    : scrub(value, 1)
 }
 
 @Injectable()
@@ -136,18 +152,27 @@ export class AuditInterceptor implements NestInterceptor {
     // L8：旧值必须在写操作执行前读到——原先 fetch 与 handler 并发，高压下 SELECT 可能排在
     // UPDATE/DELETE 之后完成，oldValue 读到新值。改串行（多一次 SELECT 延迟，换审计准确性）。
     // 非取旧值路径（POST 创建等）同样记录，仅 oldValue 为空——绝不能直接 return 造成审计丢失。
+    // 用户归因：请求已认证用 sub；登录/注册成功时请求尚无身份，从响应 user.id 回填；
+    // 剩下（登录失败等匿名）记 0——user_id 列 NOT NULL，0 为匿名哨兵。
     const recordTap = (oldValue: Record<string, unknown> | undefined) => ({
       next: (data: unknown) => {
+        const inner = (data as Record<string, unknown> | undefined)?.data as
+          | Record<string, unknown>
+          | undefined
+        const responseUserId =
+          rawResource === 'AuthController' && typeof inner?.user === 'object' && inner?.user
+            ? (inner.user as { id?: unknown }).id
+            : undefined
+        const recordUserId = userId ?? (typeof responseUserId === 'number' ? responseUserId : 0)
         this.auditService
           .record({
-            userId: userId ?? 0,
+            userId: recordUserId,
             action,
             resource,
             resourceId: resourceId ? Number(resourceId) : undefined,
             oldValue,
             newValue: sanitizeNewValue(
-              ((data as Record<string, unknown>)?.data as Record<string, unknown> | undefined) ??
-                (data as Record<string, unknown> | undefined),
+              inner ?? (data as Record<string, unknown> | undefined),
               rawResource,
             ),
             ip,
