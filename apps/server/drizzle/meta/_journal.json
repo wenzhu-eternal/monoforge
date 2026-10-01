@@ -15,6 +15,13 @@
       "when": 1790755840353,
       "tag": "0001_secret_frank_castle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790862529000,
+      "tag": "0002_lowercase_identity",
+      "breakpoints": true
     }
   ]
 }
