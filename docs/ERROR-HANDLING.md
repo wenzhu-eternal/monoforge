@@ -19,6 +19,7 @@
 ### 限流豁免
 
 - error-logs 模块的只读接口（findAll/stats/grouped/whitelist）必须 `@SkipThrottle()`，避免 429
+- **公开错误上报（POST /error-logs/report）必须 `@SkipAudit()`**：错误本体已入 error_logs（含 IP），审计再记 userId=0 的流水只会被灌水稀释审计价值；同样原因该 DTO 已 `@SkipXss()`（报错文案需原文入库）
 
 ## 应用日志规范
 

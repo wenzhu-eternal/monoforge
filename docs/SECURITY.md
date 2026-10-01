@@ -137,7 +137,9 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - **授予不得超过自身权限集**：非 admin 提交的权限码必须是调用者自身已持有的子集，超出部分 403（防止横向扩散未授权能力）
 
-- 更新使用事务（delete + insert）保证原子性，成功后按 `perm:role:{roleId}` 失效缓存
+- **禁止全无效码清空**：提交的权限码全部无效（含全部指向已软删权限）时直接 400 拒绝，否则事务会「删光旧权限、不插新权限」构成无感权限清空攻击；明确传空数组清空仍允许（PUT 已进审计留痕）
+
+- 更新使用事务（delete + insert）保证原子性，成功后按 `perm:role:{roleId}` 失效缓存（失败仅告警，权限以 DB 为准，禁止 unhandledRejection 拖垮进程）
 
 ### 验证码尝试计数（原子化）
 
@@ -169,7 +171,7 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 ### 前端路由守卫
 
-所有需登录的路由必须在 `beforeLoad` 中调用 `requireAuth()`（校验登录标记 + token 存在性，access token 随 Zustand persist 持久化、刷新后直接读取；旧版本遗留的无 token 状态由 `bootstrapAuth` 用 httpOnly cookie 恢复，refresh token 始终只在 httpOnly cookie 中）。权限码校验不放 `beforeLoad`，而由 `AuthenticatedLayout` 在 `useCurrentUser` 加载完成后通过 `getRequiredPermission(pathname)` 统一处理，避免使用 localStorage 中可能过期的 permissions 旧值导致首屏误 redirect。`useCurrentUser` 失败时不渲染受保护内容（401/403 已由 axios 拦截器跳转）。`mail`/`dashboard`/`websocket` 等路由不得缺失 `beforeLoad`，否则未登录用户可直接访问页面（虽后端有权限兜底，仍是 UX 问题且放大攻击面）。`/login` 路由对已登录用户重定向到 `/dashboard`，避免重复登录。
+所有需登录的路由必须在 `beforeLoad` 中调用 `requireAuth()`（校验登录标记 + token 存在性，access token 随 Zustand persist 持久化、刷新后直接读取；旧版本遗留的无 token 状态由 `bootstrapAuth` 用 httpOnly cookie 恢复，refresh token 始终只在 httpOnly cookie 中）。权限码校验不放 `beforeLoad`，而由 `AuthenticatedLayout` 在 `useCurrentUser` 加载完成后通过 `getRequiredPermission(pathname)` 统一处理；守卫与菜单的 user 取值必须以 `query.data ?? storeUser`（me 最新返回优先）为准——store 里是 `useEffect` 写入的持久化旧值、落后一拍，直接读 store 会在刚授权/回收权限的刷新窗口按旧值误判（有权限被踢 /403，或反向放行一帧）。`useCurrentUser` 失败时不渲染受保护内容（401/403 已由 axios 拦截器跳转）。`mail`/`dashboard`/`websocket` 等路由不得缺失 `beforeLoad`，否则未登录用户可直接访问页面（虽后端有权限兜底，仍是 UX 问题且放大攻击面）。`/login` 路由对已登录用户重定向到 `/dashboard`，避免重复登录。
 
 ### 强制改密链路（三道防线，缺一即弹回登录页）
 
@@ -187,9 +189,11 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - **必须使用** **`@Permissions('xxx:yyy')`** **+** **`PermissionsGuard`**：权限码格式为 `资源:操作`（如 `user:view`/`error_log:manage`）
 
-- 权限码必须在 `seed.ts` 的 `defaultPermissions` 中定义，controller 中使用的权限码必须与 seed 一致
+- 权限码必须在 `@shared/constants/default-seed.ts` 的 `DEFAULT_PERMISSIONS` 中定义（seed 与 setup 两条初始化路径共用单一来源），controller 中使用的权限码必须与其一致
 
 - `PermissionsGuard` 通过 `getPermissionsByUserId` 查询用户角色的权限码列表进行鉴权
+
+- **`routes` 字段编辑仅限超管**：`PermissionsGuard` 在权限码不足时会兜底匹配所持权限码的 `routes` 白名单，因此 `routes` 是权限码矩阵之外的第二授权面。`permissions.service` 的 create/update 携带 `routes` 时必须校验 `isAdminUser(caller)`，否则持 `permission:update` 的委托管理员可给自己已持有的码追加任意路由实现全站提权
 
 ### 权限码命名规范
 
@@ -227,5 +231,15 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - 用户输入的字段（如 nickname、description）禁止 HTML 原样存储
 
+- **豁免必须用 `@SkipXss()` 装饰器**（DTO 类上标注）：仅限"原文必须如实入库且无渲染面"的字段（错误上报文案、白名单 pattern）——报错文案常含 `<script` 字样，无差别剥 HTML 会失真。豁免清单新增须评审（渲染面 + React 默认转义兜底）
+
+- **HTTP 管道外的入库路径**（如微信昵称/头像）必须手动调用 `common/utils/strip-html.ts` 的 `stripHtml` 同款清洗，保证管道内外口径一致（L19）；头像另需 http(s) URL 校验
+
 - **H6 风险声明（已评估，接受现状）**：accessToken 经 zustand persist 落 `localStorage`，XSS 可直接窃取。接受理由：有效期仅 15 分钟 + refresh 走 httpOnly cookie + `XssPipe`/CSP 纵深；内存方案虽能缩小窃取面，但每次刷新页强制 silent refresh，反而把 reload 可用性押在 refresh 上（cookie 过期即开页登出），且不解决刷新有效性问题（轮换/吊销/cookie 传输在服务端）。若未来威胁模型变化再迁移内存 + silent refresh。
+
+## 账号标识大小写（L20）
+
+- `username`/`email` 在 zod schema 入口统一 `.trim().toLowerCase()`（`UsernameSchema`/`UserEmailSchema`，登录/注册/建户/改邮箱/setup 全覆盖），唯一索引保持原样即等效大小写不敏感
+
+- 存量数据由 `0002_lowercase_identity` 迁移归一；若存在仅大小写不同的活跃账号，迁移会因唯一索引冲突失败——属预期防护，先人工合并再重跑
 

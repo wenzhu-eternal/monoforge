@@ -16,6 +16,8 @@ COPY apps/server/package.json ./apps/server/
 COPY packages/shared/package.json ./packages/shared/
 # --filter=server... 含其 workspace 依赖 shared；--ignore-scripts 跳过构建脚本（argon2 使用内置 prebuilds）
 RUN pnpm --filter=@monoforge/server... install --prod --frozen-lockfile --ignore-scripts
+# 保底：--prod 裁剪后 shared 可能无独立 node_modules（依赖全 hoist 到根），runner 的 COPY 缺源直接失败，先建空目录占位
+RUN mkdir -p /app/apps/server/node_modules /app/packages/shared/node_modules
 
 # ===== Build stage =====
 FROM node:20-alpine AS builder
@@ -47,7 +49,9 @@ RUN pnpm -F @monoforge/web build
 
 # ===== Runtime stage =====
 FROM node:20-alpine AS runner
-RUN apk add --no-cache tini
+# L15：装 postgresql16-client（仅 pg_dump/psql 客户端工具，与 PG16 服务端版本对齐）——
+# 默认备份链路 spawnPgDump 在容器内直跑 pg_dump，缺它则生产备份 100% ENOENT
+RUN apk add --no-cache tini postgresql16-client
 WORKDIR /app
 ENV NODE_ENV=production
 

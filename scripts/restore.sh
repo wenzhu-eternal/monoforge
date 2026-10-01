@@ -10,9 +10,26 @@
 
 set -e
 
-CONTAINER="mf-postgres"
-DB_USER="monoforge_user"
-DB_NAME="monoforge_database"
+# L15：连接信息优先级 环境变量 > 根目录 .env（与 docker-compose 同源）> 默认值。
+# 原先全部硬编码，改过 .env 的人跑恢复会连到错误的老库（恢复错库=数据事故）
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/../.env"
+
+env_value() {
+  if [ -f "$ENV_FILE" ]; then
+    grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'"
+  fi
+  return 0
+}
+
+CONTAINER="${POSTGRES_CONTAINER:-$(env_value POSTGRES_CONTAINER)}"
+DB_USER="${POSTGRES_USER:-$(env_value POSTGRES_USER)}"
+DB_NAME="${POSTGRES_DB:-$(env_value POSTGRES_DB)}"
+: "${CONTAINER:=mf-postgres}"
+: "${DB_USER:=monoforge_user}"
+: "${DB_NAME:=monoforge_database}"
+echo "目标: 容器=$CONTAINER 用户=$DB_USER 数据库=$DB_NAME"
+
 BACKUP_DIR="apps/server/backups"
 
 if [ -n "$1" ]; then

@@ -234,6 +234,8 @@ packages/shared/src/schemas/
 └── pagination.ts       # 统一分页 schema
 ```
 
+`packages/shared/src/constants/` 存放前后端共享常量：`permissions.ts`（权限码全集 PermissionCodes）、`default-seed.ts`（初始化默认数据 DEFAULT_PERMISSIONS / DEFAULT_ROLES / DEFAULT_USER_ROLE_PERMISSIONS，seed 与 setup 两条初始化路径共用单一来源）、`errors.ts`（错误码）、`files.ts`（文件常量）。
+
 ### 使用方式
 
 **后端**: `nestjs-zod` 桥接 zod 做 DTO 校验 + `zod-to-openapi` 生成 OpenAPI spec

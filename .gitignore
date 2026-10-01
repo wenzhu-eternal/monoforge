@@ -55,6 +55,7 @@ apps/server/uploads-trash/
 
 # Database backups（本地临时数据，不进版本库）
 apps/server/backups/
+/backups/
 *.sql.bak
 
 # IDE

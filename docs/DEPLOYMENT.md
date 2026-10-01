@@ -47,7 +47,7 @@ pnpm build
 # 2. 执行数据库迁移
 pnpm db:migrate
 
-# 3. （可选）填充种子数据
+# 3. （可选）填充种子数据（幂等：已存在用户时只补齐权限/角色/绑定，不创建也不覆盖 admin）
 pnpm db:seed
 
 # 4. 启动后端（同时托管前端 + 提供 API）
@@ -108,7 +108,8 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
 - [ ] `SEED_ADMIN_MUST_CHANGE_PASSWORD=true`（生产强制改密，勿用种子密码长期运行）
 - [ ] `ALLOW_INSECURE_COOKIE=false`（HTTPS 生产必须，HTTP 调试才显式放开）
 - [ ] 数据库备份已创建
-- [ ] 迁移已执行（`pnpm db:migrate`）
+- [ ] 迁移已执行（`pnpm db:migrate`；生产容器启动时自动跑 `dist/db/migrate.js`）
+- [ ] 备份链路可用：生产镜像已内置 `postgresql16-client`，默认 pg_dump 路径开箱即用；如配 `BACKUP_CMD` 走 `docker exec`，需确认后端运行位置能访问 docker 命令（仅宿主机直跑有效，app 容器内无效）
 - [ ] `pnpm test` 通过
 - [ ] `pnpm lint` 通过
 - [ ] `pnpm security` 通过（详见 [TESTING.md](./TESTING.md)）
