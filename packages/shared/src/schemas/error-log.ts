@@ -44,11 +44,12 @@ export const ReportErrorSchema = z.object({
   message: z.string().min(1).max(2000),
   stack: z.string().max(3000).optional(),
   file: z.string().max(500).optional(),
-  line: z.number().int().optional(),
-  column: z.number().int().optional(),
+  // M9：DB 列为 int4，无上限的 .int() 会让超大值穿 zod 后在 PG 22003 炸 500（公开接口可主动触发）
+  line: z.number().int().min(0).max(2_147_483_647).optional(),
+  column: z.number().int().min(0).max(2_147_483_647).optional(),
   url: z.string().max(500).optional(),
   method: z.string().max(10).optional(),
-  statusCode: z.number().int().optional(),
+  statusCode: z.number().int().min(0).max(599).optional(),
   context: z
     .record(z.string(), z.unknown())
     .optional()

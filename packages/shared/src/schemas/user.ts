@@ -7,8 +7,11 @@ export const PhoneSchema = z
   .optional()
 
 // 拒绝微信登录占位邮箱域，防止攻击者抢占领位邮箱导致微信用户无法登录
+// L20：入口统一 trim + 小写化——username/email 唯一性不再区分大小写（'Admin' 与 'admin' 视为同一账号）
 export const UserEmailSchema = z
   .string()
+  .trim()
+  .toLowerCase()
   .email()
   .max(100, '邮箱最多 100 个字符')
   .refine((email) => !email.endsWith('@wechat.placeholder'), '该邮箱域为系统保留')
@@ -16,9 +19,11 @@ export const UserEmailSchema = z
 // 用户名统一正则：与 SetupSchema 保持一致，防注入空格/控制符/HTML
 export const UsernameSchema = z
   .string()
+  .trim()
+  .toLowerCase()
   .min(3, '用户名至少 3 个字符')
   .max(50, '用户名最多 50 个字符')
-  .regex(/^[a-zA-Z0-9_]+$/, '用户名只能包含字母、数字、下划线')
+  .regex(/^[a-z0-9_]+$/, '用户名只能包含字母、数字、下划线')
 
 // 密码策略：至少 8 位且同时包含字母与数字（注册/建户/改密共用；纯数字如生日密码被拒）
 export const PasswordSchema = z
