@@ -5,7 +5,12 @@ import { setQueryClientForAuth } from '@/lib/auth-cleanup'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      // L30：401/403 属确定性失败（无权限/未登录），重试只会白打一次请求
+      retry: (failureCount, error) => {
+        const status = (error as { response?: { status?: number } })?.response?.status
+        if (status === 401 || status === 403) return false
+        return failureCount < 1
+      },
       refetchOnWindowFocus: false,
       staleTime: 30_000,
     },

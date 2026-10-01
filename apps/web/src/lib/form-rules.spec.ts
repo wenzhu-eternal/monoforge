@@ -8,7 +8,6 @@ import { emailRule, passwordRule, phoneRule, usernameRule } from './form-rules'
 type AnyRule = { validator?: (...args: any[]) => any }
 
 function callValidator(rule: unknown, value: string): Promise<unknown> {
-  // biome-ignore lint/suspicious/noExplicitAny: 同上
   const r = rule as AnyRule
   if (!r.validator) throw new Error('rule has no validator')
   return Promise.resolve(r.validator({}, value))

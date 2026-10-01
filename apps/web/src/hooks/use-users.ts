@@ -42,6 +42,8 @@ export const useCreateUser = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      // L25：用户增删恢复同步刷新仪表盘计数（staleTime 60s，不失效则最长展示 60s 旧数据）
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
     },
   })
 }
@@ -73,6 +75,7 @@ export const useDeleteUser = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
     },
   })
 }
@@ -87,6 +90,7 @@ export const useRestoreUser = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
     },
   })
 }

@@ -9,6 +9,7 @@ import { env } from './env'
  */
 class WsClient {
   private socket: Socket | null = null
+  private currentToken: string | null = null
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private pongTimer: ReturnType<typeof setTimeout> | null = null
   private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
@@ -17,7 +18,8 @@ class WsClient {
   private static readonly PONG_TIMEOUT = 5_000
 
   connect(token: string): Socket {
-    if (this.socket?.connected) {
+    // 同 token 且已连接：直接复用；token 轮换后重挂载则走下方 closeSocket 重建
+    if (this.socket?.connected && this.currentToken === token) {
       return this.socket
     }
     // M14：握手窗口/残留实例先关闭再建新连接（原直接覆盖引用，旧 socket 泄漏成服务端幽灵会话；
@@ -26,6 +28,8 @@ class WsClient {
     if (this.socket) {
       this.closeSocket()
     }
+
+    this.currentToken = token
 
     // 未配置 API 地址时回退到当前页面 origin（同源部署场景）
     const baseURL = env.VITE_API_BASE_URL || window.location.origin
@@ -44,8 +48,14 @@ class WsClient {
       this.startHeartbeat()
     })
 
-    this.socket.on('disconnect', () => {
+    this.socket.on('disconnect', (reason) => {
       this.stopHeartbeat()
+      // M5：服务端主动断开（jti 吊销/账号状态变更）属 io server disconnect，
+      // socket.io v4 不会自动重连，必须手动恢复（token 已轮换时 currentToken 为新值）
+      if (reason === 'io server disconnect' && this.currentToken) {
+        const token = this.currentToken
+        setTimeout(() => this.connect(token), 1000)
+      }
     })
 
     this.socket.on('pong', () => {
@@ -125,10 +135,15 @@ class WsClient {
     this.stopHeartbeat()
     this.heartbeatTimer = setInterval(() => {
       this.socket?.emit('ping', { t: Date.now() })
-      // 5s 内没收到 pong，主动断开触发重连
+      // M5：socket.io v4 手动 disconnect() 属 io client disconnect，不会自动重连——
+      // 必须关闭后主动重建（closeSocket 保留 listeners，connect 会重绑）
       this.pongTimer = setTimeout(() => {
-        console.warn('[WS] pong 超时，主动断开重连')
-        this.socket?.disconnect()
+        console.warn('[WS] pong 超时，主动断开后重连')
+        const token = this.currentToken
+        this.closeSocket()
+        if (token) {
+          setTimeout(() => this.connect(token), 1000)
+        }
       }, WsClient.PONG_TIMEOUT)
     }, WsClient.HEARTBEAT_INTERVAL)
   }

@@ -1,4 +1,4 @@
-import { MAX_FILE_SIZE } from '@shared'
+import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import type { UploadProps } from 'antd'
 import {
@@ -17,7 +17,7 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   downloadFile,
   type FileItem,
@@ -55,14 +55,17 @@ function FilesContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  // L26：objectURL 的当前值镜像——卸载回收必须直接 revoke，借道 setState updater 在
+  // 组件卸载后不保证执行（React 契约），ref 读取无此限制
+  const previewUrlRef = useRef<string | null>(null)
 
   // 预览 blob 卸载兜底：直接切路由时回收，否则驻留到页签关闭
   useEffect(() => {
     return () => {
-      setPreviewUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev)
-        return null
-      })
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current)
+        previewUrlRef.current = null
+      }
     }
   }, [])
   const [messageApi, contextHolder] = message.useMessage()
@@ -81,6 +84,20 @@ function FilesContent() {
   const uploadProps: UploadProps = {
     name: 'file',
     showUploadList: false,
+    // L27：传前客户端预检（扩展名白名单 + 大小，与服务端共用 @shared 常量）——
+    // 超限文件不再白传完才收 400，浪费带宽；魔数等深度校验仍由服务端兜底
+    beforeUpload: (file) => {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        messageApi.error(`不支持 .${ext || '(无扩展名)'} 类型文件`)
+        return Upload.LIST_IGNORE
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        messageApi.error(`文件超过 ${MAX_FILE_SIZE / 1024 / 1024}MB 大小限制`)
+        return Upload.LIST_IGNORE
+      }
+      return true
+    },
     customRequest: async ({ file, onSuccess, onError }) => {
       try {
         await uploadMutation.mutateAsync(file as File)
@@ -97,10 +114,9 @@ function FilesContent() {
     try {
       const url = await previewFile(record.id)
       // L12：连续预览先回收旧 objectURL，否则旧 blob 常驻内存
-      setPreviewUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev)
-        return url
-      })
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+      previewUrlRef.current = url
+      setPreviewUrl(url)
     } catch (err) {
       messageApi.error(extractErrorMessage(err, '预览失败'))
     }
@@ -109,6 +125,7 @@ function FilesContent() {
   const closePreview = () => {
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl)
+      previewUrlRef.current = null
       setPreviewUrl(null)
     }
   }

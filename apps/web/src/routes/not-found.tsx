@@ -5,7 +5,7 @@ export const Route = createFileRoute('/not-found')({
   component: NotFoundPage,
 })
 
-function NotFoundPage() {
+export function NotFoundPage() {
   const navigate = useNavigate()
 
   return (

@@ -45,11 +45,15 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const logoutMutation = useLogout()
-  const user = useAuthStore((state) => state.user)
+  const storeUser = useAuthStore((state) => state.user)
   const [collapsed, setCollapsed] = useState(false)
 
   // 自动刷新用户信息（含 permissions/roles 字段，供权限校验使用）
-  const { isLoading, isError, refetch } = useCurrentUser()
+  const { data: meUser, isLoading, isError, refetch } = useCurrentUser()
+
+  // M4：守卫/菜单以 me 最新返回优先——store 里是 useEffect 写入的持久化旧值，落后一拍；
+  // 刚授权/回收权限后的刷新窗口若读旧值，会把有权限的用户误踢 /403（或反向放行一帧）
+  const user = meUser ?? storeUser
 
   // 等待用户信息加载完成后再判断权限
   // M11：加载中/失败给明确 UI（原 return null 永久白屏，瞬时抖动即不可恢复）
@@ -182,11 +186,12 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
     }
   }
 
-  const handleLogout = () => {
-    // 先同步清空本地登录态与全量查询缓存再跳转，避免 /login 的 beforeLoad 读到旧值反弹回 /dashboard，
-    // 也防止下一个登录用户读到上一个用户的缓存数据；后端登出（清 refreshToken cookie）异步进行
+  const handleLogout = async () => {
+    // L23：先带 token 请求登出（后端吊销会话 + 清 refreshToken cookie），成功后再清本地——
+    // 原先先清 store 会让登出请求无 Bearer，触发 401→refresh 冤枉链路（多两次往返且可能整页硬刷新）。
+    // 请求失败 mutateAsync 内部已吞掉（登出接口 try/catch），本地清理照常执行
+    await logoutMutation.mutateAsync()
     clearUserScopedState()
-    logoutMutation.mutate()
     navigate({ to: '/login' })
   }
 

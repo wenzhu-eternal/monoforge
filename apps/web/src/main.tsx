@@ -6,12 +6,17 @@ import { bootstrapAuth } from '@/lib/api'
 import { env } from '@/lib/env'
 import { installGlobalErrorHandlers } from '@/lib/error-reporter'
 import './index.css'
+import { NotFoundPage } from './routes/not-found'
 import { routeTree } from './routeTree.gen'
 
 // 动态设置页面标题（由品牌配置驱动，不依赖 Vite HTML 插值）
 document.title = APP_NAME
 
-const router = createRouter({ routeTree })
+const router = createRouter({
+  routeTree,
+  // L29：不配置时未知路由渲染 TanStack 英文裸 Not Found，精心排版的 404 页永不可达
+  defaultNotFoundComponent: NotFoundPage,
+})
 
 declare module '@tanstack/react-router' {
   interface Register {

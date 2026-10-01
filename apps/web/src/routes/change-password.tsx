@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Button, Card, Form, Input, message, Typography } from 'antd'
 import { useEffect } from 'react'
 import { APP_NAME } from '@/config/brand'
-import { useChangePassword, useLogout } from '@/hooks/use-auth'
+import { useChangePassword } from '@/hooks/use-auth'
 import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { extractErrorMessage } from '@/lib/error'
 import { passwordRule } from '@/lib/form-rules'
@@ -19,7 +19,6 @@ export const Route = createFileRoute('/change-password')({
 function ChangePasswordPage() {
   const navigate = useNavigate()
   const changePasswordMutation = useChangePassword()
-  const logoutMutation = useLogout()
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const [messageApi, contextHolder] = message.useMessage()
   const [form] = Form.useForm<{
@@ -50,10 +49,9 @@ function ChangePasswordPage() {
         newPassword: values.newPassword,
       })
       messageApi.success('密码修改成功，请重新登录')
-      // 改密成功后立即清空本地登录态与查询缓存（旧 token 已全部吊销），跳转交给下方 isAuthenticated 兜底 effect；
-      // 后端登出（清 refreshToken cookie）异步进行
+      // L23：改密后所有 token 已被后端吊销（改密吊销链路），再发登出请求只会 401→refresh 链路
+      // 触发整页硬刷新——直接清本地登录态与查询缓存跳转即可；残留的 refreshToken cookie 已是死 token 无害
       clearUserScopedState()
-      logoutMutation.mutate()
       navigate({ to: '/login' })
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '密码修改失败'))

@@ -14,25 +14,21 @@ export function useWebSocket() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const [connected, setConnected] = useState(false)
 
+  // M6：连接管理与事件订阅拆开——token 轮换只重建 socket，绝不能 disconnect()
+  // （它会 listeners.clear()，demo 页注册的 notification/presence:update 将永久失联）
   useEffect(() => {
-    if (!isAuthenticated || !token) {
+    // setConnected(false) 必须手动调：closeSocket 会先 removeAllListeners，断开事件不会触发 onDisconnect
+    if (!isAuthenticated || !token?.trim()) {
       wsClient.disconnect()
       setConnected(false)
       return
     }
-
-    if (!token.trim()) {
-      setConnected(false)
-      return
-    }
-
-    // token 变化时强制重连（disconnect 后再 connect），避免持有旧 token 的 socket
-    if (wsClient.isConnected()) {
-      wsClient.disconnect()
-    }
-
+    // token 变化时由 connect 内部走 closeSocket 重建（保留 listeners 并重绑），避免持有旧 token 的 socket
     wsClient.connect(token)
+  }, [isAuthenticated, token])
 
+  // 连接状态跟踪：独立订阅 connect/disconnect 事件，不参与连接生命周期
+  useEffect(() => {
     const onConnect = () => setConnected(true)
     const onDisconnect = () => setConnected(false)
 
@@ -42,9 +38,15 @@ export function useWebSocket() {
     return () => {
       wsClient.off('connect', onConnect)
       wsClient.off('disconnect', onDisconnect)
+    }
+  }, [])
+
+  // 组件卸载时才彻底断开并清空订阅
+  useEffect(() => {
+    return () => {
       wsClient.disconnect()
     }
-  }, [isAuthenticated, token])
+  }, [])
 
   return { connected }
 }

@@ -401,7 +401,13 @@ function LogsTab() {
         }}
       />
 
-      <Drawer title="错误详情" open={!!selectedLog} onClose={() => setSelectedLog(null)} size={640}>
+      {/* L33：Drawer 的 size 只接受 default|large，数值宽度必须用 width（与 roles.tsx 同款写法） */}
+      <Drawer
+        title="错误详情"
+        open={!!selectedLog}
+        onClose={() => setSelectedLog(null)}
+        width={640}
+      >
         {selectedLog && (
           <Space orientation="vertical" style={{ width: '100%' }}>
             <div>
@@ -558,8 +564,10 @@ function WhitelistTab() {
   }
 
   const handleSubmit = async () => {
-    const values = await form.validateFields()
     try {
+      // M7：校验失败 reject 的 {errorFields} 必须在 try 内吞掉——原先在 try 之外直呼，
+      // unhandledrejection 会被全局错误处理器上报入库，污染监控并消耗上报限流额度
+      const values = await form.validateFields()
       if (editingId) {
         await updateMutation.mutateAsync({ id: editingId, data: values })
         messageApi.success('更新成功')
@@ -569,6 +577,9 @@ function WhitelistTab() {
       }
       setModalOpen(false)
     } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return
+      }
       messageApi.error(extractErrorMessage(error, '操作失败'))
     }
   }

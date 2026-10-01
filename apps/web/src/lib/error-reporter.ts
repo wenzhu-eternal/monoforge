@@ -32,14 +32,21 @@ export async function reportFrontendError(payload: ReportError): Promise<void> {
     }
     await api.post('/api/v1/error-logs/report', {
       ...payload,
-      message: payload.message.slice(0, 2000),
-      stack: payload.stack?.slice(0, 3000),
-      file: payload.file?.slice(0, 500),
-      url: payload.url?.slice(0, 500),
-      method: payload.method?.slice(0, 10),
+      // L32：safeSlice 防止截断点落在 UTF-16 代理对（emoji 等）中间产生尾部乱字符
+      message: safeSlice(payload.message, 2000),
+      stack: payload.stack && safeSlice(payload.stack, 3000),
+      file: payload.file && safeSlice(payload.file, 500),
+      url: payload.url && safeSlice(payload.url, 500),
+      method: payload.method && safeSlice(payload.method, 10),
       context,
     })
   } catch {}
+}
+
+// 末位是高代理项（D800-DBFF）说明劈开了代理对，去掉该半字符
+function safeSlice(value: string, max: number): string {
+  const cut = value.slice(0, max)
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut
 }
 
 /**

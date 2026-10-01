@@ -55,11 +55,13 @@ export async function bootstrapAuth(): Promise<void> {
   if (!isAuthenticated || token) return
 
   try {
+    // L31：刷新请求必须带超时——排队请求有 15s 兜底，刷新者自身没有，网关挂起时首屏永久悬挂
     const response = await axios.post(
       refreshUrl,
       {},
       {
         withCredentials: true,
+        timeout: 15_000,
       },
     )
     const { accessToken } = response.data.data
@@ -146,8 +148,10 @@ api.interceptors.response.use(
 
       try {
         // refreshToken 走 httpOnly cookie；同源部署（VITE_API_BASE_URL 为空）时走相对路径经 Vite 代理携带 cookie
+        // L31：与 bootstrapAuth 同款 15s 超时，防网关挂起时刷新永久悬挂
         const response = await axios.post(refreshUrl, buildRefreshPayload(), {
           withCredentials: true,
+          timeout: 15_000,
         })
         const { accessToken } = response.data.data
 

@@ -29,10 +29,11 @@ function parseUserAgent(ua: string | null): { browser: string; os: string } {
   if (!ua) return { browser: '-', os: '-' }
 
   let browser = '-'
-  if (ua.includes('Chrome/')) browser = 'Chrome'
+  // L28：新 Edge 的 UA 同时含 "Edg/" 与 "Chrome/"，必须先判 Edge，否则全部误显示为 Chrome
+  if (ua.includes('Edg/') || ua.includes('Edge/')) browser = 'Edge'
+  else if (ua.includes('Chrome/')) browser = 'Chrome'
   else if (ua.includes('Firefox/')) browser = 'Firefox'
   else if (ua.includes('Safari/')) browser = 'Safari'
-  else if (ua.includes('Edge/')) browser = 'Edge'
 
   let os = '-'
   if (ua.includes('Windows NT 10.0')) os = 'Windows 10/11'
