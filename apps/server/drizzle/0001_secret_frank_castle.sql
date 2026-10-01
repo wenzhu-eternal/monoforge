@@ -1,3 +1,6 @@
+-- M8：timestamp→timestamptz 的 ALTER 按会话 TimeZone 解释存量值，必须先固定 UTC，
+-- 否则非 UTC 时区的存量环境升级时历史时间整体平移 ±偏移且无法事后纠正
+SET timezone = 'UTC';--> statement-breakpoint
 ALTER TABLE "audit_logs" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "audit_logs" ALTER COLUMN "created_at" SET DEFAULT now();--> statement-breakpoint
 ALTER TABLE "error_logs" ALTER COLUMN "resolved_at" SET DATA TYPE timestamp with time zone;--> statement-breakpoint

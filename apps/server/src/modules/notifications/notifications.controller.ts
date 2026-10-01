@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -9,10 +10,10 @@ import {
   Post,
   Query,
 } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { NotificationSchema } from '@shared/schemas/notification'
+import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
-import { z } from 'zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
@@ -25,10 +26,33 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  @ApiOperation({ summary: '拉取通知列表' })
-  @ZodSerializerDto(z.array(NotificationSchema))
-  list(@CurrentUser() user: TokenPayload, @Query('unreadOnly') unreadOnly?: string) {
-    return this.notificationsService.list(user.sub, unreadOnly === 'true', isAdminUser(user))
+  @ApiOperation({ summary: '分页拉取通知列表' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'pageSize', required: false, type: Number })
+  @ApiQuery({ name: 'unreadOnly', required: false, type: Boolean })
+  @ZodSerializerDto(PaginatedResponseSchema(NotificationSchema))
+  list(
+    @CurrentUser() user: TokenPayload,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('unreadOnly') unreadOnly?: string,
+  ) {
+    // 防御 NaN: 非数字字符串 parseInt 后为 NaN，直接抛 400 错误（与 users.controller 同款）
+    const pageNum = page ? Number.parseInt(page, 10) : 1
+    const size = pageSize ? Number.parseInt(pageSize, 10) : 10
+    if (Number.isNaN(pageNum) || pageNum < 1) {
+      throw new BadRequestException('page 必须为正整数')
+    }
+    if (Number.isNaN(size) || size < 1) {
+      throw new BadRequestException('pageSize 必须为正整数')
+    }
+    return this.notificationsService.list(
+      user.sub,
+      pageNum,
+      size,
+      unreadOnly === 'true',
+      isAdminUser(user),
+    )
   }
 
   @Get('unread-count')

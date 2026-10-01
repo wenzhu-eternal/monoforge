@@ -4,9 +4,12 @@ import { join } from 'node:path'
 import { ConflictException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
+import { and, eq, isNull } from 'drizzle-orm'
 import Handlebars from 'handlebars'
 import { createTransport, type SendMailOptions, type Transporter } from 'nodemailer'
 import { getEnv } from '@/config'
+import { db } from '@/db'
+import { users } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
 
 type Attachment = NonNullable<SendMailOptions['attachments']>[number]
@@ -149,7 +152,30 @@ export class MailService {
 
   /**
    * 发送备份通知邮件（仅文字通知，不附 .sql 附件，避免整库数据经邮件外发）
+   * L4：收件人 = 初始化管理员的邮箱（ADMIN_ROLE_ID 角色下第一个启用未删用户）——
+   * 原先发给 MAIL_FROM 发件地址，发件人若是 noreply 则备份故障无人告警；查不到时回退发件地址
    */
+  private async getBackupRecipient(): Promise<string> {
+    try {
+      const [admin] = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(
+          and(
+            eq(users.roleId, getEnv().ADMIN_ROLE_ID),
+            eq(users.status, true),
+            isNull(users.deletedAt),
+          ),
+        )
+        .orderBy(users.id)
+        .limit(1)
+      return admin?.email || this.fromAddress
+    } catch (err) {
+      this.logger.warn(`查询管理员邮箱失败，备份告警回退发件地址: ${err}`)
+      return this.fromAddress
+    }
+  }
+
   async sendBackupNotification(
     success: boolean,
     detail: string,
@@ -168,11 +194,12 @@ export class MailService {
       : undefined
 
     const text = `数据库备份${success ? '成功' : '失败'}\n\n详情: ${detail}`
+    const to = await this.getBackupRecipient()
 
     if (html) {
-      await this.sendWithAttachments(this.fromAddress, subject, html, text)
+      await this.sendWithAttachments(to, subject, html, text)
     } else {
-      await this.sendWithAttachments(this.fromAddress, subject, undefined, text)
+      await this.sendWithAttachments(to, subject, undefined, text)
     }
   }
 

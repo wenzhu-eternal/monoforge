@@ -13,6 +13,7 @@ import type { WechatLoginType } from '@shared/schemas/wechat'
 import * as argon2 from 'argon2'
 import type { AxiosInstance } from 'axios'
 import { and, eq } from 'drizzle-orm'
+import { stripHtml } from '@/common/utils/strip-html'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import { roles, users } from '@/db/schema'
@@ -251,6 +252,12 @@ export class WechatService {
    * 查/建用户: openId 已存在则返回，不存在则建（用户名 wx_{完整 openId}，邮箱占位符）
    */
   private async findOrCreateUser(openId: string, nickname?: string, avatar?: string) {
+    // L19：微信昵称/头像不经全局 XssPipe（HTTP 管道外直写），入库前同款清洗——
+    // 昵称剥标签并截断 50，头像仅收 http(s) 且不超 255，非法值置空回退
+    const safeNickname = nickname ? stripHtml(nickname).trim().slice(0, 50) || null : null
+    const safeAvatar =
+      avatar && /^https?:\/\//i.test(avatar) && avatar.length <= 255 ? avatar : null
+
     // 故意不过滤 deletedAt：需查到软删用户才能抛"账号已注销"，否则会被当新用户重建触发 openId 唯一索引冲突
     const existing = await db.query.users.findFirst({
       where: eq(users.wechatOpenId, openId),
@@ -265,13 +272,14 @@ export class WechatService {
       }
       // 顺便更新昵称/头像（微信侧可能变更）
       const needUpdate =
-        (nickname && existing.nickname !== nickname) || (avatar && existing.avatar !== avatar)
+        (safeNickname && existing.nickname !== safeNickname) ||
+        (safeAvatar && existing.avatar !== safeAvatar)
       if (needUpdate) {
         const [updated] = await db
           .update(users)
           .set({
-            nickname: nickname ?? existing.nickname,
-            avatar: avatar ?? existing.avatar,
+            nickname: safeNickname ?? existing.nickname,
+            avatar: safeAvatar ?? existing.avatar,
             updatedAt: new Date(),
           })
           .where(eq(users.id, existing.id))
@@ -296,8 +304,8 @@ export class WechatService {
           username,
           email,
           password: await argon2.hash(randomUUID()),
-          nickname: nickname ?? `微信用户_${openId.slice(0, 6)}`,
-          avatar,
+          nickname: safeNickname ?? `微信用户_${openId.slice(0, 6)}`,
+          avatar: safeAvatar,
           status: true,
           wechatOpenId: openId,
           roleId: userRole?.id,

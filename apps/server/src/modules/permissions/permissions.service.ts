@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { Permission } from '@shared/schemas/permission'
 import { and, desc, eq, sql } from 'drizzle-orm'
@@ -75,12 +81,24 @@ export class PermissionsService {
     })
   }
 
-  async create(data: {
-    code: string
-    name: string
-    description?: string
-    routes?: string[]
-  }): Promise<Permission> {
+  // M1：routes 是权限码矩阵之外的第二授权面（PermissionsGuard 兜底直接放行匹配路由），
+  // 委托管理员若可编辑 routes 即可给自己持有的码追加任意路由实现提权，仅超管可配置
+  private assertRoutesEditable(data: { routes?: string[] }, isAdmin: boolean): void {
+    if (data.routes !== undefined && !isAdmin) {
+      throw new ForbiddenException('仅超级管理员可配置权限的路由白名单')
+    }
+  }
+
+  async create(
+    data: {
+      code: string
+      name: string
+      description?: string
+      routes?: string[]
+    },
+    caller: { isAdmin: boolean },
+  ): Promise<Permission> {
+    this.assertRoutesEditable(data, caller.isAdmin)
     const existing = await db.query.permissions.findFirst({
       where: and(eq(permissions.code, data.code), notDeleted(permissions.deletedAt)),
     })
@@ -105,7 +123,9 @@ export class PermissionsService {
   async update(
     id: number,
     data: { code?: string; name?: string; description?: string; routes?: string[] },
+    caller: { isAdmin: boolean },
   ): Promise<Permission> {
+    this.assertRoutesEditable(data, caller.isAdmin)
     const existing = await db.query.permissions.findFirst({
       where: and(eq(permissions.id, id), notDeleted(permissions.deletedAt)),
     })
@@ -125,32 +145,40 @@ export class PermissionsService {
     // 改 code 时在事务中同步 role_permissions 绑定（该表以 code 字符串关联角色）:
     // 不同步则旧绑定成为孤儿记录，innerJoin 匹配不到，引用角色会静默失去该权限。
     // M4：必须先更新主表再改绑定——原先顺序下主表更新落空（并发软删）时绑定已改且已提交，无回滚。
+    // L1：并发改码撞 permissions_code_unique 时兜底转 409（与 roles/users 风格一致，防裸 500）
     let updated: Permission | undefined
-    if (data.code && data.code !== existing.code) {
-      updated = await db.transaction(async (tx) => {
-        const [row] = await tx
+    try {
+      if (data.code && data.code !== existing.code) {
+        updated = await db.transaction(async (tx) => {
+          const [row] = await tx
+            .update(permissions)
+            .set({ ...data, updatedAt: new Date() })
+            .where(and(eq(permissions.id, id), notDeleted(permissions.deletedAt)))
+            .returning()
+          // 主表落空（并发软删/删除）直接抛，事务回滚，rolePermissions 保持旧码不断链
+          if (!row) {
+            throw new NotFoundException(`更新权限 ID ${id} 失败`)
+          }
+          await tx
+            .update(rolePermissions)
+            .set({ permission: data.code as string })
+            .where(eq(rolePermissions.permission, existing.code))
+          return row
+        })
+      } else {
+        const [row] = await db
           .update(permissions)
           .set({ ...data, updatedAt: new Date() })
+          // P2-5：与改码分支同口径，并发软删行不再误更新
           .where(and(eq(permissions.id, id), notDeleted(permissions.deletedAt)))
           .returning()
-        // 主表落空（并发软删/删除）直接抛，事务回滚，rolePermissions 保持旧码不断链
-        if (!row) {
-          throw new NotFoundException(`更新权限 ID ${id} 失败`)
-        }
-        await tx
-          .update(rolePermissions)
-          .set({ permission: data.code as string })
-          .where(eq(rolePermissions.permission, existing.code))
-        return row
-      })
-    } else {
-      const [row] = await db
-        .update(permissions)
-        .set({ ...data, updatedAt: new Date() })
-        // P2-5：与改码分支同口径，并发软删行不再误更新
-        .where(and(eq(permissions.id, id), notDeleted(permissions.deletedAt)))
-        .returning()
-      updated = row
+        updated = row
+      }
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('权限码已存在（并发冲突）')
+      }
+      throw error
     }
 
     if (!updated) {
@@ -179,7 +207,13 @@ export class PermissionsService {
       throw new ConflictException(`该权限仍被 ${count} 个角色引用，无法删除`)
     }
 
-    await db.update(permissions).set({ deletedAt: new Date() }).where(eq(permissions.id, id))
+    // L18：软删与清绑定同事务——FK 引用不了部分唯一索引（软删允许同码重建的设计），
+    // 改用与角色删除同款模式：软删权限时同步清理全部绑定（含已删角色的幽灵行），
+    // 否则残留绑定在权限恢复时"复活"旧授权
+    await db.transaction(async (tx) => {
+      await tx.update(permissions).set({ deletedAt: new Date() }).where(eq(permissions.id, id))
+      await tx.delete(rolePermissions).where(eq(rolePermissions.permission, existing.code))
+    })
     this.invalidateRolePermissionCache()
 
     return { message: `权限 ID ${id} 已删除` }

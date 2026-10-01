@@ -9,6 +9,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 import { SkipThrottle } from '@nestjs/throttler'
 import { Public } from '@/common/decorators/public.decorator'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { HealthService } from './health.service'
 
 interface AuthRequest {
@@ -32,8 +33,9 @@ export class HealthController {
     if (result.status === 'error') {
       throw new ServiceUnavailableException(result)
     }
-    // 未认证请求只返回 status，不暴露数据库/Redis 细节
-    if (!req.user) {
+    // L34：DB/Redis 连接细节（延迟/版本）是内部信息，仅超管可见——
+    // 未认证与普通登录用户只返回基础状态（原先是"登录即可看全部"）
+    if (!isAdminUser(req.user)) {
       return { status: result.status, timestamp: result.timestamp }
     }
     return result

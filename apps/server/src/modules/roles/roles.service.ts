@@ -126,11 +126,15 @@ export class RolesService {
       )
     }
 
-    await db.update(roles).set({ deletedAt: new Date() }).where(eq(roles.id, id))
+    // L2：软删与清绑定必须同事务——中途失败会留下"角色已软删但绑定残留"，
+    // 重试因 notDeleted 预检 404 而孤儿绑定永难清理
+    await db.transaction(async (tx) => {
+      await tx.update(roles).set({ deletedAt: new Date() }).where(eq(roles.id, id))
 
-    // L11：软删角色同步清绑定——残留绑定会让权限删除校验计入幽灵引用（角色列表已删、权限却删不掉）；
-    // 恢复角色后由管理员重新授权，不自动复活旧绑定
-    await db.delete(rolePermissions).where(eq(rolePermissions.roleId, id))
+      // L11：软删角色同步清绑定——残留绑定会让权限删除校验计入幽灵引用（角色列表已删、权限却删不掉）；
+      // 恢复角色后由管理员重新授权，不自动复活旧绑定
+      await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, id))
+    })
 
     return { message: `角色 ID ${id} 已删除` }
   }

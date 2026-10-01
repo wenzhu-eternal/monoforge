@@ -14,7 +14,6 @@ import { DatabaseModule } from './db/database.module'
 import { AuditModule } from './modules/audit/audit.module'
 import { AuthGuard } from './modules/auth/auth.guard'
 import { AuthModule } from './modules/auth/auth.module'
-import { CacheModule } from './modules/cache/cache.module'
 import { ErrorLogsModule } from './modules/error-logs/error-logs.module'
 import { FilesModule } from './modules/files/files.module'
 import { HealthModule } from './modules/health/health.module'
@@ -61,7 +60,6 @@ import { WechatModule } from './modules/wechat/wechat.module'
     DatabaseModule,
     RedisModule,
     CommonModule,
-    CacheModule,
     HttpClientModule,
     AuthModule,
     UsersModule,

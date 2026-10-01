@@ -367,17 +367,16 @@ export class ErrorLogsService {
       .from(errorWhitelist)
       .where(and(eq(errorWhitelist.isActive, true), notDeleted(errorWhitelist.deletedAt)))
 
-    // 缓存 miss 时回填，避免白名单查询长期穿透到 DB
-    if (list.length > 0) {
-      try {
-        await this.redisService.set(
-          WHITELIST_ACTIVE_CACHE_KEY,
-          JSON.stringify(list),
-          WHITELIST_CACHE_TTL,
-        )
-      } catch {
-        // 回填失败不影响本次匹配，下次仍走查库
-      }
+    // L3：空列表也缓存 "[]"——活跃白名单为空时若跳过缓存，公开上报路径每次都打穿 DB，
+    // 高频报错下查询 QPS 与上报同阶放大
+    try {
+      await this.redisService.set(
+        WHITELIST_ACTIVE_CACHE_KEY,
+        JSON.stringify(list),
+        WHITELIST_CACHE_TTL,
+      )
+    } catch {
+      // 回填失败不影响本次匹配，下次仍走查库
     }
 
     return this.matchWhitelist(list, message, url)

@@ -3,16 +3,20 @@ import { createWriteStream } from 'node:fs'
 import { mkdir, readdir, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { Injectable, Logger } from '@nestjs/common'
+import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { getEnv } from '@/config/env'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { MailService } from '@/modules/mail/mail.service'
+import { RedisService } from '@/modules/redis/redis.service'
 
 const execAsync = promisify(exec)
 
 const BACKUP_DIR = join(process.cwd(), 'backups')
 const MAX_BACKUPS = 30
+// M13：备份进行中锁的 key 与 TTL（10min 兜底进程崩溃后死锁，备份链路本身 5min 超时）
+const BACKUP_LOCK_KEY = 'schedule:backup:running'
+const BACKUP_LOCK_TTL = 600
 
 @Injectable()
 export class ScheduleService {
@@ -21,6 +25,7 @@ export class ScheduleService {
   constructor(
     private readonly mailService: MailService,
     private readonly errorLogsService: ErrorLogsService,
+    private readonly redisService: RedisService,
   ) {}
 
   /**
@@ -41,19 +46,45 @@ export class ScheduleService {
    * 手动触发数据库备份（不受 ENABLE_BACKUP 开关限制，供 POST /schedule/backup 调用）
    */
   async manualBackup() {
-    await this.doBackup()
+    const executed = await this.doBackup()
+    if (!executed) {
+      throw new ConflictException('已有备份任务进行中，请稍后再试')
+    }
   }
 
   /**
-   * 实际执行备份的逻辑：pg_dump 导出 + 清理旧备份 + 邮件通知
+   * 实际执行备份的逻辑：互斥锁 → pg_dump 导出 → 清理旧备份 → 邮件通知
+   * 返回 false 表示未抢到锁（已有备份进行中），true 表示已执行（含执行失败）
    */
-  private async doBackup() {
-    this.logger.log('开始执行数据库备份...')
-    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const filename = `backup-${timestamp}.sql`
-    const filepath = join(BACKUP_DIR, filename)
+  private async doBackup(): Promise<boolean> {
+    // M13：SETNX 互斥锁——cron 与手动触发（或连发）并发时两个 pg_dump 交叉截断写同一文件，
+    // 产物静默损坏且邮件照报成功。Redis 异常时降级无锁执行（备份可用性优先，锁仅为并发防御）
+    let locked = true
+    try {
+      locked = await this.redisService.setNx(
+        BACKUP_LOCK_KEY,
+        new Date().toISOString(),
+        BACKUP_LOCK_TTL,
+      )
+    } catch (err) {
+      this.logger.warn(
+        `备份互斥锁获取异常，降级为无锁执行: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    if (!locked) {
+      this.logger.warn('已有备份任务进行中，跳过本次触发')
+      return false
+    }
 
     try {
+      this.logger.log('开始执行数据库备份...')
+      // M13：本地时间到秒（同日多次备份各写独立文件，原按日命名 + 截断写必然互相覆盖）
+      const now = new Date()
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+      const filename = `backup-${timestamp}.sql`
+      const filepath = join(BACKUP_DIR, filename)
+
       await mkdir(BACKUP_DIR, { recursive: true })
 
       const env = getEnv()
@@ -104,7 +135,15 @@ export class ScheduleService {
           `备份失败通知邮件发送失败: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`,
         )
       }
+    } finally {
+      // 释放失败仅告警：锁有 TTL 兜底，不会永久卡死后续备份
+      void this.redisService
+        .del(BACKUP_LOCK_KEY)
+        .catch((err) =>
+          this.logger.warn(`备份锁释放失败: ${err instanceof Error ? err.message : String(err)}`),
+        )
     }
+    return true
   }
 
   /**
@@ -168,7 +207,9 @@ export class ScheduleService {
   }
 
   /**
-   * 清理旧备份: 按文件名排序（backup-YYYYMMDD.sql 字典序与时间序一致），删除超出 MAX_BACKUPS 的旧文件
+   * 清理旧备份: 按文件名排序删除超出 MAX_BACKUPS 的旧文件。
+   * 新命名 backup-YYYYMMDD-HHmmss.sql 零填充，字典序与时间序一致；
+   * 与旧格式 backup-YYYYMMDD.sql 混存时同日旧格式排前（'-' < '.'），删除顺序仍正确。
    */
   private async cleanOldBackups(): Promise<void> {
     try {

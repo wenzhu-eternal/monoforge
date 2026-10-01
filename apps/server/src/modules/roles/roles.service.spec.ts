@@ -1,20 +1,34 @@
 import { ConflictException, NotFoundException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/db', () => ({
-  db: {
-    query: {
-      roles: {
-        findMany: vi.fn(),
-        findFirst: vi.fn(),
+vi.mock('@/db', () => {
+  const tx = {
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }),
+    delete: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    }),
+  }
+  return {
+    db: {
+      query: {
+        roles: {
+          findMany: vi.fn(),
+          findFirst: vi.fn(),
+        },
       },
+      insert: vi.fn(),
+      update: vi.fn(),
+      select: vi.fn(),
+      delete: vi.fn(),
+      // L2：remove 走事务（软删 + 清绑定原子化），mock 直接透传 tx
+      transaction: vi.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(tx)),
     },
-    insert: vi.fn(),
-    update: vi.fn(),
-    select: vi.fn(),
-    delete: vi.fn(),
-  },
-}))
+  }
+})
 
 vi.mock('@/db/helpers', () => ({
   // notDeleted 接受单列，返回任意 SQL 片段（测试中不关心具体值）

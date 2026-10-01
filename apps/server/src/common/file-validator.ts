@@ -3,7 +3,7 @@ import { open, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { BadRequestException } from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
-import { MAX_FILE_SIZE } from '@shared/constants/files'
+import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE } from '@shared/constants/files'
 
 export const ALLOWED_MIME_TYPES = [
   'image/jpeg',
@@ -29,32 +29,6 @@ export const ALLOWED_MIME_TYPES = [
   'audio/mpeg',
   'audio/wav',
   'audio/x-wav',
-]
-
-export const ALLOWED_EXTENSIONS = [
-  'jpg',
-  'jpeg',
-  'png',
-  'gif',
-  'webp',
-  'svg',
-  'ico',
-  'bmp',
-  'pdf',
-  'doc',
-  'docx',
-  'xls',
-  'xlsx',
-  'txt',
-  'html',
-  'css',
-  'json',
-  'mp4',
-  'mp3',
-  'wav',
-  'zip',
-  'rar',
-  'sql',
 ]
 
 // 危险扩展名黑名单（防御性冗余检查：这些扩展名均不在白名单）
@@ -114,8 +88,9 @@ export function validateFilename(filename: string): void {
     throw new BadRequestException('文件名包含非法字符')
   }
 
-  // DB original_name varchar(255)：超长原名先 400 拦掉，避免 PG 22001 500
-  if (decoded.length > 255) {
+  // DB original_name varchar(255)：超长原名先 400 拦掉，避免 PG 22001 500。
+  // M10：必须量原始串——percent-encoded 名 decode 后变短，量 decoded 会让超长原名穿过后入库炸 22001
+  if (filename.length > 255) {
     throw new BadRequestException('文件名过长（最多 255 个字符）')
   }
 

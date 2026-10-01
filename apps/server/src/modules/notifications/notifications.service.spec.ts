@@ -35,25 +35,64 @@ describe('NotificationsService', () => {
     service = new NotificationsService(eventsService as never)
   })
 
-  describe('list', () => {
-    it('返回用户全部通知（unreadOnly=false）', async () => {
+  describe('list（L6 分页）', () => {
+    const mockCount = (count: number) => {
+      vi.mocked(mockDb.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ count }]),
+        }),
+      } as never)
+    }
+
+    it('返回分页结构（unreadOnly=false 默认分页）', async () => {
       const mockList = [
         { id: 1, userId: 1, type: 'system', title: 'hello', read: false },
         { id: 2, userId: 1, type: 'mention', title: 'mentioned you', read: true },
       ]
       vi.mocked(mockDb.query.notifications.findMany).mockResolvedValue(mockList as never)
+      mockCount(12)
 
-      const result = await service.list(1, false)
-      expect(result).toEqual(mockList)
-      expect(mockDb.query.notifications.findMany).toHaveBeenCalledOnce()
+      const result = await service.list(1, 1, 10, false)
+      expect(result).toEqual({
+        list: mockList,
+        total: 12,
+        page: 1,
+        pageSize: 10,
+        totalPages: 2,
+      })
+      expect(mockDb.query.notifications.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 10, offset: 0 }),
+      )
+    })
+
+    it('第 2 页 offset 计算正确', async () => {
+      vi.mocked(mockDb.query.notifications.findMany).mockResolvedValue([] as never)
+      mockCount(0)
+
+      const result = await service.list(1, 2, 10, false)
+      expect(mockDb.query.notifications.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ offset: 10 }),
+      )
+      expect(result.totalPages).toBe(0)
+    })
+
+    it('pageSize 超上限 100 被钳制', async () => {
+      vi.mocked(mockDb.query.notifications.findMany).mockResolvedValue([] as never)
+      mockCount(0)
+
+      await service.list(1, 1, 999, false)
+      expect(mockDb.query.notifications.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 100 }),
+      )
     })
 
     it('unreadOnly=true 只返回未读', async () => {
       const mockList = [{ id: 1, userId: 1, type: 'system', title: 'hello', read: false }]
       vi.mocked(mockDb.query.notifications.findMany).mockResolvedValue(mockList as never)
+      mockCount(1)
 
-      const result = await service.list(1, true)
-      expect(result).toEqual(mockList)
+      const result = await service.list(1, 1, 10, true)
+      expect(result.list).toEqual(mockList)
     })
 
     it('includeDeleted=true 时包含已删除记录（管理员）', async () => {
@@ -62,9 +101,10 @@ describe('NotificationsService', () => {
         { id: 2, userId: 1, type: 'mention', title: 'deleted', read: true, deletedAt: new Date() },
       ]
       vi.mocked(mockDb.query.notifications.findMany).mockResolvedValue(mockList as never)
+      mockCount(2)
 
-      const result = await service.list(1, false, true)
-      expect(result).toEqual(mockList)
+      const result = await service.list(1, 1, 10, false, true)
+      expect(result.list).toEqual(mockList)
     })
   })
 

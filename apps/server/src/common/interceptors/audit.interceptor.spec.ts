@@ -1,7 +1,60 @@
-import { describe, expect, it } from 'vitest'
-import { sanitizeNewValue } from './audit.interceptor'
+import { Reflector } from '@nestjs/core'
+import { firstValueFrom, type Observable, of } from 'rxjs'
+import { describe, expect, it, vi } from 'vitest'
+import { ErrorLogsController } from '@/modules/error-logs/error-logs.controller'
+import { AuditInterceptor, sanitizeNewValue } from './audit.interceptor'
 
 const MASKED = '***MASKED***'
+
+describe('intercept 方法白名单（M2）', () => {
+  it('GET 直接放行（原样返回 next.handle），PUT 进入审计管道落审计', async () => {
+    const reflector = { get: vi.fn().mockReturnValue(undefined) }
+    const record = vi.fn().mockResolvedValue(undefined)
+    const interceptor = new AuditInterceptor(reflector as never, { record } as never)
+
+    const makeCtx = (method: string) =>
+      ({
+        switchToHttp: () => ({
+          getRequest: () => ({ method, headers: {}, params: {}, ip: '127.0.0.1' }),
+        }),
+        getHandler: () => function handler() {},
+        getClass: () => ({ name: 'RolePermissionsController' }),
+      }) as never
+
+    // GET：早退路径，返回的就是 next.handle() 本身（同一 Observable 引用）
+    const nextGet = { handle: vi.fn(() => of('ok')) }
+    const getResult = interceptor.intercept(makeCtx('GET'), nextGet as never)
+    expect(getResult).toBe(nextGet.handle.mock.results[0].value)
+    expect(record).not.toHaveBeenCalled()
+
+    // PUT：全仓唯一 PUT 端点是 role-permissions 权限洗牌，必须落审计且 action/resource 正确映射
+    const nextPut = { handle: vi.fn(() => of({ data: { message: 'ok' } })) }
+    const putResult = interceptor.intercept(makeCtx('PUT'), nextPut as never) as Observable<unknown>
+    await firstValueFrom(putResult)
+    expect(record).toHaveBeenCalledTimes(1)
+    expect(record.mock.calls[0][0]).toMatchObject({ action: '更新', resource: '角色权限' })
+  })
+
+  it('L12：@SkipAudit() 标注的处理器跳过审计（直接引用真实 reportError，验证生产接线）', async () => {
+    const reflector = new Reflector()
+    const record = vi.fn().mockResolvedValue(undefined)
+    const interceptor = new AuditInterceptor(reflector, { record } as never)
+
+    // 不实例化控制器，只取原型方法——元数据在类定义时已由装饰器写入
+    const ctx = {
+      switchToHttp: () => ({
+        getRequest: () => ({ method: 'POST', headers: {}, params: {}, ip: '127.0.0.1' }),
+      }),
+      getHandler: () => ErrorLogsController.prototype.reportError,
+      getClass: () => ErrorLogsController,
+    } as never
+
+    const next = { handle: vi.fn(() => of({ data: {} })) }
+    const result = interceptor.intercept(ctx, next as never) as Observable<unknown>
+    expect(await firstValueFrom(result)).toEqual({ data: {} })
+    expect(record).not.toHaveBeenCalled()
+  })
+})
 
 describe('sanitizeNewValue 响应脱敏（H2/N4）', () => {
   it('N4 复现：登录响应 user 嵌套对象中的 email/phone 与顶层 accessToken 均被掩码', () => {

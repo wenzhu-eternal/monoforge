@@ -1,19 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common'
+import {
+  DEFAULT_PERMISSIONS,
+  DEFAULT_ROLES,
+  DEFAULT_USER_ROLE_PERMISSIONS,
+} from '@shared/constants/default-seed'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { SetupResult, SetupStatus } from '@shared/schemas/setup'
 import * as argon2 from 'argon2'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
-import { rolePermissions, roles, users } from '@/db/schema'
-
-const DEFAULT_ROLES = [
-  { name: 'admin', description: '系统管理员，拥有全部权限' },
-  { name: 'editor', description: '编辑者，可管理业务数据' },
-  { name: 'viewer', description: '访客，仅可查看' },
-  // M1：公开注册/默认建户/微信注册硬性要求 roles.name='user' 存在，setup 必须与 seed 对齐
-  { name: 'user', description: '普通用户，通过注册进入系统' },
-]
+import { permissions, rolePermissions, roles, users } from '@/db/schema'
 
 @Injectable()
 export class SetupService {
@@ -73,16 +70,29 @@ export class SetupService {
           throw new BadRequestException('默认角色创建失败')
         }
 
-        // 与 seed 对齐：user 角色仅 mail:send（user:view 会泄露全员敏感字段）
+        // M11：与 seed 同源灌入 22 条默认权限并给 admin 绑全量（原 setup 不灌权限不绑定，
+        // 走 ALLOW_SETUP 初始化的部署 permissions 表为空、角色授权功能完全空转）
+        await tx.insert(permissions).values(DEFAULT_PERMISSIONS).onConflictDoNothing()
+        await tx
+          .insert(rolePermissions)
+          .values(DEFAULT_PERMISSIONS.map((p) => ({ roleId: adminRole.id, permission: p.code })))
+          .onConflictDoNothing()
+
+        // M3：user 角色默认零权限（原先 mail:send 构成 SMTP 开放中继），空集跳过 insert（drizzle 不接受空 values）
         const userRole =
           createdRoles.find((r) => r.name === 'user') ??
           (await tx.query.roles.findFirst({
             where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
           }))
-        if (userRole) {
+        if (userRole && DEFAULT_USER_ROLE_PERMISSIONS.length > 0) {
           await tx
             .insert(rolePermissions)
-            .values([{ roleId: userRole.id, permission: 'mail:send' }])
+            .values(
+              DEFAULT_USER_ROLE_PERMISSIONS.map((permission) => ({
+                roleId: userRole.id,
+                permission,
+              })),
+            )
             .onConflictDoNothing()
         }
 
@@ -93,6 +103,8 @@ export class SetupService {
           nickname: input.nickname,
           roleId: adminRole.id,
           status: true,
+          // L17：与 seed 路径对齐——首登强制改密（setup 密码虽为部署者自选，仍可能弱口令或被分享）
+          mustChangePassword: true,
         })
       })
 

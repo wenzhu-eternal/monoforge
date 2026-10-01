@@ -1,6 +1,8 @@
+import { DEFAULT_PERMISSIONS, DEFAULT_USER_ROLE_PERMISSIONS } from '@shared/constants/default-seed'
 import argon2 from 'argon2'
 import { config } from 'dotenv'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
+import { notDeleted } from './helpers'
 import { db } from './index'
 import { permissions, rolePermissions, roles, users } from './schema'
 
@@ -18,237 +20,121 @@ const mustChangePassword =
       ? true
       : ADMIN_PASSWORD === '888888'
 
-const defaultPermissions = [
-  {
-    code: 'user:view',
-    name: '查看用户',
-    description: '查看用户列表和详情',
-    routes: ['GET /users', 'GET /users/stats', 'GET /users/:id'],
-  },
-  { code: 'user:create', name: '创建用户', description: '创建新用户', routes: ['POST /users/'] },
-  {
-    code: 'user:update',
-    name: '更新用户',
-    description: '编辑用户信息',
-    routes: ['PATCH /users/:id'],
-  },
-  {
-    code: 'user:delete',
-    name: '删除用户',
-    description: '删除用户',
-    routes: ['DELETE /users/:id', 'POST /users/:id/restore'],
-  },
-  {
-    code: 'role:view',
-    name: '查看角色',
-    description: '查看角色列表和详情',
-    routes: ['GET /roles', 'GET /roles/:id'],
-  },
-  { code: 'role:create', name: '创建角色', description: '创建新角色', routes: ['POST /roles/'] },
-  {
-    code: 'role:update',
-    name: '更新角色',
-    description: '编辑角色信息',
-    routes: ['PATCH /roles/:id'],
-  },
-  {
-    code: 'role:delete',
-    name: '删除角色',
-    description: '删除角色',
-    routes: ['DELETE /roles/:id'],
-  },
-  {
-    code: 'permission:view',
-    name: '查看权限',
-    description: '查看权限列表',
-    routes: ['GET /permissions', 'GET /permissions/list', 'GET /permissions/:id'],
-  },
-  {
-    code: 'permission:create',
-    name: '创建权限',
-    description: '创建新权限',
-    routes: ['POST /permissions/'],
-  },
-  {
-    code: 'permission:update',
-    name: '更新权限',
-    description: '编辑权限信息',
-    routes: ['PATCH /permissions/:id'],
-  },
-  {
-    code: 'permission:delete',
-    name: '删除权限',
-    description: '删除权限',
-    routes: ['DELETE /permissions/:id'],
-  },
-  {
-    code: 'file:view',
-    name: '查看文件',
-    description: '查看文件列表与预览下载',
-    routes: ['GET /files', 'GET /files/:id/preview', 'GET /files/:id/download'],
-  },
-  {
-    code: 'file:upload',
-    name: '上传文件',
-    description: '上传新文件',
-    routes: ['POST /files/upload'],
-  },
-  {
-    code: 'file:delete',
-    name: '删除文件',
-    description: '删除与恢复文件',
-    routes: ['DELETE /files/:id', 'POST /files/:id/restore'],
-  },
-  {
-    code: 'audit:view',
-    name: '查看审计日志',
-    description: '查看审计日志',
-    routes: ['GET /audit-logs', 'GET /audit-logs/:id'],
-  },
-  {
-    code: 'mail:send',
-    name: '发送邮件',
-    description: '发送欢迎邮件和验证码',
-    routes: ['POST /mail/welcome', 'POST /mail/verification-code'],
-  },
-  {
-    code: 'schedule:backup',
-    name: '触发备份',
-    description: '手动触发数据库备份',
-    routes: ['POST /schedule/backup'],
-  },
-  {
-    code: 'error_log:view',
-    name: '查看错误日志',
-    description: '查看错误日志',
-    routes: [
-      'GET /error-logs',
-      'GET /error-logs/:id',
-      'GET /error-logs/stats',
-      'GET /error-logs/grouped',
-      'GET /error-logs/whitelist',
-    ],
-  },
-  {
-    code: 'error_log:manage',
-    name: '管理错误日志',
-    description: '处理和管理错误日志',
-    routes: [
-      'GET /error-logs',
-      'GET /error-logs/:id',
-      'GET /error-logs/stats',
-      'GET /error-logs/grouped',
-      'GET /error-logs/whitelist',
-      'POST /error-logs/:id/resolve',
-      'POST /error-logs/batch-resolve',
-      'DELETE /error-logs/:id',
-      'POST /error-logs/whitelist',
-      'PATCH /error-logs/whitelist/:id',
-      'DELETE /error-logs/whitelist/:id',
-      'POST /error-logs/whitelist/:id/restore',
-    ],
-  },
-  {
-    code: 'notification:view',
-    name: '查看在线状态',
-    description: '查看 WebSocket 在线用户列表',
-    routes: ['GET /websocket/online'],
-  },
-  {
-    code: 'user:role_manage',
-    name: '管理用户角色',
-    description: '分配/修改用户角色、状态、密码与邮箱',
-    routes: ['POST /users/', 'PATCH /users/:id'],
-  },
-]
-
 async function seed() {
   console.log('Seeding database...')
 
-  // 创建默认权限（已存在则跳过，匹配部分唯一索引 permissions_code_unique）
-  for (const perm of defaultPermissions) {
-    await db.insert(permissions).values(perm).onConflictDoNothing()
-  }
-  console.log('Default permissions seeded')
-
-  const [adminRole] = await db
-    .insert(roles)
-    .values({
-      name: 'admin',
-      description: '系统管理员，拥有全部权限',
-    })
-    .onConflictDoNothing()
-    .returning()
-
-  const role = adminRole ?? (await db.query.roles.findFirst({ where: eq(roles.name, 'admin') }))
-
-  if (!role) {
-    throw new Error('Failed to create or find admin role')
-  }
-
-  console.log('Admin role ready:', role)
-
-  // 创建普通用户角色（通过注册进来的用户）
-  const [userRole] = await db
-    .insert(roles)
-    .values({
-      name: 'user',
-      description: '普通用户，通过注册进入系统',
-    })
-    .onConflictDoNothing()
-    .returning()
-
-  const userRoleRecord =
-    userRole ?? (await db.query.roles.findFirst({ where: eq(roles.name, 'user') }))
-
-  if (userRoleRecord) {
-    // 普通用户：仅邮件发送（user:view 会泄露全员 email/phone 等敏感字段，注册用户不应具备）
-    await db
-      .insert(rolePermissions)
-      .values([{ roleId: userRoleRecord.id, permission: 'mail:send' }])
-      .onConflictDoNothing()
-    console.log('User role permissions assigned')
-  }
-
-  console.log('User role ready:', userRole ?? 'already exists')
-
-  // 为 admin 角色分配所有权限（使用权限码字符串）
-  for (const perm of defaultPermissions) {
-    await db
-      .insert(rolePermissions)
-      .values({ roleId: role.id, permission: perm.code })
-      .onConflictDoNothing()
-  }
-  console.log('Admin permissions assigned')
-
-  // admin 邮箱/昵称可通过环境变量覆盖，默认使用通用占位符（新项目接入时无需改源码）
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com'
-  const adminNickname = process.env.SEED_ADMIN_NICKNAME ?? 'Administrator'
+  // L16：全流程单事务——中途失败整体回滚不留半态；密码哈希在事务外算好，
+  // 避免占着连接做 CPU 密集运算
   const passwordHash = await argon2.hash(ADMIN_PASSWORD)
 
-  // admin 已存在时同步密码与改密标志：否则改了 SEED_ADMIN_PASSWORD /
-  // SEED_ADMIN_MUST_CHANGE_PASSWORD 后重跑 seed 不生效（onConflictDoNothing 会静默跳过）
-  const [adminUser] = await db
-    .insert(users)
-    .values({
-      username: 'admin',
-      email: adminEmail,
-      password: passwordHash,
-      nickname: adminNickname,
-      roleId: role.id,
-      status: true,
-      mustChangePassword,
-    })
-    .onConflictDoUpdate({
-      target: users.username,
-      // users_username_unique 是部分唯一索引（WHERE deleted_at IS NULL），
-      // 必须带同款 targetWhere 才能被 PG 推断为冲突目标
-      targetWhere: sql`deleted_at IS NULL`,
-      set: { password: passwordHash, mustChangePassword, updatedAt: new Date() },
-    })
-    .returning()
+  await db.transaction(async (tx) => {
+    // M11：与 setup 共用 @shared 的 DEFAULT_PERMISSIONS，两条初始化路径权限集单一来源
+    // 创建默认权限（已存在则跳过，匹配部分唯一索引 permissions_code_unique）
+    await tx.insert(permissions).values(DEFAULT_PERMISSIONS).onConflictDoNothing()
+    console.log(`Default permissions seeded (${DEFAULT_PERMISSIONS.length} items)`)
 
-  console.log('Created admin user:', adminUser)
+    const [adminRole] = await tx
+      .insert(roles)
+      .values({
+        name: 'admin',
+        description: '系统管理员，拥有全部权限',
+      })
+      .onConflictDoNothing()
+      .returning()
+
+    // L16：查找兜底必须过滤软删——复用软删角色会绑上"幽灵角色"（innerJoin 匹配不到，权限静默失效）
+    const role =
+      adminRole ??
+      (await tx.query.roles.findFirst({
+        where: and(eq(roles.name, 'admin'), notDeleted(roles.deletedAt)),
+      }))
+
+    if (!role) {
+      throw new Error('Failed to create or find admin role')
+    }
+
+    console.log('Admin role ready:', role)
+
+    // 创建普通用户角色（通过注册进来的用户）
+    const [userRole] = await tx
+      .insert(roles)
+      .values({
+        name: 'user',
+        description: '普通用户，通过注册进入系统',
+      })
+      .onConflictDoNothing()
+      .returning()
+
+    const userRoleRecord =
+      userRole ??
+      (await tx.query.roles.findFirst({
+        where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
+      }))
+
+    if (userRoleRecord && DEFAULT_USER_ROLE_PERMISSIONS.length > 0) {
+      // M3：user 角色默认零权限（原先 mail:send 构成 SMTP 开放中继）；空集跳过 insert（drizzle 不接受空 values）
+      await tx
+        .insert(rolePermissions)
+        .values(
+          DEFAULT_USER_ROLE_PERMISSIONS.map((permission) => ({
+            roleId: userRoleRecord.id,
+            permission,
+          })),
+        )
+        .onConflictDoNothing()
+      console.log('User role permissions assigned')
+    }
+
+    console.log('User role ready:', userRole ?? 'already exists')
+
+    // 为 admin 角色分配所有权限（使用权限码字符串）
+    await tx
+      .insert(rolePermissions)
+      .values(DEFAULT_PERMISSIONS.map((perm) => ({ roleId: role.id, permission: perm.code })))
+      .onConflictDoNothing()
+    console.log('Admin permissions assigned')
+
+    // M11：已初始化检测（存在未软删用户，与 setup.getStatus 同口径）——
+    // setup 初始化过的库补跑 seed 只幂等补齐权限/角色/绑定，不再创建/覆盖 admin 用户，
+    // 否则 onConflictDoUpdate 会用默认密码 888888 静默重置已设置的管理员密码
+    const [existingUsers] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(users)
+      .where(isNull(users.deletedAt))
+
+    if ((existingUsers?.count ?? 0) > 0) {
+      console.log('Users exist, skip admin user creation (permissions/roles backfilled only)')
+      return
+    }
+
+    // admin 邮箱/昵称可通过环境变量覆盖，默认使用通用占位符（新项目接入时无需改源码）
+    const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com'
+    const adminNickname = process.env.SEED_ADMIN_NICKNAME ?? 'Administrator'
+
+    // admin 已存在时同步密码与改密标志：否则改了 SEED_ADMIN_PASSWORD /
+    // SEED_ADMIN_MUST_CHANGE_PASSWORD 后重跑 seed 不生效（onConflictDoNothing 会静默跳过）
+    const [adminUser] = await tx
+      .insert(users)
+      .values({
+        username: 'admin',
+        email: adminEmail,
+        password: passwordHash,
+        nickname: adminNickname,
+        roleId: role.id,
+        status: true,
+        mustChangePassword,
+      })
+      .onConflictDoUpdate({
+        target: users.username,
+        // users_username_unique 是部分唯一索引（WHERE deleted_at IS NULL），
+        // 必须带同款 targetWhere 才能被 PG 推断为冲突目标
+        targetWhere: sql`deleted_at IS NULL`,
+        set: { password: passwordHash, mustChangePassword, updatedAt: new Date() },
+      })
+      .returning()
+
+    console.log('Created admin user:', adminUser)
+  })
 
   console.log('Database seeded successfully!')
 }

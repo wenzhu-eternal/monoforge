@@ -26,6 +26,7 @@ import {
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { z } from 'zod'
+import { SkipAudit } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { Public } from '@/common/decorators/public.decorator'
@@ -44,11 +45,13 @@ export class ErrorLogsController {
 
   @Post('report')
   @Public()
+  @SkipAudit()
   @Throttle({ default: { limit: 3, ttl: 60000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '前端/后端错误上报（公开）' })
   async reportError(@Body() dto: ReportErrorDto, @Ip() ip: string | undefined) {
-    return this.errorLogsService.report({ ...dto, ip })
+    // L21：公开上报的 source 强制覆写——客户端可伪造 'backend' 污染 bySource 统计与告警口径
+    return this.errorLogsService.report({ ...dto, ip, source: 'frontend' })
   }
 
   @Get()

@@ -109,9 +109,7 @@ describe('SetupService', () => {
                 onConflictDoNothing: vi.fn().mockReturnValue({
                   returning: vi.fn().mockResolvedValue([
                     { id: 1, name: 'admin', description: '系统管理员' },
-                    { id: 2, name: 'editor', description: '编辑' },
-                    { id: 3, name: 'viewer', description: '访客' },
-                    { id: 4, name: 'user', description: '普通用户' },
+                    { id: 2, name: 'user', description: '普通用户' },
                   ]),
                 }),
               }),
@@ -149,7 +147,7 @@ describe('SetupService', () => {
           onConflictDoNothing: vi.fn().mockReturnValue({
             returning: vi.fn().mockResolvedValue([
               { id: 1, name: 'admin', description: '系统管理员' },
-              { id: 4, name: 'user', description: '普通用户' },
+              { id: 2, name: 'user', description: '普通用户' },
             ]),
           }),
         }),
@@ -180,8 +178,15 @@ describe('SetupService', () => {
         password: 'secret123',
       })
 
-      // roles 插入 + rolePermissions 授权 + users 建户 = 3 次 insert
-      expect(insertMock).toHaveBeenCalledTimes(3)
+      // M11 后：roles + permissions + admin 绑定 + users 建户 = 4 次 insert
+      // （M3：user 角色默认零权限，不再有第 5 次 user 绑定 insert）
+      expect(insertMock).toHaveBeenCalledTimes(4)
+      // 共享 mock：values 的调用序列 = 4 次 insert 的入参，逐一核对灌入内容
+      const valuesArg = insertMock.mock.results[0].value.values.mock.calls.map((c) => c[0])
+      expect(valuesArg[0]).toHaveLength(2) // DEFAULT_ROLES: admin + user
+      expect(valuesArg[1]).toHaveLength(22) // DEFAULT_PERMISSIONS 全量灌入
+      expect(valuesArg[2]).toHaveLength(22) // admin 角色全量绑定
+      expect(valuesArg[3]).toMatchObject({ username: 'admin' }) // 管理员建户
     })
 
     it('唯一约束冲突（code=23505）时抛 ConflictException', async () => {
@@ -245,7 +250,7 @@ describe('SetupService', () => {
                 onConflictDoNothing: vi.fn().mockReturnValue({
                   returning: vi
                     .fn()
-                    .mockResolvedValue([{ id: 2, name: 'editor', description: '编辑' }]),
+                    .mockResolvedValue([{ id: 2, name: 'user', description: '普通用户' }]),
                 }),
               }),
             }),

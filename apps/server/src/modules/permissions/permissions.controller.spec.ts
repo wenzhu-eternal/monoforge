@@ -7,6 +7,19 @@ describe('PermissionsController', () => {
   let controller: PermissionsController
   let service: PermissionsService
 
+  const nonAdminUser = {
+    sub: 2,
+    username: 'user',
+    email: 'user@test.com',
+    roleId: 2,
+  } as TokenPayload
+  const adminUser = {
+    sub: 1,
+    username: 'admin',
+    email: 'admin@test.com',
+    roleId: 1,
+  } as TokenPayload
+
   beforeEach(() => {
     service = {
       findAll: vi.fn(),
@@ -26,19 +39,6 @@ describe('PermissionsController', () => {
   })
 
   describe('findAll', () => {
-    const nonAdminUser = {
-      sub: 2,
-      username: 'user',
-      email: 'user@test.com',
-      roleId: 2,
-    } as TokenPayload
-    const adminUser = {
-      sub: 1,
-      username: 'admin',
-      email: 'admin@test.com',
-      roleId: 1,
-    } as TokenPayload
-
     it('should return paginated permissions (non-admin)', async () => {
       const mockResult = {
         list: [{ id: 1, code: 'user:view', name: '查看用户', routes: ['GET /users/'] }],
@@ -122,7 +122,7 @@ describe('PermissionsController', () => {
   })
 
   describe('create', () => {
-    it('should create permission with routes', async () => {
+    it('should create permission with routes (admin)', async () => {
       const mockPermission = {
         id: 1,
         code: 'user:view',
@@ -131,35 +131,59 @@ describe('PermissionsController', () => {
       }
       vi.mocked(service.create).mockResolvedValue(mockPermission as never)
 
-      const result = await controller.create({
-        code: 'user:view',
-        name: '查看用户',
-        routes: ['GET /users/'],
-      })
+      const result = await controller.create(
+        {
+          code: 'user:view',
+          name: '查看用户',
+          routes: ['GET /users/'],
+        },
+        adminUser,
+      )
 
       expect(result).toEqual(mockPermission)
-      expect(service.create).toHaveBeenCalledWith({
-        code: 'user:view',
-        name: '查看用户',
-        routes: ['GET /users/'],
-      })
+      expect(service.create).toHaveBeenCalledWith(
+        {
+          code: 'user:view',
+          name: '查看用户',
+          routes: ['GET /users/'],
+        },
+        { isAdmin: true },
+      )
+    })
+
+    it('should pass isAdmin=false for non-admin caller', async () => {
+      const mockPermission = { id: 1, code: 'user:view', name: '查看用户' }
+      vi.mocked(service.create).mockResolvedValue(mockPermission as never)
+
+      await controller.create({ code: 'user:view', name: '查看用户' }, nonAdminUser)
+
+      expect(service.create).toHaveBeenCalledWith(
+        {
+          code: 'user:view',
+          name: '查看用户',
+        },
+        { isAdmin: false },
+      )
     })
 
     it('should create permission without routes', async () => {
       const mockPermission = { id: 1, code: 'user:view', name: '查看用户' }
       vi.mocked(service.create).mockResolvedValue(mockPermission as never)
 
-      await controller.create({ code: 'user:view', name: '查看用户' })
+      await controller.create({ code: 'user:view', name: '查看用户' }, adminUser)
 
-      expect(service.create).toHaveBeenCalledWith({
-        code: 'user:view',
-        name: '查看用户',
-      })
+      expect(service.create).toHaveBeenCalledWith(
+        {
+          code: 'user:view',
+          name: '查看用户',
+        },
+        { isAdmin: true },
+      )
     })
   })
 
   describe('update', () => {
-    it('should update permission with routes', async () => {
+    it('should update permission with routes (admin)', async () => {
       const mockPermission = {
         id: 1,
         code: 'user:view',
@@ -168,16 +192,33 @@ describe('PermissionsController', () => {
       }
       vi.mocked(service.update).mockResolvedValue(mockPermission as never)
 
-      const result = await controller.update(1, {
-        name: '查看用户新名',
-        routes: ['GET /users/', 'POST /users/'],
-      })
+      const result = await controller.update(
+        1,
+        {
+          name: '查看用户新名',
+          routes: ['GET /users/', 'POST /users/'],
+        },
+        adminUser,
+      )
 
       expect(result).toEqual(mockPermission)
-      expect(service.update).toHaveBeenCalledWith(1, {
-        name: '查看用户新名',
-        routes: ['GET /users/', 'POST /users/'],
-      })
+      expect(service.update).toHaveBeenCalledWith(
+        1,
+        {
+          name: '查看用户新名',
+          routes: ['GET /users/', 'POST /users/'],
+        },
+        { isAdmin: true },
+      )
+    })
+
+    it('should pass isAdmin=false for non-admin caller', async () => {
+      const mockPermission = { id: 1, code: 'user:view', name: '查看用户新名' }
+      vi.mocked(service.update).mockResolvedValue(mockPermission as never)
+
+      await controller.update(1, { name: '查看用户新名' }, nonAdminUser)
+
+      expect(service.update).toHaveBeenCalledWith(1, { name: '查看用户新名' }, { isAdmin: false })
     })
   })
 

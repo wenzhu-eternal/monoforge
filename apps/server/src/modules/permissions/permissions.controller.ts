@@ -82,16 +82,20 @@ export class PermissionsController {
   @Permissions(PermissionCodes.PERMISSION_CREATE)
   @ApiOperation({ summary: '创建权限' })
   @ZodSerializerDto(PermissionSchema)
-  async create(@Body() dto: CreatePermissionDto) {
-    return this.permissionsService.create(dto)
+  async create(@Body() dto: CreatePermissionDto, @CurrentUser() currentUser?: TokenPayload) {
+    return this.permissionsService.create(dto, { isAdmin: isAdminUser(currentUser) })
   }
 
   @Patch(':id')
   @Permissions(PermissionCodes.PERMISSION_UPDATE)
   @ApiOperation({ summary: '更新权限' })
   @ZodSerializerDto(PermissionSchema)
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePermissionDto) {
-    return this.permissionsService.update(id, dto)
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdatePermissionDto,
+    @CurrentUser() currentUser?: TokenPayload,
+  ) {
+    return this.permissionsService.update(id, dto, { isAdmin: isAdminUser(currentUser) })
   }
 
   @Delete(':id')

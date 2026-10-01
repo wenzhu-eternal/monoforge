@@ -409,6 +409,17 @@ export class UsersService {
       throw new ConflictException('邮箱已被其他用户使用，无法恢复')
     }
 
+    // M14：角色删除校验只统计未删用户，软删用户的角色可被先删——不复检会恢复出
+    // 绑定已删角色的僵尸用户（getRoleByUserId 永远 403 且前端看不到该角色）
+    if (existingUser.roleId !== null) {
+      const roleExists = await db.query.roles.findFirst({
+        where: and(eq(roles.id, existingUser.roleId), notDeleted(roles.deletedAt)),
+      })
+      if (!roleExists) {
+        throw new ConflictException('用户原角色已被删除，请先为其重新分配角色（或置空角色）')
+      }
+    }
+
     try {
       const [restored] = await db
         .update(users)

@@ -3,7 +3,7 @@
 import './env-loader'
 
 import { ConfigService } from '@nestjs/config'
-import { NestFactory } from '@nestjs/core'
+import { NestFactory, Reflector } from '@nestjs/core'
 import { NestExpressApplication } from '@nestjs/platform-express'
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import cookieParser from 'cookie-parser'
@@ -66,7 +66,12 @@ async function bootstrap() {
   })
 
   // 全局管道: 清洗 null → XSS 清洗 → Zod 校验
-  app.useGlobalPipes(new SanitizeBodyPipe(), new XssPipe(), new ZodValidationPipe())
+  // （XssPipe 注入 Reflector 以识别 @SkipXss() 标注的 DTO，见 common/decorators/skip-xss.decorator.ts）
+  app.useGlobalPipes(
+    new SanitizeBodyPipe(),
+    new XssPipe(app.get(Reflector)),
+    new ZodValidationPipe(),
+  )
 
   // ZodSerializerInterceptor 已通过 APP_INTERCEPTOR 在 CommonModule 注册（@Global），无需在此手动 useGlobalInterceptors
 

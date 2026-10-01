@@ -16,10 +16,12 @@ import { AuditService } from '@/modules/audit/audit.service'
 
 export const AUDIT_ACTION_KEY = 'audit_action'
 export const AUDIT_RESOURCE_KEY = 'audit_resource'
+export const SKIP_AUDIT_KEY = 'audit_skip'
 
 const ACTION_MAP: Record<string, string> = {
   POST: '创建',
   PATCH: '更新',
+  PUT: '更新',
   DELETE: '删除',
 }
 
@@ -27,6 +29,7 @@ const RESOURCE_MAP: Record<string, string> = {
   AuthController: '认证',
   UsersController: '用户',
   RolesController: '角色',
+  RolePermissionsController: '角色权限',
   PermissionsController: '权限',
   FilesController: '文件',
   ErrorLogsController: '错误日志',
@@ -58,7 +61,8 @@ const TABLE_MAP: Record<string, { table: Table; idField: any; deletedAtField?: a
 
 const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
   UsersController: new Set(['password', 'email', 'phone', 'wechatOpenId']),
-  RolesController: new Set(['id']),
+  // L7：角色对象无敏感列；原先掩码 id 导致"创建角色"审计无法定位被创建对象
+  RolesController: new Set([]),
   FilesController: new Set([]),
   ErrorLogsController: new Set([]),
   NotificationsController: new Set([]),
@@ -128,7 +132,14 @@ export class AuditInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest()
     const method = request.method
 
-    if (!['POST', 'PATCH', 'DELETE'].includes(method)) {
+    // L12：@SkipAudit() 显式豁免——公开错误上报本身已入 error_logs（含 IP），
+    // 审计再记 userId=0 的流水没有价值，只留灌水稀释审计的面
+    if (this.reflector.get(SKIP_AUDIT_KEY, context.getHandler())) {
+      return next.handle()
+    }
+
+    // M2：PUT 必须进审计——全仓唯一的 PUT 端点是 role-permissions 权限洗牌，属最高危变更之一
+    if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
       return next.handle()
     }
 
@@ -152,7 +163,8 @@ export class AuditInterceptor implements NestInterceptor {
     // L8：旧值必须在写操作执行前读到——原先 fetch 与 handler 并发，高压下 SELECT 可能排在
     // UPDATE/DELETE 之后完成，oldValue 读到新值。改串行（多一次 SELECT 延迟，换审计准确性）。
     // 非取旧值路径（POST 创建等）同样记录，仅 oldValue 为空——绝不能直接 return 造成审计丢失。
-    // 用户归因：请求已认证用 sub；登录/注册成功时请求尚无身份，从响应 user.id 回填；
+    // 用户归因：请求已认证用 sub；账密/微信登录成功时请求尚无身份，从响应 user.id 回填
+    //（L34：微信登录原先漏归因，审计记 userId=0 查不到是谁）；
     // 剩下（登录失败等匿名）记 0——user_id 列 NOT NULL，0 为匿名哨兵。
     const recordTap = (oldValue: Record<string, unknown> | undefined) => ({
       next: (data: unknown) => {
@@ -160,7 +172,9 @@ export class AuditInterceptor implements NestInterceptor {
           | Record<string, unknown>
           | undefined
         const responseUserId =
-          rawResource === 'AuthController' && typeof inner?.user === 'object' && inner?.user
+          (rawResource === 'AuthController' || rawResource === 'WechatController') &&
+          typeof inner?.user === 'object' &&
+          inner?.user
             ? (inner.user as { id?: unknown }).id
             : undefined
         const recordUserId = userId ?? (typeof responseUserId === 'number' ? responseUserId : 0)

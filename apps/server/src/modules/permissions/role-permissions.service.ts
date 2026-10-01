@@ -1,4 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common'
 import type { RolePermission } from '@shared/schemas/permission'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/db'
@@ -8,6 +14,8 @@ import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
 export class RolePermissionsService {
+  private readonly logger = new Logger(RolePermissionsService.name)
+
   constructor(private readonly redisService: RedisService) {}
   async findByRoleId(roleId: number): Promise<string[]> {
     const result = await db
@@ -80,6 +88,12 @@ export class RolePermissionsService {
     }
     const skipped = permissionCodes.filter((c) => !validCodes.includes(c))
 
+    // M2：传入码全部无效（含全部指向已软删权限）时拒绝——否则事务会"删光旧权限、不插新权限"，
+    // 构成无感的权限清空攻击；明确传空数组清空仍允许（PUT 已进审计留痕）
+    if (permissionCodes.length > 0 && validCodes.length === 0) {
+      throw new BadRequestException('传入的权限码均无效或已删除，未做任何变更')
+    }
+
     // 防越权授予: 非 admin 授予的权限码不得超过调用者自身权限集（与 PermissionsGuard 同口径: innerJoin 过滤软删权限）
     if (caller && !caller.isAdmin && validCodes.length > 0) {
       const callerPerms = await db
@@ -111,7 +125,10 @@ export class RolePermissionsService {
       }
     })
 
-    void this.redisService.del(`perm:role:${roleId}`)
+    // M12：缓存失效失败只告警，权限以 DB 为准（下次读自动回填），绝不能 unhandledRejection 拖垮进程
+    void this.redisService
+      .del(`perm:role:${roleId}`)
+      .catch((err) => this.logger.warn(`角色权限缓存失效失败: ${err}`))
 
     return { message: `角色 ${role.name} 的权限已更新`, skipped }
   }

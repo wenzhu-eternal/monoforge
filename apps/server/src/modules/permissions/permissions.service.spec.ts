@@ -1,19 +1,33 @@
-import { ConflictException, NotFoundException } from '@nestjs/common'
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/db', () => ({
-  db: {
-    query: {
-      permissions: {
-        findMany: vi.fn(),
-        findFirst: vi.fn(),
+vi.mock('@/db', () => {
+  const tx = {
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }),
+    delete: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    }),
+  }
+  return {
+    db: {
+      query: {
+        permissions: {
+          findMany: vi.fn(),
+          findFirst: vi.fn(),
+        },
       },
+      insert: vi.fn(),
+      update: vi.fn(),
+      select: vi.fn(),
+      // L18：remove 走事务（软删 + 清绑定原子化），mock 直接透传 tx
+      transaction: vi.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(tx)),
     },
-    insert: vi.fn(),
-    update: vi.fn(),
-    select: vi.fn(),
-  },
-}))
+  }
+})
 
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
@@ -118,11 +132,14 @@ describe('PermissionsService', () => {
         }),
       } as never)
 
-      const result = await service.create({
-        code: 'user:view',
-        name: '查看用户',
-        routes: ['GET /users/'],
-      })
+      const result = await service.create(
+        {
+          code: 'user:view',
+          name: '查看用户',
+          routes: ['GET /users/'],
+        },
+        { isAdmin: true },
+      )
 
       expect(result).toEqual(mockPermission)
     })
@@ -131,9 +148,35 @@ describe('PermissionsService', () => {
       const existingPermission = { id: 1, code: 'user:view', name: '查看用户' }
       vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue(existingPermission as never)
 
-      await expect(service.create({ code: 'user:view', name: '查看用户' })).rejects.toThrow(
-        ConflictException,
+      await expect(
+        service.create({ code: 'user:view', name: '查看用户' }, { isAdmin: true }),
+      ).rejects.toThrow(ConflictException)
+    })
+
+    it('M1: 非超管创建携带 routes 时应抛 ForbiddenException', async () => {
+      await expect(
+        service.create(
+          { code: 'user:view', name: '查看用户', routes: ['DELETE /users/:id'] },
+          { isAdmin: false },
+        ),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('M1: 非超管创建不带 routes 时放行（仅 routes 受限）', async () => {
+      const mockPermission = { id: 1, code: 'user:view', name: '查看用户' }
+      vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue(undefined)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([mockPermission]),
+        }),
+      } as never)
+
+      const result = await service.create(
+        { code: 'user:view', name: '查看用户' },
+        { isAdmin: false },
       )
+
+      expect(result).toEqual(mockPermission)
     })
   })
 
@@ -152,7 +195,7 @@ describe('PermissionsService', () => {
         }),
       } as never)
 
-      const result = await service.update(1, { name: '查看用户新名' })
+      const result = await service.update(1, { name: '查看用户新名' }, { isAdmin: true })
 
       expect(result).toEqual(mockPermission)
     })
@@ -160,7 +203,39 @@ describe('PermissionsService', () => {
     it('should throw NotFoundException for non-existent id', async () => {
       vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue(undefined)
 
-      await expect(service.update(999, { name: 'test' })).rejects.toThrow(NotFoundException)
+      await expect(service.update(999, { name: 'test' }, { isAdmin: true })).rejects.toThrow(
+        NotFoundException,
+      )
+    })
+
+    it('M1: 非超管更新携带 routes 时应抛 ForbiddenException', async () => {
+      vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue({
+        id: 1,
+        code: 'user:view',
+      } as never)
+
+      await expect(
+        service.update(1, { routes: ['DELETE /users/:id'] }, { isAdmin: false }),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('M1: 非超管更新不带 routes 时放行', async () => {
+      const mockPermission = { id: 1, code: 'user:view', name: '查看用户新名' }
+      vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue({
+        id: 1,
+        code: 'user:view',
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([mockPermission]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.update(1, { name: '查看用户新名' }, { isAdmin: false })
+
+      expect(result).toEqual(mockPermission)
     })
   })
 
