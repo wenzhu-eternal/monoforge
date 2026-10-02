@@ -42,6 +42,7 @@ import {
   useUpdateWhitelist,
   useWhitelist,
 } from '@/hooks/use-logs'
+import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
 import { requireAuth } from '@/lib/route-guards'
@@ -87,13 +88,14 @@ function LogsTab() {
   const [selectedLog, setSelectedLog] = useState<ErrorLog | null>(null)
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error } = useErrorLogs({
+  const { data, isLoading, isError, error, isSuccess } = useErrorLogs({
     page,
     pageSize,
     keyword,
     source: sourceFilter,
     isResolved: resolvedFilter,
   })
+  usePagedFallback(data?.list.length, isSuccess, page, setPage)
   const { data: stats } = useErrorStats()
   const { data: grouped } = useErrorLogsGrouped(10)
   const deleteMutation = useDeleteErrorLog()

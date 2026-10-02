@@ -68,11 +68,23 @@ export function installGlobalErrorHandlers(): void {
   }
 
   window.addEventListener('unhandledrejection', (event) => {
-    const reason = event.reason
+    const reason = event.reason as { message?: unknown; stack?: string } | null | undefined
+    // L22：非 Error 的 reject 原因（纯对象/数字）String() 成 [object Object] 噪音；
+    // 有 message 取 message，否则 JSON 兜底
+    const message =
+      typeof reason?.message === 'string' && reason.message
+        ? reason.message
+        : (() => {
+            try {
+              return `Unhandled rejection: ${JSON.stringify(reason) ?? String(reason)}`
+            } catch {
+              return `Unhandled rejection: ${String(reason)}`
+            }
+          })()
     reportFrontendError({
       source: 'frontend',
       errorType: 'unhandled_promise',
-      message: reason?.message ?? String(reason),
+      message,
       stack: reason?.stack,
       url: window.location.href,
     })
@@ -83,10 +95,12 @@ export function installGlobalErrorHandlers(): void {
     (event) => {
       const target = event.target as HTMLElement
       if (target?.tagName === 'IMG' || target?.tagName === 'SCRIPT' || target?.tagName === 'LINK') {
+        // L22：空串 src 用 ?? 穿透成残尾（'资源加载失败: '），改 || 落 'unknown'
+        const src = (target as HTMLImageElement).src || target.getAttribute('href') || 'unknown'
         reportFrontendError({
           source: 'frontend',
           errorType: 'resource_error',
-          message: `资源加载失败: ${(target as HTMLImageElement).src ?? target.getAttribute('href') ?? 'unknown'}`,
+          message: `资源加载失败: ${src}`,
           url: window.location.href,
         })
       }

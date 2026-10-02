@@ -13,6 +13,9 @@ class WsClient {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private pongTimer: ReturnType<typeof setTimeout> | null = null
   private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
+  // M7/M8：重连定时器句柄（断开 1s 重连 + 耗尽后 60s 兜底）——closeSocket 统一清理，
+  // 卸载/登出后不再幽灵重连
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private static readonly MAX_RECONNECT = 5
   private static readonly HEARTBEAT_INTERVAL = 10_000
   private static readonly PONG_TIMEOUT = 5_000
@@ -54,7 +57,8 @@ class WsClient {
       // socket.io v4 不会自动重连，必须手动恢复（token 已轮换时 currentToken 为新值）
       if (reason === 'io server disconnect' && this.currentToken) {
         const token = this.currentToken
-        setTimeout(() => this.connect(token), 1000)
+        this.clearReconnectTimer()
+        this.reconnectTimer = setTimeout(() => this.connect(token), 1000)
       }
     })
 
@@ -72,6 +76,12 @@ class WsClient {
     this.socket.io.on('reconnect_failed', () => {
       console.warn('[WS] 重连失败，已达最大重试次数')
       this.stopHeartbeat()
+      // M8：5 次耗尽后 60s 兜底重连一次（纳入清理，登出/卸载不再执行）
+      if (this.currentToken) {
+        const token = this.currentToken
+        this.clearReconnectTimer()
+        this.reconnectTimer = setTimeout(() => this.connect(token), 60_000)
+      }
     })
 
     // 重绑历史订阅到新 socket（connect 内 closeSocket 不清 listeners，全靠这里恢复）
@@ -85,14 +95,22 @@ class WsClient {
   }
 
   /**
-   * 仅关闭底层 socket（停心跳、解绑、置空），保留 listeners 注册表供重连后重绑。
+   * 仅关闭底层 socket（停心跳、清重连定时、解绑、置空），保留 listeners 注册表供重连后重绑。
    */
   private closeSocket(): void {
     this.stopHeartbeat()
+    this.clearReconnectTimer()
     if (this.socket) {
       this.socket.removeAllListeners()
       this.socket.disconnect()
       this.socket = null
+    }
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
     }
   }
 

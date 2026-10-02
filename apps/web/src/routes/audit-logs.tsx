@@ -15,6 +15,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState } from 'react'
 import { type AuditLog, useAuditLogs } from '@/hooks/use-logs'
+import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { requireAuth } from '@/lib/route-guards'
 
@@ -79,11 +80,12 @@ function AuditLogsContent() {
   }>({})
   const [searchForm] = Form.useForm()
   const [messageApi, contextHolder] = message.useMessage()
-  const { data, isLoading, isError, error } = useAuditLogs({
+  const { data, isLoading, isError, error, isSuccess } = useAuditLogs({
     page,
     pageSize,
     ...filters,
   })
+  usePagedFallback(data?.list.length, isSuccess, page, setPage)
 
   useEffect(() => {
     if (isError) {

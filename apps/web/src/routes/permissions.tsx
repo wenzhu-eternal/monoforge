@@ -18,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import type { RouteMeta } from '@/hooks/use-permissions'
 import {
   useCreatePermission,
@@ -60,7 +61,8 @@ function PermissionCodesContent() {
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>([])
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error } = usePermissions({ page, pageSize })
+  const { data, isLoading, isError, error, isSuccess } = usePermissions({ page, pageSize })
+  usePagedFallback(data?.list.length, isSuccess, page, setPage)
   const {
     data: allRoutes,
     isError: routesError,

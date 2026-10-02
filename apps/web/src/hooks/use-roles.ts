@@ -80,6 +80,8 @@ export const useUpdateRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] })
+      // L19：改角色名后 users 列表 30s 内仍旧名（staleTime），同步失效
+      queryClient.invalidateQueries({ queryKey: ['users'] })
     },
   })
 }

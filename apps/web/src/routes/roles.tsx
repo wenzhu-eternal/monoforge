@@ -18,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import {
   useAllPermissions,
   useRolePermissions,
@@ -78,7 +79,8 @@ function RolesContent() {
   const [selectedPermissionCodes, setSelectedPermissionCodes] = useState<string[]>([])
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error } = useRoles({ page, pageSize })
+  const { data, isLoading, isError, error, isSuccess } = useRoles({ page, pageSize })
+  usePagedFallback(data?.list.length, isSuccess, page, setPage)
   const createRole = useCreateRole()
   const updateRole = useUpdateRole()
   const deleteRole = useDeleteRole()

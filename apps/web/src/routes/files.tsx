@@ -27,6 +27,7 @@ import {
   useRestoreFile,
   useUploadFile,
 } from '@/hooks/use-files'
+import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
 import { requireAuth } from '@/lib/route-guards'
@@ -70,7 +71,8 @@ function FilesContent() {
   }, [])
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error } = useFiles({ page, pageSize })
+  const { data, isLoading, isError, error, isSuccess } = useFiles({ page, pageSize })
+  usePagedFallback(data?.list.length, isSuccess, page, setPage)
   const deleteMutation = useDeleteFile()
   const restoreMutation = useRestoreFile()
   const uploadMutation = useUploadFile()

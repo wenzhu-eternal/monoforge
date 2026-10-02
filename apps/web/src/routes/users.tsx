@@ -18,6 +18,8 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { useCurrentUser } from '@/hooks/use-auth'
+import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { useAllRoles } from '@/hooks/use-roles'
 import {
   useCreateUser,
@@ -60,10 +62,11 @@ function UsersContent() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error } = useUsers({
+  const { data, isLoading, isError, error, isSuccess } = useUsers({
     page,
     pageSize,
   })
+  usePagedFallback(data?.list.length, isSuccess, page, setPage)
   const { data: allRoles } = useAllRoles()
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
@@ -71,7 +74,10 @@ function UsersContent() {
   const restoreUser = useRestoreUser()
 
   // 角色管理权限（创建时指定角色 / 编辑时改角色，后端要求 USER_ROLE_MANAGE）
-  const user = useAuthStore((state) => state.user)
+  // L18：权限判定读新鲜 me（布局层已预热同 key 缓存，无额外请求），store 仅兜底
+  const { data: meUser } = useCurrentUser()
+  const storeUser = useAuthStore((state) => state.user)
+  const user = meUser ?? storeUser
   const canManageRole = user?.permissions?.includes(PermissionCodes.USER_ROLE_MANAGE) ?? false
 
   const [form] = Form.useForm<CreateUser & UpdateUser & { roleId?: number }>()
