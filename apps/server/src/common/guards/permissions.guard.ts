@@ -60,7 +60,14 @@ export class PermissionsGuard implements CanActivate {
     }
 
     // 基于角色 ID 判断 admin（可配置 ADMIN_ROLE_ID，默认 1）
+    // M1：超管同样复检 status + notDeleted——原早退无兜底，禁用超管的存量 token 仍全权限
     if (isAdminUser(userPayload)) {
+      const adminRecord = await db.query.users.findFirst({
+        where: and(eq(users.id, userPayload.sub), notDeleted(users.deletedAt)),
+      })
+      if (!adminRecord || adminRecord.status === false) {
+        throw new ForbiddenException('账号已被禁用')
+      }
       return true
     }
 

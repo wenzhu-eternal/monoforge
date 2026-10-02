@@ -94,7 +94,11 @@ export class ScheduleService {
         // 此处再加超时防 cron 挂死，并告警提示审计
         this.logger.warn('使用自定义 BACKUP_CMD 执行备份，请确保该命令来源可信')
         const safeFilepath = `'${filepath.replace(/'/g, "'\\''")}'`
-        await execAsync(env.BACKUP_CMD.replace('{filepath}', safeFilepath), { timeout: 300_000 })
+        await execAsync(env.BACKUP_CMD.replace('{filepath}', safeFilepath), {
+          timeout: 300_000,
+          // L2：exec 子进程同样只给最小 env（PATH/LANG），不继承全量 process.env（含 JWT/MAIL 密钥）
+          env: { PATH: process.env.PATH, LANG: process.env.LANG },
+        })
       } else {
         if (!env.DATABASE_URL) {
           throw new Error('DATABASE_URL 未配置')
@@ -175,6 +179,13 @@ export class ScheduleService {
       const stream = createWriteStream(filepath)
       child.stdout.pipe(stream)
 
+      // L7：close 只代表子进程退出，写流落盘可能滞后；跟踪 finish 后再 resolve，
+      // 否则大库尾部页丢失却报成功
+      let streamDone = false
+      stream.once('finish', () => {
+        streamDone = true
+      })
+
       let stderr = ''
       child.stderr.on('data', (data: Buffer) => {
         stderr += data.toString()
@@ -195,9 +206,20 @@ export class ScheduleService {
         reject(err)
       })
       child.on('close', (code) => {
-        cleanup()
-        if (code === 0) resolve()
-        else reject(new Error(`pg_dump 退出码 ${code}${stderr ? `: ${stderr.slice(0, 200)}` : ''}`))
+        if (code !== 0) {
+          cleanup()
+          reject(new Error(`pg_dump 退出码 ${code}${stderr ? `: ${stderr.slice(0, 200)}` : ''}`))
+          return
+        }
+        if (streamDone) {
+          cleanup()
+          resolve()
+          return
+        }
+        stream.once('finish', () => {
+          cleanup()
+          resolve()
+        })
       })
       stream.on('error', (err) => {
         cleanup()

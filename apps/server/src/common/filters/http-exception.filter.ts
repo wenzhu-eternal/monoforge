@@ -68,9 +68,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // 5xx 入库；401/403/429 安全相关（爆破/越权/限流）也入库，其余 4xx 不记
       shouldRecordToDb = status >= 500 || status === 401 || status === 403 || status === 429
     } else if (exception instanceof Error) {
-      // 非业务异常（未捕获的运行时错误）入库
-      shouldRecordToDb = true
-      this.logger.error(exception.stack || exception.message)
+      // L3：PG 数值越界（cause code 22003，如 :id 超 int4）集中转 400，一处收全部
+      const pgCode = (exception as { cause?: { code?: string } }).cause?.code
+      if (pgCode === '22003') {
+        status = HttpStatus.BAD_REQUEST
+        message = '参数数值超出范围'
+      } else {
+        // 非业务异常（未捕获的运行时错误）入库
+        shouldRecordToDb = true
+        this.logger.error(exception.stack || exception.message)
+      }
     }
 
     // 先写文件日志兜底（无论 DB 是否成功都不丢）
@@ -113,11 +120,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message,
       stack,
       statusCode: status,
-      url: request.url,
-      method: request.method,
+      // L4：url 按 DB 列宽 500 截断（超长 url 否则 22001 被吞，审计消音）
+      url: request.url?.slice(0, 500),
+      method: request.method?.slice(0, 10),
       context: {
         method: request.method,
-        url: request.url,
+        url: request.url?.slice(0, 500),
         body: (request as { sanitizedBody?: unknown }).sanitizedBody ?? request.body,
       },
       userId: userPayload?.sub,

@@ -15,14 +15,31 @@ export const CreatePermissionSchema = z.object({
   code: z.string().min(1).max(50),
   name: z.string().min(1).max(100),
   description: z.string().optional(),
-  routes: z.array(z.string()).optional(),
+  // L14：routes 元素格式"方法 + 空格 + /路径"并限长，数组限 50 条
+  routes: z
+    .array(
+      z
+        .string()
+        .regex(/^(GET|POST|PATCH|PUT|DELETE) \//, '格式必须为"方法 /路径"')
+        .max(100),
+    )
+    .max(50)
+    .optional(),
 })
 
 export const UpdatePermissionSchema = z.object({
   code: z.string().min(1).max(50).optional(),
   name: z.string().min(1).max(100).optional(),
   description: z.string().optional(),
-  routes: z.array(z.string()).optional(),
+  routes: z
+    .array(
+      z
+        .string()
+        .regex(/^(GET|POST|PATCH|PUT|DELETE) \//, '格式必须为"方法 /路径"')
+        .max(100),
+    )
+    .max(50)
+    .optional(),
 })
 
 export const UpdateRolePermissionsSchema = z.object({

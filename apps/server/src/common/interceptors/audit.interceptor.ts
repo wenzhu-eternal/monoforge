@@ -25,6 +25,14 @@ const ACTION_MAP: Record<string, string> = {
   DELETE: '删除',
 }
 
+// L8：非 CRUD 的 POST 一律记"创建"是错的（如恢复记成创建）。handler 名映射兜底——
+// 显式 @AuditAction 优先，其次按名，最后才按方法。新增恢复类端点自动归位，无需逐个标注。
+const HANDLER_ACTION_MAP: Record<string, string> = {
+  restore: '恢复',
+  restoreWhitelist: '恢复',
+  triggerBackup: '触发备份',
+}
+
 const RESOURCE_MAP: Record<string, string> = {
   AuthController: '认证',
   UsersController: '用户',
@@ -33,6 +41,7 @@ const RESOURCE_MAP: Record<string, string> = {
   PermissionsController: '权限',
   FilesController: '文件',
   ErrorLogsController: '错误日志',
+  error_whitelist: '白名单规则',
   AuditController: '审计日志',
   NotificationsController: '通知',
   WechatController: '微信',
@@ -143,7 +152,10 @@ export class AuditInterceptor implements NestInterceptor {
       return next.handle()
     }
 
-    const rawAction = this.reflector.get<string>(AUDIT_ACTION_KEY, context.getHandler()) ?? method
+    const rawAction =
+      this.reflector.get<string>(AUDIT_ACTION_KEY, context.getHandler()) ??
+      HANDLER_ACTION_MAP[context.getHandler().name] ??
+      method
     const rawResource =
       this.reflector.get<string>(AUDIT_RESOURCE_KEY, context.getHandler()) ??
       context.getClass().name
@@ -154,7 +166,7 @@ export class AuditInterceptor implements NestInterceptor {
     const userId = request.user?.sub as number | undefined
     const ip = (request.ip ?? '') as string
     const userAgent = request.headers['user-agent'] as string | undefined
-    const resourceId = request.params?.id as string | undefined
+    const resourceId = (request.params?.id ?? request.params?.roleId) as string | undefined
 
     // 对于更新和删除操作，先查询旧值
     const shouldFetchOldValue =

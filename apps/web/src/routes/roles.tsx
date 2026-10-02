@@ -78,7 +78,7 @@ function RolesContent() {
   const [selectedPermissionCodes, setSelectedPermissionCodes] = useState<string[]>([])
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error } = useRoles({ page, pageSize, order: 'desc' })
+  const { data, isLoading, isError, error } = useRoles({ page, pageSize })
   const createRole = useCreateRole()
   const updateRole = useUpdateRole()
   const deleteRole = useDeleteRole()

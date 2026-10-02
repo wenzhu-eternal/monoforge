@@ -35,23 +35,19 @@ describe('use-users hooks', () => {
         data: { code: 200, message: 'ok', data: mockData },
       })
 
-      const { result } = renderHookWithQuery(() =>
-        useUsers({ page: 1, pageSize: 10, order: 'desc' }),
-      )
+      const { result } = renderHookWithQuery(() => useUsers({ page: 1, pageSize: 10 }))
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true))
       expect(result.current.data).toEqual(mockData)
       expect(apiMock.get).toHaveBeenCalledWith('/api/v1/users', {
-        params: { page: 1, pageSize: 10, order: 'desc' },
+        params: { page: 1, pageSize: 10 },
       })
     })
 
     it('请求失败时进入 error 状态', async () => {
       apiMock.get.mockRejectedValue(new Error('网络错误'))
 
-      const { result } = renderHookWithQuery(() =>
-        useUsers({ page: 1, pageSize: 10, order: 'desc' }),
-      )
+      const { result } = renderHookWithQuery(() => useUsers({ page: 1, pageSize: 10 }))
 
       await waitFor(() => expect(result.current.isError).toBe(true))
       expect(result.current.data).toBeUndefined()

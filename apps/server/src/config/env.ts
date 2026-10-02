@@ -24,7 +24,19 @@ const envSchema = z
       .refine(
         (url) => url.startsWith('postgresql://') || url.startsWith('postgres://'),
         'DATABASE_URL 必须为 postgresql 协议',
-      ),
+      )
+      .refine((url) => {
+        // M11：userinfo 段（密码）非法字符机器校验——含 @/#/? 等未编码字符会导致 pg 解析错位，
+        // 启动失败并指路 URL-encode，而非运行时连错库
+        try {
+          // 查 userinfo 原文（仍为 percent-encoded 形态）：合法 %40 不含字面 @，
+          // 仅裸写 @#?/空白才会错位解析
+          const u = new URL(url)
+          return !/[@#?/\s]/.test(u.username + u.password)
+        } catch {
+          return false
+        }
+      }, 'DATABASE_URL 用户名/密码含非法字符，请 URL-encode 后再配置'),
 
     // Redis: auth/权限缓存/限流计数强依赖，必填
     REDIS_URL: z
@@ -33,7 +45,17 @@ const envSchema = z
       .refine(
         (url) => url.startsWith('redis://') || url.startsWith('rediss://'),
         'REDIS_URL 必须为 redis:// 或 rediss:// 协议',
-      ),
+      )
+      .refine((url) => {
+        try {
+          // 查 userinfo 原文（仍为 percent-encoded 形态）：合法 %40 不含字面 @，
+          // 仅裸写 @#?/空白才会错位解析
+          const u = new URL(url)
+          return !/[@#?/\s]/.test(u.username + u.password)
+        } catch {
+          return false
+        }
+      }, 'REDIS_URL 用户名/密码含非法字符，请 URL-encode 后再配置'),
     // Redis 密码（当前 optional 且代码未直接消费，密码通过 REDIS_URL 传递；此处保留供文档参考）
     REDIS_PASSWORD: z.string().optional(),
 
@@ -79,8 +101,11 @@ const envSchema = z
 
     WEAPP_APPID: z.string().optional(),
     WEAPP_SECRET: z.string().optional(),
-    // 微信扫码登录回调地址（网站应用 OAuth）
-    WECHAT_REDIRECT_URI: z.string().url().optional(),
+    // 微信扫码登录回调地址（网站应用 OAuth）；空串视为未配置（可选功能不得拖垮整体启动校验）
+    WECHAT_REDIRECT_URI: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().url().optional(),
+    ),
 
     // Throttle: 登录接口建议单独更严格限流
     THROTTLE_TTL: z.coerce.number().min(1).default(60),

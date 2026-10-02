@@ -25,7 +25,7 @@
 | `APP_NAME` | 应用名（Swagger 标题、邮件主题、邮件模板均引用，新项目通过 .env 配置） | `MonoForge` |
 | `ALLOW_ORIGIN` | CORS 白名单 | `http://localhost:3000` |
 | `NODE_ENV` | 环境 | `development` / `production` |
-| `COOKIE_SECURE` | refresh token cookie 的 secure 标志（HTTP=false，HTTPS=true） | `false` |
+| `COOKIE_SECURE` | refresh token cookie 的 secure 标志（HTTP=false，HTTPS=true；compose 缺省 `true` fail-secure，HTTP 调试显式设 false 或 `ALLOW_INSECURE_COOKIE=true`） | `false`（compose 缺省 `true`） |
 | `ALLOW_INSECURE_COOKIE` | 生产环境允许非 secure cookie（ngrok/单容器 HTTP 调试场景；生产强制 COOKIE_SECURE 除非此项为 true） | `false` |
 | `ALLOW_SETUP` | 首次部署初始化开关（true 时允许调用 /setup 接口创建管理员；初始化事务内同步灌入 `@shared` 的 `DEFAULT_PERMISSIONS` 并绑定 admin 角色，与 `db:seed` 同源；初始化后建议设为 false） | `false` |
 | `ALLOW_REGISTER` | 公开注册开关（true 时允许调用 register/send-register-code；默认 false 最小开口，需要开放注册的项目显式打开；关闭时两接口直接 404，前端登录页翻译为"未开放公开注册"） | `false` |

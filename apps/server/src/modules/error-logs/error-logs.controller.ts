@@ -26,7 +26,7 @@ import {
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { z } from 'zod'
-import { SkipAudit } from '@/common/decorators/audit.decorator'
+import { AuditResource, SkipAudit } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { Public } from '@/common/decorators/public.decorator'
@@ -168,6 +168,7 @@ export class ErrorLogsController {
   }
 
   @Post('whitelist')
+  @AuditResource('error_whitelist')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
@@ -179,6 +180,7 @@ export class ErrorLogsController {
   }
 
   @Patch('whitelist/:id')
+  @AuditResource('error_whitelist')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
@@ -189,6 +191,7 @@ export class ErrorLogsController {
   }
 
   @Delete('whitelist/:id')
+  @AuditResource('error_whitelist')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
@@ -199,6 +202,7 @@ export class ErrorLogsController {
   }
 
   @Post('whitelist/:id/restore')
+  @AuditResource('error_whitelist')
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)

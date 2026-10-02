@@ -156,7 +156,11 @@ export class AuthService {
     }
     try {
       const secret = this.configService.get<string>('JWT_REFRESH_SECRET')
-      payload = await this.jwtService.verifyAsync(refreshToken, { secret })
+      payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret,
+        // L1：验签锁死 HS256（防 alg 混淆；storeRefreshTokenForExternal 处已有同款）
+        algorithms: ['HS256'],
+      })
     } catch {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.REFRESH_TOKEN_INVALID])
     }

@@ -50,8 +50,13 @@ export class AuditController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
+    const parsedUserId = userId ? Number.parseInt(userId, 10) : undefined
+    // L24：显传非法 userId 直接 400（原 NaN 静默透传，查空结果且 0 永不可过滤）
+    if (userId && Number.isNaN(parsedUserId)) {
+      throw new BadRequestException('userId 必须为整数')
+    }
     const filter = {
-      userId: userId ? Number.parseInt(userId, 10) : undefined,
+      userId: parsedUserId,
       action,
       resource,
       keyword,

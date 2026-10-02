@@ -13,8 +13,7 @@ export const PaginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =
 export type PaginationQuery = {
   page: number
   pageSize: number
-  sort?: string
-  order?: 'asc' | 'desc'
+  // L26：后端列表固定倒序（sort/order 从未生效），契约删除两字段防误导，前端不再发送
 }
 export type PaginatedResponse<T> = {
   list: T[]

@@ -32,7 +32,7 @@ export const useAllRoles = () => {
       let page = 1
       for (;;) {
         const response = await api.get<ApiResponse<PaginatedResponse<Role>>>('/api/v1/roles', {
-          params: { page, pageSize: 100, order: 'desc' },
+          params: { page, pageSize: 100 },
         })
         const data = response.data.data!
         all.push(...data.list)

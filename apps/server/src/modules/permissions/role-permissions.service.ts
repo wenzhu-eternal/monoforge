@@ -64,7 +64,7 @@ export class RolePermissionsService {
     roleId: number,
     permissionCodes: string[],
     caller?: { userId: number; roleId: number | null; isAdmin: boolean },
-  ): Promise<{ message: string; skipped: string[] }> {
+  ): Promise<{ message: string; skipped: string[]; roleId: number; permissions: string[] }> {
     const role = await db.query.roles.findFirst({
       where: and(eq(roles.id, roleId), notDeleted(roles.deletedAt)),
     })
@@ -135,6 +135,6 @@ export class RolePermissionsService {
       .del(`perm:role:${roleId}`)
       .catch((err) => this.logger.warn(`角色权限缓存失效失败: ${err}`))
 
-    return { message: `角色 ${role.name} 的权限已更新`, skipped }
+    return { message: `角色 ${role.name} 的权限已更新`, skipped, roleId, permissions: validCodes }
   }
 }

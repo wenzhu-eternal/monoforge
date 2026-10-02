@@ -63,7 +63,6 @@ function UsersContent() {
   const { data, isLoading, isError, error } = useUsers({
     page,
     pageSize,
-    order: 'desc',
   })
   const { data: allRoles } = useAllRoles()
   const createUser = useCreateUser()

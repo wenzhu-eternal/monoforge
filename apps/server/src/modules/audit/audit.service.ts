@@ -48,7 +48,8 @@ export class AuditService {
     const offset = (safePage - 1) * safePageSize
 
     const conditions = []
-    if (filter?.userId) {
+    // L24：userId 0（匿名哨兵）可过滤——原 truthy 判断使 0 永不可查
+    if (filter?.userId !== undefined) {
       conditions.push(eq(auditLogs.userId, filter.userId))
     }
     if (filter?.action) {

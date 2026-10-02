@@ -129,6 +129,8 @@ describe('RolePermissionsService', () => {
       await expect(service.updateRolePermissions(2, [], adminCaller)).resolves.toEqual({
         message: expect.stringContaining('editor'),
         skipped: [],
+        roleId: 2,
+        permissions: [],
       })
     })
 
