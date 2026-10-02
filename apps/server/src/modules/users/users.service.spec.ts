@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common'
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock argon2
@@ -183,7 +183,52 @@ describe('UsersService', () => {
       } as never)
 
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, deletedAt: null } as never)
-      await service.update(1, { email: 'a@b.com', roleId: 1 })
+      await service.update(1, { email: 'a@b.com', roleId: 1 }, { roleId: 1 })
+    })
+
+    it('非超管授予超管角色时抛 ForbiddenException', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, deletedAt: null } as never)
+
+      await expect(service.update(2, { roleId: 1 }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+    })
+
+    it('非超管将他人从超管摘离时抛 ForbiddenException', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 3,
+        email: 'c@c.com',
+        roleId: 1,
+      } as never)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 2, deletedAt: null } as never)
+
+      await expect(service.update(3, { roleId: 2 }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+    })
+
+    it('超管授予超管角色放行', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, deletedAt: null } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 2, email: 'b@b.com', roleId: 1 }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.update(2, { roleId: 1 }, { roleId: 1 })
+      expect(result.roleId).toBe(1)
     })
   })
 

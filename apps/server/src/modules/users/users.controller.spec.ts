@@ -148,7 +148,7 @@ describe('UsersController', () => {
       const result = await controller.create(dto, currentUser)
 
       expect(result).toEqual(mockUser)
-      expect(service.create).toHaveBeenCalledWith(dto)
+      expect(service.create).toHaveBeenCalledWith(dto, currentUser)
       expect(service.hasPermission).not.toHaveBeenCalled()
     })
 
@@ -162,7 +162,7 @@ describe('UsersController', () => {
 
       expect(result).toEqual(mockUser)
       expect(service.hasPermission).toHaveBeenCalledWith(1, PermissionCodes.USER_ROLE_MANAGE)
-      expect(service.create).toHaveBeenCalledWith(dto)
+      expect(service.create).toHaveBeenCalledWith(dto, currentUser)
     })
 
     it('指定 roleId 但无 USER_ROLE_MANAGE 权限 → 抛 ForbiddenException（防借创建接口提权）', async () => {
@@ -190,7 +190,7 @@ describe('UsersController', () => {
       const result = await controller.update(1, dto, currentUser)
 
       expect(result).toEqual(mockUser)
-      expect(service.update).toHaveBeenCalledWith(1, dto)
+      expect(service.update).toHaveBeenCalledWith(1, dto, currentUser)
       expect(service.hasPermission).not.toHaveBeenCalled()
     })
 
@@ -204,7 +204,7 @@ describe('UsersController', () => {
 
       expect(result).toEqual(mockUser)
       expect(service.hasPermission).toHaveBeenCalledWith(1, PermissionCodes.USER_ROLE_MANAGE)
-      expect(service.update).toHaveBeenCalledWith(2, dto)
+      expect(service.update).toHaveBeenCalledWith(2, dto, currentUser)
     })
 
     it('改自己的 roleId → 一律抛 ForbiddenException（防自提权，含 admin）', async () => {
@@ -239,7 +239,7 @@ describe('UsersController', () => {
       const result = await controller.update(1, dto, currentUser)
 
       expect(result).toEqual({ id: 1, status: false })
-      expect(service.update).toHaveBeenCalledWith(1, dto)
+      expect(service.update).toHaveBeenCalledWith(1, dto, currentUser)
     })
   })
 
