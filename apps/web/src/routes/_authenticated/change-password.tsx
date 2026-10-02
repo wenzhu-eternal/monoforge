@@ -6,13 +6,11 @@ import { useChangePassword } from '@/hooks/use-auth'
 import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { extractErrorMessage } from '@/lib/error'
 import { passwordRule } from '@/lib/form-rules'
-import { requireAuth } from '@/lib/route-guards'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Title } = Typography
 
-export const Route = createFileRoute('/change-password')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/change-password')({
   component: ChangePasswordPage,
 })
 

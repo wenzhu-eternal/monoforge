@@ -43,20 +43,18 @@ import {
   useWhitelist,
 } from '@/hooks/use-logs'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { requireAuth } from '@/lib/route-guards'
 
 const { Title, Text, Paragraph } = Typography
 
-export const Route = createFileRoute('/error-logs')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/error-logs')({
   component: ErrorLogsPage,
 })
 
 function ErrorLogsPage() {
+  // J4：布局上移，此处直 render 内容
   return (
-    <AuthenticatedLayout>
+    <>
       <Title level={3}>错误日志</Title>
 
       <Tabs
@@ -74,7 +72,7 @@ function ErrorLogsPage() {
           },
         ]}
       />
-    </AuthenticatedLayout>
+    </>
   )
 }
 

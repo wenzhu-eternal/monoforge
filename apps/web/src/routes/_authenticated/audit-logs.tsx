@@ -16,13 +16,10 @@ import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState } from 'react'
 import { type AuditLog, useAuditLogs } from '@/hooks/use-logs'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
-import { requireAuth } from '@/lib/route-guards'
 
 const { Title, Text } = Typography
 
-export const Route = createFileRoute('/audit-logs')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/audit-logs')({
   component: AuditLogsPage,
 })
 
@@ -62,11 +59,8 @@ function formatValue(v: unknown): string {
  * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
  */
 function AuditLogsPage() {
-  return (
-    <AuthenticatedLayout>
-      <AuditLogsContent />
-    </AuthenticatedLayout>
-  )
+  // J4：布局与守卫上移 _authenticated pathless layout，此处直 render 内容
+  return <AuditLogsContent />
 }
 
 function AuditLogsContent() {

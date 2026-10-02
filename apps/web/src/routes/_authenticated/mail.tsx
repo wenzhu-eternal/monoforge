@@ -3,15 +3,12 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Button, Divider, Form, Input, message, Radio, Space, Typography } from 'antd'
 import { useState } from 'react'
 import { useSendVerificationCodeMail, useSendWelcomeMail } from '@/hooks/use-mail'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
 import { emailRule } from '@/lib/form-rules'
-import { requireAuth } from '@/lib/route-guards'
 
 const { Title, Text } = Typography
 
-export const Route = createFileRoute('/mail')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/mail')({
   component: MailPage,
 })
 
@@ -47,7 +44,8 @@ function MailPage() {
   }
 
   return (
-    <AuthenticatedLayout>
+    // J4：布局上移，此处直 render 内容
+    <>
       {contextHolder}
       <Title level={3}>邮件发送</Title>
 
@@ -122,6 +120,6 @@ function MailPage() {
           </Form>
         )}
       </Space>
-    </AuthenticatedLayout>
+    </>
   )
 }

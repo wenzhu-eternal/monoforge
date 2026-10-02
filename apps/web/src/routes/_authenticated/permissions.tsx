@@ -28,23 +28,17 @@ import {
   useRoutes,
   useUpdatePermission,
 } from '@/hooks/use-permissions'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { requireAuth } from '@/lib/route-guards'
 
 const { Title } = Typography
 
-export const Route = createFileRoute('/permissions')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/permissions')({
   component: PermissionCodesPage,
 })
 
 function PermissionCodesPage() {
-  return (
-    <AuthenticatedLayout>
-      <PermissionCodesContent />
-    </AuthenticatedLayout>
-  )
+  // J4：布局与守卫上移 _authenticated pathless layout，此处直 render 内容
+  return <PermissionCodesContent />
 }
 
 /**

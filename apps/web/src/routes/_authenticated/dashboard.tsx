@@ -2,13 +2,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Button, Card, Col, message, Result, Row, Spin, Typography } from 'antd'
 import { useEffect } from 'react'
 import { useDashboardStats } from '@/hooks/use-dashboard'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
-import { requireAuth } from '@/lib/route-guards'
 
 const { Title } = Typography
 
-export const Route = createFileRoute('/dashboard')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/dashboard')({
   component: DashboardPage,
 })
 
@@ -18,11 +15,8 @@ export const Route = createFileRoute('/dashboard')({
  * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
  */
 function DashboardPage() {
-  return (
-    <AuthenticatedLayout>
-      <DashboardContent />
-    </AuthenticatedLayout>
-  )
+  // J4：布局与守卫上移 _authenticated pathless layout，此处直 render 内容
+  return <DashboardContent />
 }
 
 function DashboardContent() {

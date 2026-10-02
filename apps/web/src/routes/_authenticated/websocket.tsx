@@ -18,15 +18,12 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useWebSocketDemo } from '@/hooks/use-websocket'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { requireAuth } from '@/lib/route-guards'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Title, Paragraph, Text } = Typography
 
-export const Route = createFileRoute('/websocket')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/websocket')({
   component: WebSocketPage,
 })
 
@@ -36,11 +33,8 @@ export const Route = createFileRoute('/websocket')({
  * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
  */
 function WebSocketPage() {
-  return (
-    <AuthenticatedLayout>
-      <WebSocketContent />
-    </AuthenticatedLayout>
-  )
+  // J4：布局与守卫上移 _authenticated pathless layout，此处直 render 内容
+  return <WebSocketContent />
 }
 
 function WebSocketContent() {

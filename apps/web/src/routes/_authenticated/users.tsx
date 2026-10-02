@@ -28,17 +28,14 @@ import {
   useUpdateUser,
   useUsers,
 } from '@/hooks/use-users'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
 import { emailRule, passwordRule, phoneRule, usernameRule } from '@/lib/form-rules'
 import { PermissionCodes } from '@/lib/permissions'
-import { requireAuth } from '@/lib/route-guards'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Title } = Typography
 
-export const Route = createFileRoute('/users')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/users')({
   component: UsersPage,
 })
 
@@ -48,11 +45,8 @@ export const Route = createFileRoute('/users')({
  * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
  */
 function UsersPage() {
-  return (
-    <AuthenticatedLayout>
-      <UsersContent />
-    </AuthenticatedLayout>
-  )
+  // J4：布局与守卫上移 _authenticated pathless layout，此处直 render 内容
+  return <UsersContent />
 }
 
 function UsersContent() {

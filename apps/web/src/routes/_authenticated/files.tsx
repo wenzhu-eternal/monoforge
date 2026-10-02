@@ -28,14 +28,11 @@ import {
   useUploadFile,
 } from '@/hooks/use-files'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { requireAuth } from '@/lib/route-guards'
 
 const { Title, Text } = Typography
 
-export const Route = createFileRoute('/files')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/files')({
   component: FilesPage,
 })
 
@@ -45,11 +42,8 @@ export const Route = createFileRoute('/files')({
  * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
  */
 function FilesPage() {
-  return (
-    <AuthenticatedLayout>
-      <FilesContent />
-    </AuthenticatedLayout>
-  )
+  // J4：布局与守卫上移 _authenticated pathless layout，此处直 render 内容
+  return <FilesContent />
 }
 
 function FilesContent() {

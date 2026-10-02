@@ -9,45 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WebsocketRouteImport } from './routes/websocket'
-import { Route as UsersRouteImport } from './routes/users'
 import { Route as SetupRouteImport } from './routes/setup'
-import { Route as RolesRouteImport } from './routes/roles'
-import { Route as PermissionsRouteImport } from './routes/permissions'
 import { Route as NotFoundRouteImport } from './routes/not-found'
-import { Route as MailRouteImport } from './routes/mail'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as FilesRouteImport } from './routes/files'
-import { Route as ErrorLogsRouteImport } from './routes/error-logs'
-import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as ChangePasswordRouteImport } from './routes/change-password'
-import { Route as AuditLogsRouteImport } from './routes/audit-logs'
 import { Route as R403RouteImport } from './routes/403'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedWebsocketRouteImport } from './routes/_authenticated/websocket'
+import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
+import { Route as AuthenticatedRolesRouteImport } from './routes/_authenticated/roles'
+import { Route as AuthenticatedPermissionsRouteImport } from './routes/_authenticated/permissions'
+import { Route as AuthenticatedMailRouteImport } from './routes/_authenticated/mail'
+import { Route as AuthenticatedFilesRouteImport } from './routes/_authenticated/files'
+import { Route as AuthenticatedErrorLogsRouteImport } from './routes/_authenticated/error-logs'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedChangePasswordRouteImport } from './routes/_authenticated/change-password'
+import { Route as AuthenticatedAuditLogsRouteImport } from './routes/_authenticated/audit-logs'
 
-const WebsocketRoute = WebsocketRouteImport.update({
-  id: '/websocket',
-  path: '/websocket',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const UsersRoute = UsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RolesRoute = RolesRouteImport.update({
-  id: '/roles',
-  path: '/roles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PermissionsRoute = PermissionsRouteImport.update({
-  id: '/permissions',
-  path: '/permissions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NotFoundRoute = NotFoundRouteImport.update({
@@ -55,39 +36,9 @@ const NotFoundRoute = NotFoundRouteImport.update({
   path: '/not-found',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MailRoute = MailRouteImport.update({
-  id: '/mail',
-  path: '/mail',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FilesRoute = FilesRouteImport.update({
-  id: '/files',
-  path: '/files',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ErrorLogsRoute = ErrorLogsRouteImport.update({
-  id: '/error-logs',
-  path: '/error-logs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChangePasswordRoute = ChangePasswordRouteImport.update({
-  id: '/change-password',
-  path: '/change-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuditLogsRoute = AuditLogsRouteImport.update({
-  id: '/audit-logs',
-  path: '/audit-logs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const R403Route = R403RouteImport.update({
@@ -95,171 +46,192 @@ const R403Route = R403RouteImport.update({
   path: '/403',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedWebsocketRoute = AuthenticatedWebsocketRouteImport.update({
+  id: '/websocket',
+  path: '/websocket',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedRolesRoute = AuthenticatedRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedPermissionsRoute =
+  AuthenticatedPermissionsRouteImport.update({
+    id: '/permissions',
+    path: '/permissions',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMailRoute = AuthenticatedMailRouteImport.update({
+  id: '/mail',
+  path: '/mail',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedFilesRoute = AuthenticatedFilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedErrorLogsRoute = AuthenticatedErrorLogsRouteImport.update({
+  id: '/error-logs',
+  path: '/error-logs',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedChangePasswordRoute =
+  AuthenticatedChangePasswordRouteImport.update({
+    id: '/change-password',
+    path: '/change-password',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAuditLogsRoute = AuthenticatedAuditLogsRouteImport.update({
+  id: '/audit-logs',
+  path: '/audit-logs',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/403': typeof R403Route
-  '/audit-logs': typeof AuditLogsRoute
-  '/change-password': typeof ChangePasswordRoute
-  '/dashboard': typeof DashboardRoute
-  '/error-logs': typeof ErrorLogsRoute
-  '/files': typeof FilesRoute
   '/login': typeof LoginRoute
-  '/mail': typeof MailRoute
   '/not-found': typeof NotFoundRoute
-  '/permissions': typeof PermissionsRoute
-  '/roles': typeof RolesRoute
   '/setup': typeof SetupRoute
-  '/users': typeof UsersRoute
-  '/websocket': typeof WebsocketRoute
+  '/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/change-password': typeof AuthenticatedChangePasswordRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/error-logs': typeof AuthenticatedErrorLogsRoute
+  '/files': typeof AuthenticatedFilesRoute
+  '/mail': typeof AuthenticatedMailRoute
+  '/permissions': typeof AuthenticatedPermissionsRoute
+  '/roles': typeof AuthenticatedRolesRoute
+  '/users': typeof AuthenticatedUsersRoute
+  '/websocket': typeof AuthenticatedWebsocketRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/403': typeof R403Route
-  '/audit-logs': typeof AuditLogsRoute
-  '/change-password': typeof ChangePasswordRoute
-  '/dashboard': typeof DashboardRoute
-  '/error-logs': typeof ErrorLogsRoute
-  '/files': typeof FilesRoute
   '/login': typeof LoginRoute
-  '/mail': typeof MailRoute
   '/not-found': typeof NotFoundRoute
-  '/permissions': typeof PermissionsRoute
-  '/roles': typeof RolesRoute
   '/setup': typeof SetupRoute
-  '/users': typeof UsersRoute
-  '/websocket': typeof WebsocketRoute
+  '/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/change-password': typeof AuthenticatedChangePasswordRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/error-logs': typeof AuthenticatedErrorLogsRoute
+  '/files': typeof AuthenticatedFilesRoute
+  '/mail': typeof AuthenticatedMailRoute
+  '/permissions': typeof AuthenticatedPermissionsRoute
+  '/roles': typeof AuthenticatedRolesRoute
+  '/users': typeof AuthenticatedUsersRoute
+  '/websocket': typeof AuthenticatedWebsocketRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/403': typeof R403Route
-  '/audit-logs': typeof AuditLogsRoute
-  '/change-password': typeof ChangePasswordRoute
-  '/dashboard': typeof DashboardRoute
-  '/error-logs': typeof ErrorLogsRoute
-  '/files': typeof FilesRoute
   '/login': typeof LoginRoute
-  '/mail': typeof MailRoute
   '/not-found': typeof NotFoundRoute
-  '/permissions': typeof PermissionsRoute
-  '/roles': typeof RolesRoute
   '/setup': typeof SetupRoute
-  '/users': typeof UsersRoute
-  '/websocket': typeof WebsocketRoute
+  '/_authenticated/audit-logs': typeof AuthenticatedAuditLogsRoute
+  '/_authenticated/change-password': typeof AuthenticatedChangePasswordRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/error-logs': typeof AuthenticatedErrorLogsRoute
+  '/_authenticated/files': typeof AuthenticatedFilesRoute
+  '/_authenticated/mail': typeof AuthenticatedMailRoute
+  '/_authenticated/permissions': typeof AuthenticatedPermissionsRoute
+  '/_authenticated/roles': typeof AuthenticatedRolesRoute
+  '/_authenticated/users': typeof AuthenticatedUsersRoute
+  '/_authenticated/websocket': typeof AuthenticatedWebsocketRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/403'
+    | '/login'
+    | '/not-found'
+    | '/setup'
     | '/audit-logs'
     | '/change-password'
     | '/dashboard'
     | '/error-logs'
     | '/files'
-    | '/login'
     | '/mail'
-    | '/not-found'
     | '/permissions'
     | '/roles'
-    | '/setup'
     | '/users'
     | '/websocket'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/403'
+    | '/login'
+    | '/not-found'
+    | '/setup'
     | '/audit-logs'
     | '/change-password'
     | '/dashboard'
     | '/error-logs'
     | '/files'
-    | '/login'
     | '/mail'
-    | '/not-found'
     | '/permissions'
     | '/roles'
-    | '/setup'
     | '/users'
     | '/websocket'
   id:
     | '__root__'
     | '/'
+    | '/_authenticated'
     | '/403'
-    | '/audit-logs'
-    | '/change-password'
-    | '/dashboard'
-    | '/error-logs'
-    | '/files'
     | '/login'
-    | '/mail'
     | '/not-found'
-    | '/permissions'
-    | '/roles'
     | '/setup'
-    | '/users'
-    | '/websocket'
+    | '/_authenticated/audit-logs'
+    | '/_authenticated/change-password'
+    | '/_authenticated/dashboard'
+    | '/_authenticated/error-logs'
+    | '/_authenticated/files'
+    | '/_authenticated/mail'
+    | '/_authenticated/permissions'
+    | '/_authenticated/roles'
+    | '/_authenticated/users'
+    | '/_authenticated/websocket'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   R403Route: typeof R403Route
-  AuditLogsRoute: typeof AuditLogsRoute
-  ChangePasswordRoute: typeof ChangePasswordRoute
-  DashboardRoute: typeof DashboardRoute
-  ErrorLogsRoute: typeof ErrorLogsRoute
-  FilesRoute: typeof FilesRoute
   LoginRoute: typeof LoginRoute
-  MailRoute: typeof MailRoute
   NotFoundRoute: typeof NotFoundRoute
-  PermissionsRoute: typeof PermissionsRoute
-  RolesRoute: typeof RolesRoute
   SetupRoute: typeof SetupRoute
-  UsersRoute: typeof UsersRoute
-  WebsocketRoute: typeof WebsocketRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/websocket': {
-      id: '/websocket'
-      path: '/websocket'
-      fullPath: '/websocket'
-      preLoaderRoute: typeof WebsocketRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/users': {
-      id: '/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof UsersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/setup': {
       id: '/setup'
       path: '/setup'
       fullPath: '/setup'
       preLoaderRoute: typeof SetupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/roles': {
-      id: '/roles'
-      path: '/roles'
-      fullPath: '/roles'
-      preLoaderRoute: typeof RolesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/permissions': {
-      id: '/permissions'
-      path: '/permissions'
-      fullPath: '/permissions'
-      preLoaderRoute: typeof PermissionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/not-found': {
@@ -269,53 +241,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NotFoundRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/mail': {
-      id: '/mail'
-      path: '/mail'
-      fullPath: '/mail'
-      preLoaderRoute: typeof MailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/files': {
-      id: '/files'
-      path: '/files'
-      fullPath: '/files'
-      preLoaderRoute: typeof FilesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/error-logs': {
-      id: '/error-logs'
-      path: '/error-logs'
-      fullPath: '/error-logs'
-      preLoaderRoute: typeof ErrorLogsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/change-password': {
-      id: '/change-password'
-      path: '/change-password'
-      fullPath: '/change-password'
-      preLoaderRoute: typeof ChangePasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/audit-logs': {
-      id: '/audit-logs'
-      path: '/audit-logs'
-      fullPath: '/audit-logs'
-      preLoaderRoute: typeof AuditLogsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/403': {
@@ -325,6 +255,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof R403RouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -332,25 +269,115 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/websocket': {
+      id: '/_authenticated/websocket'
+      path: '/websocket'
+      fullPath: '/websocket'
+      preLoaderRoute: typeof AuthenticatedWebsocketRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/users': {
+      id: '/_authenticated/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof AuthenticatedUsersRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/roles': {
+      id: '/_authenticated/roles'
+      path: '/roles'
+      fullPath: '/roles'
+      preLoaderRoute: typeof AuthenticatedRolesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/permissions': {
+      id: '/_authenticated/permissions'
+      path: '/permissions'
+      fullPath: '/permissions'
+      preLoaderRoute: typeof AuthenticatedPermissionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mail': {
+      id: '/_authenticated/mail'
+      path: '/mail'
+      fullPath: '/mail'
+      preLoaderRoute: typeof AuthenticatedMailRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/files': {
+      id: '/_authenticated/files'
+      path: '/files'
+      fullPath: '/files'
+      preLoaderRoute: typeof AuthenticatedFilesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/error-logs': {
+      id: '/_authenticated/error-logs'
+      path: '/error-logs'
+      fullPath: '/error-logs'
+      preLoaderRoute: typeof AuthenticatedErrorLogsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/change-password': {
+      id: '/_authenticated/change-password'
+      path: '/change-password'
+      fullPath: '/change-password'
+      preLoaderRoute: typeof AuthenticatedChangePasswordRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/audit-logs': {
+      id: '/_authenticated/audit-logs'
+      path: '/audit-logs'
+      fullPath: '/audit-logs'
+      preLoaderRoute: typeof AuthenticatedAuditLogsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAuditLogsRoute: typeof AuthenticatedAuditLogsRoute
+  AuthenticatedChangePasswordRoute: typeof AuthenticatedChangePasswordRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedErrorLogsRoute: typeof AuthenticatedErrorLogsRoute
+  AuthenticatedFilesRoute: typeof AuthenticatedFilesRoute
+  AuthenticatedMailRoute: typeof AuthenticatedMailRoute
+  AuthenticatedPermissionsRoute: typeof AuthenticatedPermissionsRoute
+  AuthenticatedRolesRoute: typeof AuthenticatedRolesRoute
+  AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
+  AuthenticatedWebsocketRoute: typeof AuthenticatedWebsocketRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAuditLogsRoute: AuthenticatedAuditLogsRoute,
+  AuthenticatedChangePasswordRoute: AuthenticatedChangePasswordRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedErrorLogsRoute: AuthenticatedErrorLogsRoute,
+  AuthenticatedFilesRoute: AuthenticatedFilesRoute,
+  AuthenticatedMailRoute: AuthenticatedMailRoute,
+  AuthenticatedPermissionsRoute: AuthenticatedPermissionsRoute,
+  AuthenticatedRolesRoute: AuthenticatedRolesRoute,
+  AuthenticatedUsersRoute: AuthenticatedUsersRoute,
+  AuthenticatedWebsocketRoute: AuthenticatedWebsocketRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   R403Route: R403Route,
-  AuditLogsRoute: AuditLogsRoute,
-  ChangePasswordRoute: ChangePasswordRoute,
-  DashboardRoute: DashboardRoute,
-  ErrorLogsRoute: ErrorLogsRoute,
-  FilesRoute: FilesRoute,
   LoginRoute: LoginRoute,
-  MailRoute: MailRoute,
   NotFoundRoute: NotFoundRoute,
-  PermissionsRoute: PermissionsRoute,
-  RolesRoute: RolesRoute,
   SetupRoute: SetupRoute,
-  UsersRoute: UsersRoute,
-  WebsocketRoute: WebsocketRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

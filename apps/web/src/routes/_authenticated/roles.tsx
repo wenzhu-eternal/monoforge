@@ -31,14 +31,11 @@ import {
   useRoles,
   useUpdateRole,
 } from '@/hooks/use-roles'
-import { AuthenticatedLayout } from '@/layouts/authenticated-layout'
 import { extractErrorMessage } from '@/lib/error'
-import { requireAuth } from '@/lib/route-guards'
 
 const { Title } = Typography
 
-export const Route = createFileRoute('/roles')({
-  beforeLoad: requireAuth(),
+export const Route = createFileRoute('/_authenticated/roles')({
   component: RolesPage,
 })
 
@@ -397,9 +394,6 @@ function RolesContent() {
 }
 
 function RolesPage() {
-  return (
-    <AuthenticatedLayout>
-      <RolesContent />
-    </AuthenticatedLayout>
-  )
+  // J4：布局与守卫上移 _authenticated pathless layout，此处直 render 内容
+  return <RolesContent />
 }

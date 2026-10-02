@@ -6,6 +6,8 @@ import { promisify } from 'node:util'
 import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { getEnv } from '@/config/env'
+import { db } from '@/db'
+import { files } from '@/db/schema'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { MailService } from '@/modules/mail/mail.service'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -49,6 +51,36 @@ export class ScheduleService {
     const executed = await this.doBackup()
     if (!executed) {
       throw new ConflictException('已有备份任务进行中，请稍后再试')
+    }
+  }
+
+  /**
+   * M6：每小时清理 uploads/ 孤儿文件——multer 超限/断传的临时文件落在 service 清理
+   * 逻辑不可达之处（校验抛错早于落盘记录），永久残留。仅删同时满足：不在 files.path
+   * 列、mtime 超 1h（进行中的上传不受影响）；失败只告警。
+   */
+  @Cron('0 * * * *')
+  async cleanOrphanUploads() {
+    try {
+      const uploadDir = join(process.cwd(), 'uploads')
+      const entries = await readdir(uploadDir).catch(() => [] as string[])
+      if (entries.length === 0) return
+      const known = await db.select({ path: files.path }).from(files)
+      const knownSet = new Set(known.map((r) => r.path))
+      const cutoff = Date.now() - 3_600_000
+      let removed = 0
+      for (const name of entries) {
+        const full = join(uploadDir, name)
+        const st = await stat(full).catch(() => null)
+        if (!st || !st.isFile() || st.mtimeMs > cutoff || knownSet.has(full)) continue
+        await unlink(full).catch(() => null)
+        removed += 1
+      }
+      if (removed > 0) {
+        this.logger.log(`清理 uploads 孤儿文件 ${removed} 个`)
+      }
+    } catch (err) {
+      this.logger.warn(`孤儿文件清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
