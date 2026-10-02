@@ -92,6 +92,7 @@ services:
       # 生产强制 COOKIE_SECURE 的逃生舱（ngrok/单容器 HTTP 调试场景），见 docs/CONFIGURATION.md
       - ALLOW_INSECURE_COOKIE=${ALLOW_INSECURE_COOKIE:-false}
       - ALLOW_SETUP=${ALLOW_SETUP:-false}
+      - ALLOW_REGISTER=${ALLOW_REGISTER:-false}
       - ADMIN_ROLE_ID=${ADMIN_ROLE_ID:-1}
       - TRUST_PROXY=${TRUST_PROXY:-false}
       - APP_NAME=${APP_NAME:-MonoForge}

@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Post,
   Req,
   Res,
@@ -20,6 +21,7 @@ import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Public } from '@/common/decorators/public.decorator'
 import { getRefreshTokenCookieOptions } from '@/common/utils/cookie-options'
+import { getEnv } from '@/config/env'
 import { AuthService, type TokenPayload } from './auth.service'
 import { LoginDto } from './dto/login.dto'
 import { RegisterDto } from './dto/register.dto'
@@ -62,6 +64,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '发送注册验证码' })
   async sendRegisterCode(@Body() dto: SendRegisterCodeDto) {
+    // 公开注册默认关闭（ALLOW_REGISTER=false 直接 404，隐藏端点存在性，同 ALLOW_SETUP 口径）
+    if (!getEnv().ALLOW_REGISTER) {
+      throw new NotFoundException()
+    }
     return this.authService.sendRegisterCode(dto.email)
   }
 
@@ -73,6 +79,9 @@ export class AuthController {
   @ApiOperation({ summary: '用户注册' })
   @ZodSerializerDto(AuthResponseSchema)
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) response: Response) {
+    if (!getEnv().ALLOW_REGISTER) {
+      throw new NotFoundException()
+    }
     const result = await this.authService.registerWithCode(
       dto.username,
       dto.email,

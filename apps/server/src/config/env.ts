@@ -94,6 +94,13 @@ const envSchema = z
       .transform((v) => v === true || v === 'true')
       .default(false),
 
+    // 公开注册开关：默认关闭 opt-in（脚手架默认最小开口；需要开放注册的项目显式设 true）。
+    // 关闭时 register/send-register-code 直接 404（隐藏端点存在性，同 ALLOW_SETUP 口径）
+    ALLOW_REGISTER: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => v === true || v === 'true')
+      .default(false),
+
     // admin 角色 ID（permissions.guard 根据此值判断超级管理员，默认 1）
     ADMIN_ROLE_ID: z.coerce.number().int().positive().default(1),
 

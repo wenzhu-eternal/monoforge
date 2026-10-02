@@ -1,8 +1,14 @@
-import { UnauthorizedException } from '@nestjs/common'
+import { NotFoundException, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthController } from './auth.controller'
 import type { AuthService } from './auth.service'
+
+const mockGetEnv = vi.fn()
+
+vi.mock('@/config/env', () => ({
+  getEnv: (...args: unknown[]) => mockGetEnv(...(args as Parameters<typeof mockGetEnv>)),
+}))
 
 describe('AuthController', () => {
   let controller: AuthController
@@ -138,6 +144,41 @@ describe('AuthController', () => {
 
       expect(result).toEqual(mockProfile)
       expect(authService.getProfile).toHaveBeenCalledWith(1)
+    })
+  })
+
+  describe('ALLOW_REGISTER 开关', () => {
+    it('关闭时 sendRegisterCode 直接 404（隐藏端点存在性）', async () => {
+      mockGetEnv.mockReturnValue({ ALLOW_REGISTER: false })
+
+      await expect(controller.sendRegisterCode({ email: 'a@b.com' } as never)).rejects.toThrow(
+        NotFoundException,
+      )
+    })
+
+    it('关闭时 register 直接 404', async () => {
+      mockGetEnv.mockReturnValue({ ALLOW_REGISTER: false })
+
+      await expect(
+        controller.register(
+          { username: 'u', email: 'a@b.com', password: 'p', code: '123456' } as never,
+          response as never,
+        ),
+      ).rejects.toThrow(NotFoundException)
+    })
+
+    it('开启时 register 正常透传', async () => {
+      mockGetEnv.mockReturnValue({ ALLOW_REGISTER: true })
+      ;(authService as unknown as Record<string, ReturnType<typeof vi.fn>>).registerWithCode = vi
+        .fn()
+        .mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: { id: 1 } })
+
+      const result = await controller.register(
+        { username: 'u', email: 'a@b.com', password: 'p', code: '123456' } as never,
+        response as never,
+      )
+
+      expect(result).toEqual({ accessToken: 'a', user: { id: 1 } })
     })
   })
 })
