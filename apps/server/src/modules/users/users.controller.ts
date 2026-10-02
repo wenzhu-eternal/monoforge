@@ -98,7 +98,7 @@ export class UsersController {
         throw new ForbiddenException('指定角色需要更高权限')
       }
     }
-    return this.usersService.create(createUserDto)
+    return this.usersService.create(createUserDto, currentUser)
   }
 
   @Patch(':id')
@@ -150,7 +150,7 @@ export class UsersController {
         throw new ForbiddenException('请使用修改密码接口更改自己的密码')
       }
     }
-    return this.usersService.update(id, updateUserDto)
+    return this.usersService.update(id, updateUserDto, currentUser)
   }
 
   @Post('me/password')

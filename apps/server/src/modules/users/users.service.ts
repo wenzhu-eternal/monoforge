@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { DashboardStats } from '@shared/schemas/dashboard'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
@@ -6,6 +11,7 @@ import type { User, UserListItem } from '@shared/schemas/user'
 import * as argon2 from 'argon2'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, permissions as permissionsTable, rolePermissions, roles, users } from '@/db/schema'
@@ -105,15 +111,18 @@ export class UsersService {
     return userWithoutPassword
   }
 
-  async create(data: {
-    username: string
-    email: string
-    password: string
-    nickname?: string
-    phone?: string
-    roleId?: number | null
-    mustChangePassword?: boolean
-  }): Promise<Omit<User, 'password'>> {
+  async create(
+    data: {
+      username: string
+      email: string
+      password: string
+      nickname?: string
+      phone?: string
+      roleId?: number | null
+      mustChangePassword?: boolean
+    },
+    caller?: { roleId?: number | null },
+  ): Promise<Omit<User, 'password'>> {
     const existingUsername = await db.query.users.findFirst({
       where: and(eq(users.username, data.username), notDeleted(users.deletedAt)),
     })
@@ -147,6 +156,12 @@ export class UsersService {
       if (!role || role.deletedAt) {
         throw new ConflictException('角色不存在或已被禁用')
       }
+    }
+
+    // H1：超管角色分配加闸——目标 roleId 为超管时仅超管可授（caller 缺失 fail-closed，
+    // 防未来新入口绕过 controller 的 USER_ROLE_MANAGE 检查直接铸造超管）
+    if (roleId === getEnv().ADMIN_ROLE_ID && !isAdminUser(caller)) {
+      throw new ForbiddenException('仅超级管理员可分配超管角色')
     }
 
     const hashedPassword = await argon2.hash(data.password)
@@ -189,6 +204,7 @@ export class UsersService {
       password?: string
       roleId?: number | null
     },
+    caller?: { roleId?: number | null },
   ): Promise<Omit<User, 'password'>> {
     const existingUser = await db.query.users.findFirst({
       where: and(eq(users.id, id), notDeleted(users.deletedAt)),
@@ -205,6 +221,17 @@ export class UsersService {
       if (!role || role.deletedAt) {
         throw new ConflictException('角色不存在或已被禁用')
       }
+    }
+
+    // H1：超管角色变动加闸——授超管或从超管摘离，仅超管可操作（同 create，fail-closed）
+    const adminRoleId = getEnv().ADMIN_ROLE_ID
+    const touchesAdminRole =
+      data.roleId === adminRoleId ||
+      (existingUser.roleId === adminRoleId &&
+        data.roleId !== undefined &&
+        data.roleId !== adminRoleId)
+    if (touchesAdminRole && !isAdminUser(caller)) {
+      throw new ForbiddenException('仅超级管理员可变更超管角色归属')
     }
 
     // email 唯一性校验（排除自身，仅查未软删用户）
