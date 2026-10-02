@@ -207,7 +207,9 @@ export class WechatService {
     const data = await this.httpClient.get<WechatAccessTokenResponse>(this.qrcodeInstance, url)
     if (data.errcode) {
       this.logger.error(`微信获取 access_token 失败: ${data.errcode} ${data.errmsg}`)
-      throw new UnauthorizedException(`微信登录失败: ${data.errmsg ?? 'access_token 获取失败'}`)
+      throw new UnauthorizedException(
+        `微信登录失败: ${this.localizeWechatError(data.errcode, 'access_token 获取失败')}`,
+      )
     }
     return data
   }
@@ -223,7 +225,9 @@ export class WechatService {
     const data = await this.httpClient.get<WechatUserInfoResponse>(this.qrcodeInstance, url)
     if (data.errcode) {
       this.logger.error(`微信获取用户信息失败: ${data.errcode} ${data.errmsg}`)
-      throw new UnauthorizedException(`微信登录失败: ${data.errmsg ?? '用户信息获取失败'}`)
+      throw new UnauthorizedException(
+        `微信登录失败: ${this.localizeWechatError(data.errcode, '用户信息获取失败')}`,
+      )
     }
     return data
   }
@@ -243,9 +247,21 @@ export class WechatService {
     )
     if (data.errcode) {
       this.logger.error(`微信 code2Session 失败: ${data.errcode} ${data.errmsg}`)
-      throw new UnauthorizedException(`小程序登录失败: ${data.errmsg ?? 'code2Session 失败'}`)
+      throw new UnauthorizedException(
+        `小程序登录失败: ${this.localizeWechatError(data.errcode, 'code2Session 失败')}`,
+      )
     }
     return data
+  }
+
+  /**
+   * J1：微信 errcode 映射本地化文案——原始 errmsg（含微信英文/调试信息）仅入 error 日志，
+   * 不回传客户端（防信息泄露 + 前端可稳定匹配中文分支）
+   */
+  private localizeWechatError(errcode: number, fallback: string): string {
+    if (errcode === 40029) return '微信授权码已使用或已过期，请重新扫码'
+    if (errcode === 45011) return '微信接口调用过于频繁，请稍后重试'
+    return fallback
   }
 
   /**

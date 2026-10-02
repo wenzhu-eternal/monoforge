@@ -90,7 +90,8 @@ export const UpdateUserSchema = z.object({
   phone: PhoneSchema,
   status: z.boolean().optional(),
   password: PasswordSchema.optional(),
-  roleId: z.number().int().positive().optional(),
+  // J5：roleId 开放置空（解绑角色；service/DB 已支持 null，`if (data.roleId)` 天然跳过校验与吊销链）
+  roleId: z.number().int().positive().nullable().optional(),
 })
 
 // 修改自己密码：必须验证旧密码，防止 token 泄露后被改密码锁账号

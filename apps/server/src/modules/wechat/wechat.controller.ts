@@ -11,7 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
-import { WechatQrCodeSchema } from '@shared/schemas/wechat'
+import { WechatLoginResponseSchema, WechatQrCodeSchema } from '@shared/schemas/wechat'
 import type { Response } from 'express'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { Public } from '@/common/decorators/public.decorator'
@@ -43,6 +43,7 @@ export class WechatController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @ApiOperation({ summary: '微信登录（扫码 code 或小程序 code）' })
+  @ZodSerializerDto(WechatLoginResponseSchema)
   async login(@Body() dto: WechatLoginDto, @Res({ passthrough: true }) response: Response) {
     if (!this.wechatService.isEnabled()) {
       throw new ServiceUnavailableException('微信登录未启用，请配置 WEAPP_APPID 与 WEAPP_SECRET')

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const ErrorSource = z.enum(['frontend', 'backend', 'taro'])
+export const ErrorSource = z.enum(['frontend', 'backend'])
 export type ErrorSource = z.infer<typeof ErrorSource>
 
 export const ErrorType = z.enum([

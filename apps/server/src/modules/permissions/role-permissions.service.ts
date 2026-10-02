@@ -94,6 +94,11 @@ export class RolePermissionsService {
       throw new BadRequestException('传入的权限码均无效或已删除，未做任何变更')
     }
 
+    // J2：空数组=清空该角色全部权限，仅超管可操作（与"全无效码拒绝"同款注释风格）
+    if (permissionCodes.length === 0 && caller?.isAdmin !== true) {
+      throw new ForbiddenException('仅超级管理员可清空角色权限')
+    }
+
     // 防越权授予: 非 admin 授予的权限码不得超过调用者自身权限集（与 PermissionsGuard 同口径: innerJoin 过滤软删权限）
     if (caller && !caller.isAdmin && validCodes.length > 0) {
       const callerPerms = await db

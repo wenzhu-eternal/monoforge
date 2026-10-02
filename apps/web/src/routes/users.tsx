@@ -223,7 +223,10 @@ function UsersContent() {
         // 邮箱/角色/状态变更后端要求 USER_ROLE_MANAGE，无权限时不提交避免 403
         if (canManageRole) {
           updateData.email = values.email
-          updateData.roleId = values.roleId
+          // J5：编辑时清空角色选择 = 解绑角色（显式 null）；undefined=未改动不提交。
+          // 初值有角色而提交为 undefined，说明用户点了清除
+          updateData.roleId =
+            values.roleId ?? (editingUser.roles?.[0]?.id != null ? null : undefined)
           updateData.status = values.status
         }
         if (values.password) {
@@ -364,7 +367,8 @@ function UsersContent() {
           >
             <Select
               placeholder="请选择角色"
-              allowClear={!canManageRole}
+              // J5：编辑时允许清空以解绑角色；新建仍必填（rules 保证）
+              allowClear={!canManageRole || !!editingUser}
               disabled={!canManageRole}
               options={allRoles?.map((role) => ({
                 value: role.id,

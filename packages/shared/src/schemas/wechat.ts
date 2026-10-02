@@ -23,4 +23,18 @@ export const WechatQrCodeSchema = z.object({
   expiresIn: z.number().int().positive(),
 })
 
+/**
+ * 微信登录响应（用户信息简化字段，与 AuthResponse 的完整 User 区分）
+ */
+export const WechatLoginResponseSchema = z.object({
+  accessToken: z.string(),
+  user: z.object({
+    id: z.number().int().positive(),
+    username: z.string(),
+    nickname: z.string().nullable().optional(),
+    avatar: z.string().nullable().optional(),
+  }),
+})
+
 export type WechatLoginType = z.infer<typeof WechatLoginTypeSchema>
+export type WechatLoginResponse = z.infer<typeof WechatLoginResponseSchema>

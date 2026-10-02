@@ -81,7 +81,7 @@ describe('RolePermissionsService', () => {
       expect(mockDb.transaction).not.toHaveBeenCalled()
     })
 
-    it('M2: 明确传空数组清空仍允许（有审计留痕）', async () => {
+    it('M2: 超管明确传空数组清空仍允许（有审计留痕）', async () => {
       mockRoleExists()
 
       const result = await service.updateRolePermissions(2, [], adminCaller)
@@ -90,7 +90,17 @@ describe('RolePermissionsService', () => {
       expect(mockDb.transaction).toHaveBeenCalled()
     })
 
+    it('J2: 非超管传空数组清空被拒绝', async () => {
+      mockRoleExists()
+
+      await expect(service.updateRolePermissions(3, [], editorCaller)).rejects.toThrow(
+        ForbiddenException,
+      )
+      expect(mockDb.transaction).not.toHaveBeenCalled()
+    })
+
     it('非超管不能授予自身未持有的权限（防越权授予）', async () => {
+      mockRoleExists()
       mockRoleExists()
       // 第一次 select: 有效码过滤（返回请求码有效）；第二次 select: 调用者持有码（返回较少）
       vi.mocked(mockDb.select)
