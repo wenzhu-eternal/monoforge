@@ -361,7 +361,7 @@ function UsersContent() {
           <Form.Item
             name="roleId"
             label="角色"
-            rules={canManageRole ? [{ required: true, message: '请选择角色' }] : []}
+            rules={canManageRole && !editingUser ? [{ required: true, message: '请选择角色' }] : []}
             extra={canManageRole ? undefined : '无角色管理权限，将默认分配普通用户角色'}
           >
             <Select

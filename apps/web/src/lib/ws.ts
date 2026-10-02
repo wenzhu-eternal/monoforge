@@ -160,7 +160,9 @@ class WsClient {
         const token = this.currentToken
         this.closeSocket()
         if (token) {
-          setTimeout(() => this.connect(token), 1000)
+          // 同 M7/M8 纳入清理：pong 超时窗口内登出/卸载不再幽灵重连
+          this.clearReconnectTimer()
+          this.reconnectTimer = setTimeout(() => this.connect(token), 1000)
         }
       }, WsClient.PONG_TIMEOUT)
     }, WsClient.HEARTBEAT_INTERVAL)

@@ -142,6 +142,44 @@ describe('UsersService', () => {
       expect(result.username).toBe('alice')
       expect(result).not.toHaveProperty('password')
     })
+
+    it('非超管建超管角色用户时抛 ForbiddenException（H1 create 路径）', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 1,
+        name: 'admin',
+        deletedAt: null,
+      } as never)
+
+      await expect(
+        service.create(
+          { username: 'mallory', email: 'm@b.com', password: 'secret123', roleId: 1 },
+          { roleId: 2 },
+        ),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('超管建超管角色用户放行', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 1,
+        name: 'admin',
+        deletedAt: null,
+      } as never)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi
+            .fn()
+            .mockResolvedValue([{ id: 9, username: 'root2', email: 'r2@b.com', roleId: 1 }]),
+        }),
+      } as never)
+
+      const result = await service.create(
+        { username: 'root2', email: 'r2@b.com', password: 'secret123', roleId: 1 },
+        { roleId: 1 },
+      )
+      expect(result.roleId).toBe(1)
+    })
   })
 
   describe('update', () => {
