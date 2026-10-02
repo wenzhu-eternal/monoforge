@@ -41,6 +41,9 @@ fi
 if [ -z "$BACKUP_FILE" ]; then
   echo "❌ 未找到备份文件: $BACKUP_DIR/*.sql"
   echo "   用法: pnpm db:restore [备份文件路径]"
+  # M10：备份产物在 app 容器内（/app/backups），宿主机看不到时先导出：
+  #   docker cp mf-app:/app/backups/. ./backups/
+  echo "   容器内备份导出: docker cp mf-app:/app/backups/. ./backups/"
   exit 1
 fi
 

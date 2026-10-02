@@ -6,9 +6,11 @@ ARG HTTPS_PROXY
 ARG http_proxy
 ARG https_proxy
 ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} http_proxy=${http_proxy} https_proxy=${https_proxy}
-RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirrors.aliyun.com|g' /etc/apk/repositories
-RUN npm install -g pnpm@10.32.1 --registry=https://registry.npmmirror.com
-RUN pnpm config set registry https://registry.npmmirror.com
+# 阿里云 apk 源在部分网络下容器内 hangs，默认官方源实测可用，不再强制切换
+# npm 源可配置：默认 npmmirror，网络异常时构建传 --build-arg NPM_REGISTRY=https://registry.npmjs.org 切换
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN npm install -g pnpm@10.32.1 --registry=${NPM_REGISTRY}
+RUN pnpm config set registry ${NPM_REGISTRY}
 WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -26,10 +28,11 @@ ARG HTTPS_PROXY
 ARG http_proxy
 ARG https_proxy
 ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} http_proxy=${http_proxy} https_proxy=${https_proxy}
-RUN sed -i 's|https://dl-cdn.alpinelinux.org|https://mirrors.aliyun.com|g' /etc/apk/repositories
+# 同 prod-deps：不用阿里云 apk 源；npm 源可配（默认 npmmirror）
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 RUN apk add --no-cache python3 make g++
-RUN npm install -g pnpm@10.32.1 --registry=https://registry.npmmirror.com
-RUN pnpm config set registry https://registry.npmmirror.com
+RUN npm install -g pnpm@10.32.1 --registry=${NPM_REGISTRY}
+RUN pnpm config set registry ${NPM_REGISTRY}
 WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
