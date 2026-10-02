@@ -87,6 +87,11 @@ function LoginPage() {
       if (error && typeof error === 'object' && 'errorFields' in error) {
         return
       }
+      // 公开注册关闭时后端直接 404（隐藏端点），前端翻译成人话
+      if ((error as { response?: { status?: number } })?.response?.status === 404) {
+        messageApi.error('当前未开放公开注册，请联系管理员')
+        return
+      }
       messageApi.error(extractErrorMessage(error, '发送验证码失败'))
     }
   }
@@ -112,6 +117,10 @@ function LoginPage() {
       messageApi.success('注册成功')
       navigate({ to: '/dashboard' })
     } catch (error: unknown) {
+      if ((error as { response?: { status?: number } })?.response?.status === 404) {
+        messageApi.error('当前未开放公开注册，请联系管理员')
+        return
+      }
       messageApi.error(extractErrorMessage(error, '注册失败'))
     }
   }

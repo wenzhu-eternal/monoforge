@@ -28,6 +28,7 @@
 | `COOKIE_SECURE` | refresh token cookie 的 secure 标志（HTTP=false，HTTPS=true） | `false` |
 | `ALLOW_INSECURE_COOKIE` | 生产环境允许非 secure cookie（ngrok/单容器 HTTP 调试场景；生产强制 COOKIE_SECURE 除非此项为 true） | `false` |
 | `ALLOW_SETUP` | 首次部署初始化开关（true 时允许调用 /setup 接口创建管理员；初始化事务内同步灌入 `@shared` 的 `DEFAULT_PERMISSIONS` 并绑定 admin 角色，与 `db:seed` 同源；初始化后建议设为 false） | `false` |
+| `ALLOW_REGISTER` | 公开注册开关（true 时允许调用 register/send-register-code；默认 false 最小开口，需要开放注册的项目显式打开；关闭时两接口直接 404，前端登录页翻译为"未开放公开注册"） | `false` |
 | `ADMIN_ROLE_ID` | admin 角色 ID（PermissionsGuard 超级管理员旁路判定用，seed 创建的 admin 默认 id=1） | `1` |
 | `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制）。备份经 Redis SETNX 互斥锁串行执行（进行中再触发返回 409；Redis 异常时降级无锁执行），产物按 `backup-YYYYMMDD-HHmmss.sql` 秒级命名防同日覆盖。成败通知发给 `ADMIN_ROLE_ID` 角色下第一个启用用户的邮箱（即初始化管理员），查不到时回退 `MAIL_FROM` | `false` |
 | `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，需做 shell 单引号转义防注入）。注：生产镜像已内置 `postgresql16-client`，默认 pg_dump 链路开箱即用，仅在特殊场景（如走代理导出）才需配置此项 | - |
