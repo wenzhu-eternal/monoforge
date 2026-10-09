@@ -268,6 +268,72 @@ describe('UsersService', () => {
       const result = await service.update(2, { roleId: 1 }, { roleId: 1 })
       expect(result.roleId).toBe(1)
     })
+
+    it('H1 扩展: 非超管重置超管密码时抛 ForbiddenException（接管链路）', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        email: 'root@b.com',
+        roleId: 1,
+      } as never)
+
+      await expect(service.update(1, { password: 'new-secret-1' }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+    })
+
+    it('H1 扩展: 非超管禁用/改超管邮箱同样被拒', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        email: 'root@b.com',
+        roleId: 1,
+      } as never)
+
+      await expect(service.update(1, { status: false }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+      await expect(service.update(1, { email: 'evil@b.com' }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+    })
+
+    it('H1 扩展: 非超管改超管非敏感字段（nickname）不过闸、正常走更新', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        email: 'root@b.com',
+        roleId: 1,
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi
+              .fn()
+              .mockResolvedValue([{ id: 1, email: 'root@b.com', roleId: 1, nickname: 'n' }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.update(1, { nickname: 'n' }, { roleId: 2 })
+      expect(result.id).toBe(1)
+    })
+
+    it('H1 扩展: 超管重置超管密码放行', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        email: 'root@b.com',
+        roleId: 1,
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1, email: 'root@b.com', roleId: 1 }]),
+          }),
+        }),
+      } as never)
+
+      await expect(service.update(1, { password: 'new-secret-1' }, { roleId: 1 })).resolves.toEqual(
+        expect.objectContaining({ id: 1 }),
+      )
+    })
   })
 
   describe('remove', () => {

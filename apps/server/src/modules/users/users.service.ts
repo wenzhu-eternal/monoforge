@@ -223,15 +223,20 @@ export class UsersService {
       }
     }
 
-    // H1：超管角色变动加闸——授超管或从超管摘离，仅超管可操作（同 create，fail-closed）
+    // H1：超管保护从"角色变动"扩展为目标是超管时的一切敏感变更——
+    // 持 USER_ROLE_MANAGE 的委托管理员若可对超管改 password/status/email，
+    // 改密后即可登录超管完成接管（fail-closed，caller 缺失同拒）
     const adminRoleId = getEnv().ADMIN_ROLE_ID
     const touchesAdminRole =
       data.roleId === adminRoleId ||
       (existingUser.roleId === adminRoleId &&
         data.roleId !== undefined &&
         data.roleId !== adminRoleId)
-    if (touchesAdminRole && !isAdminUser(caller)) {
-      throw new ForbiddenException('仅超级管理员可变更超管角色归属')
+    const editsAdminSensitive =
+      existingUser.roleId === adminRoleId &&
+      (data.password !== undefined || data.status !== undefined || data.email !== undefined)
+    if ((touchesAdminRole || editsAdminSensitive) && !isAdminUser(caller)) {
+      throw new ForbiddenException('仅超级管理员可变更超管账号的敏感信息')
     }
 
     // email 唯一性校验（排除自身，仅查未软删用户）
