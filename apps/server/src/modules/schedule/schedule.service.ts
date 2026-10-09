@@ -108,6 +108,11 @@ export class ScheduleService {
       return false
     }
 
+    // M5：失败时清理半截产物——pg_dump 中途失败/超时会留下截断的 .sql，
+    // 后续恢复误用即数据缺失；cleanOldBackups 也会把它当合法备份计数。
+    // dump 已完成（如后续 stat/邮件环节）则不删——那是完好产物
+    let filepath: string | undefined
+    let dumpCompleted = false
     try {
       this.logger.log('开始执行数据库备份...')
       // M13：本地时间到秒（同日多次备份各写独立文件，原按日命名 + 截断写必然互相覆盖）
@@ -115,7 +120,7 @@ export class ScheduleService {
       const pad = (n: number) => String(n).padStart(2, '0')
       const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
       const filename = `backup-${timestamp}.sql`
-      const filepath = join(BACKUP_DIR, filename)
+      filepath = join(BACKUP_DIR, filename)
 
       await mkdir(BACKUP_DIR, { recursive: true })
 
@@ -138,6 +143,7 @@ export class ScheduleService {
         // pg_dump 用 spawn 参数数组，避免 shell 注入
         await this.spawnPgDump(env.DATABASE_URL, filepath)
       }
+      dumpCompleted = true
 
       const stats = await stat(filepath)
       this.logger.log(`数据库备份成功: ${filename} (${(stats.size / 1024).toFixed(2)} KB)`)
@@ -152,6 +158,10 @@ export class ScheduleService {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       this.logger.error(`数据库备份失败: ${errorMsg}`)
+      // M5：清理失败残留的半截备份文件（文件不存在/删失败均忽略，不影响错误上报链路）
+      if (filepath && !dumpCompleted) {
+        await unlink(filepath).catch(() => null)
+      }
       // 入库记录异常（兜底 try-catch，避免异常记录本身失败时变成未处理 rejection）
       try {
         await this.errorLogsService.record({

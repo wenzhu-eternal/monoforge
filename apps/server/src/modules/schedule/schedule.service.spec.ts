@@ -207,6 +207,34 @@ describe('ScheduleService', () => {
       expect(mailService.sendBackupNotification).toHaveBeenCalledWith(false, 'pg_dump not found')
     })
 
+    it('M5: pg_dump 失败 → 清理半截备份文件残骸', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      mockSpawnPgDump(vi.fn().mockRejectedValue(new Error('pg_dump 退出码 1')))
+
+      await service.manualBackup()
+
+      expect(mockUnlink).toHaveBeenCalledWith(expect.stringContaining('backup-'))
+    })
+
+    it('M5: dump 成功但后续环节失败 → 不误删完好备份', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
+      mailService.sendBackupNotification.mockRejectedValueOnce(new Error('smtp down'))
+
+      await service.manualBackup()
+
+      expect(mockUnlink).not.toHaveBeenCalled()
+      expect(errorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('smtp down') }),
+      )
+    })
+
     it('DATABASE_URL 未配置 → 抛错并入库', async () => {
       mockGetEnv.mockReturnValue({ BACKUP_CMD: undefined, DATABASE_URL: undefined })
 

@@ -209,7 +209,10 @@ export class FilesService {
     }
 
     // 预生成 trashPath，在同一次条件更新中同时设置 deletedAt 和 trashPath，消除 remove/restore 竞态窗口
-    const trashFilename = `${Date.now()}-${file.filename}`
+    // M6：trashPath 是 varchar(255)——TRASH_DIR 绝对路径 + 13 位时间戳 + filename（可近 255）
+    // 会超 255 导致软删 UPDATE 直接报错；按列宽截断（时间戳与随机段在前，唯一性不受影响）
+    const maxTrashFilename = Math.max(1, 255 - TRASH_DIR.length - 1)
+    const trashFilename = `${Date.now()}-${file.filename}`.slice(0, maxTrashFilename)
     const preTrashPath = join(TRASH_DIR, trashFilename)
     // 目标路径同样过安全校验（filename 来自 DB，防篡改后 rename 逃逸到隔离目录之外）
     if (!isPathSafe(preTrashPath, TRASH_DIR)) {

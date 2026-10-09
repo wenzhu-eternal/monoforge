@@ -99,6 +99,30 @@ describe('FilesService', () => {
       expect(mockUpdate).toHaveBeenCalled()
     })
 
+    it('M6: filename 撑满 255 时 trashPath 不超过 varchar(255) 列宽', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        path: '/uploads/a.png',
+        filename: 'a'.repeat(255),
+        uploadedBy: 3,
+      })
+      mockUpdate.mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+          }),
+        }),
+      } as never)
+
+      await service.remove(1, 3, true)
+
+      const trashPath = mockRename.mock.calls[0]?.[1] as string
+      expect(trashPath).toMatch(/uploads-trash\//)
+      expect(trashPath.length).toBeLessThanOrEqual(255)
+      // 时间戳前缀保留（截断只砍尾部，唯一性不受影响）
+      expect(trashPath).toMatch(/uploads-trash\/\d+/)
+    })
+
     it('上传者本人删除 → 成功', async () => {
       mockFindFirst.mockResolvedValue({
         id: 1,
