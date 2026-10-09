@@ -65,8 +65,14 @@ export class PermissionsGuard implements CanActivate {
       const adminRecord = await db.query.users.findFirst({
         where: and(eq(users.id, userPayload.sub), notDeleted(users.deletedAt)),
       })
-      if (!adminRecord || adminRecord.status === false) {
-        throw new ForbiddenException('账号已被禁用')
+      // L3：快径一并比对角色信物——超管被降级且 Redis 吊销部分失败时，旧 token 凭
+      // payload.roleId 仍走快径全权限 ≤15min；查询已有，零额外成本
+      if (
+        !adminRecord ||
+        adminRecord.status === false ||
+        adminRecord.roleId !== userPayload.roleId
+      ) {
+        throw new ForbiddenException('账号状态或角色已变更，请重新登录')
       }
       return true
     }

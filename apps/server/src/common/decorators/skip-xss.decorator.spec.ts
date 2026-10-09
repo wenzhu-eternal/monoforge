@@ -38,4 +38,24 @@ describe('XssPipe（L8 豁免）', () => {
     expect(reflector.get).toHaveBeenCalled()
     expect(result).not.toContain('<b>')
   })
+
+  it('L4：密码字段原样保留，非密码字段照常剥除', () => {
+    class PlainDto {}
+    const result = pipe.transform(
+      {
+        username: '<b>alice</b>',
+        password: 'pass<w0rd><3cat!>',
+        oldPassword: 'old<b>pass</b>',
+        newPassword: 'new<b>pass</b>',
+        nickname: '<i>nick</i>',
+      },
+      { type: 'body', metatype: PlainDto, data: '' },
+    ) as Record<string, string>
+
+    expect(result.password).toBe('pass<w0rd><3cat!>')
+    expect(result.oldPassword).toBe('old<b>pass</b>')
+    expect(result.newPassword).toBe('new<b>pass</b>')
+    expect(result.username).not.toContain('<b>')
+    expect(result.nickname).not.toContain('<i>')
+  })
 })

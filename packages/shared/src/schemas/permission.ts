@@ -43,7 +43,9 @@ export const UpdatePermissionSchema = z.object({
 })
 
 export const UpdateRolePermissionsSchema = z.object({
-  permissions: z.array(z.string().min(1)).min(0),
+  // L2：数组上限防超大 inArray 打穿 PG 65535 绑定参数上限（整单 500 且白耗 DB 往返 + 两条审计写）；
+  // 元素限长 50 对齐 permissions.code varchar(50)
+  permissions: z.array(z.string().min(1).max(50)).min(0).max(50),
 })
 
 export const RolePermissionSchema = z.object({

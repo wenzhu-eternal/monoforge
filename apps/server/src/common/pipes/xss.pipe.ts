@@ -3,6 +3,9 @@ import { Reflector } from '@nestjs/core'
 import { SKIP_XSS_KEY } from '@/common/decorators/skip-xss.decorator'
 import { stripHtml } from '@/common/utils/strip-html'
 
+// L4：密码类键不参与 HTML 剥除（值仅进哈希，无渲染面）
+const PASSWORD_KEYS = new Set(['password', 'oldPassword', 'newPassword'])
+
 /**
  * XSS 清洗管道: 递归清洗对象中所有字符串字段
  * 用于 ZodValidationPipe 之前，确保入库数据不含恶意脚本
@@ -35,6 +38,12 @@ export class XssPipe implements PipeTransform {
     if (value && typeof value === 'object') {
       const result: Record<string, unknown> = {}
       for (const [key, val] of Object.entries(value)) {
+        // L4：密码字段不剥 HTML——密码无渲染面，剥除会让"用户以为的密码"≠生效密码
+        // （含 <3cat!> 之类片段的口令被降熵，差异到登录侧才暴露）
+        if (PASSWORD_KEYS.has(key)) {
+          result[key] = val
+          continue
+        }
         result[key] = this.sanitize(val)
       }
       return result
