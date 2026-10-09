@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Ip,
   NotFoundException,
   Post,
   Req,
@@ -42,8 +43,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登录' })
   @ZodSerializerDto(AuthResponseSchema)
-  async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) response: Response) {
-    const result = await this.authService.login(loginDto.username, loginDto.password)
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) response: Response,
+    // M2：来源 IP 参与失败锁定键，防零成本定向锁死账号
+    @Ip() ip?: string,
+  ) {
+    const result = await this.authService.login(loginDto.username, loginDto.password, ip)
 
     response.cookie(
       'refreshToken',

@@ -50,13 +50,13 @@ describe('AuthController', () => {
       }
       vi.mocked(authService.login).mockResolvedValue(mockResult as never)
 
-      const result = await controller.login(loginDto, response as never)
+      const result = await controller.login(loginDto, response as never, '127.0.0.1')
 
       expect(result).toEqual({
         accessToken: 'access-token',
         user: mockResult.user,
       })
-      expect(authService.login).toHaveBeenCalledWith('admin', 'Pass1234')
+      expect(authService.login).toHaveBeenCalledWith('admin', 'Pass1234', '127.0.0.1')
       expect(response.cookie).toHaveBeenCalledWith(
         'refreshToken',
         'refresh-token',
@@ -76,7 +76,7 @@ describe('AuthController', () => {
         user: { id: 1 },
       } as never)
 
-      await controller.login({ username: 'a', password: 'b' }, response as never)
+      await controller.login({ username: 'a', password: 'b' }, response as never, '127.0.0.1')
 
       expect(response.cookie).toHaveBeenCalledWith(
         'refreshToken',

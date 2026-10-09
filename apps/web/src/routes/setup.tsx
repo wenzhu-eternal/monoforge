@@ -59,7 +59,7 @@ function SetupPage() {
         <Alert
           type="info"
           showIcon
-          title="初始化将自动创建 admin / editor / viewer 三个默认角色"
+          title="初始化将自动创建 admin / user 两个默认角色"
           className="mb-6"
         />
 

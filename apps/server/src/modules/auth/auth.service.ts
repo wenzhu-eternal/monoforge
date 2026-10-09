@@ -58,10 +58,13 @@ export class AuthService {
   async login(
     username: string,
     password: string,
+    // M2：锁定键含来源 IP——纯 username 全局计数下攻击者零成本（10 次/15min 无密码）
+    // 即可锁死任意已知账号（含 admin）；ip+username 组合后只能锁"自己 IP 下的该用户"
+    ip?: string,
   ): Promise<
     TokenPair & { user: Omit<User, 'password'> & { permissions: string[]; roles: RoleBrief[] } }
   > {
-    await this.enforceLoginAttemptLimit(username)
+    await this.enforceLoginAttemptLimit(username, ip)
 
     const user = await db.query.users.findFirst({
       where: and(eq(users.username, username), notDeleted(users.deletedAt)),
@@ -69,24 +72,24 @@ export class AuthService {
 
     if (!user) {
       await argon2.verify(AuthService.DUMMY_HASH, password).catch(() => false)
-      await this.recordLoginFailure(username)
+      await this.recordLoginFailure(username, ip)
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_PASSWORD])
     }
 
     // 禁用状态与密码错误同文案：独立 USER_DISABLED 文案会直接确认用户存在
     if (user.status === false) {
       await argon2.verify(user.password, password).catch(() => false)
-      await this.recordLoginFailure(username)
+      await this.recordLoginFailure(username, ip)
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_PASSWORD])
     }
 
     const isPasswordValid = await argon2.verify(user.password, password)
     if (!isPasswordValid) {
-      await this.recordLoginFailure(username)
+      await this.recordLoginFailure(username, ip)
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_PASSWORD])
     }
 
-    await this.clearLoginFailures(username)
+    await this.clearLoginFailures(username, ip)
 
     const tokens = await this.signTokenPair({
       sub: user.id,
@@ -109,12 +112,16 @@ export class AuthService {
   }
 
   /**
-   * L2：账户级登录失败封顶。Redis 故障降级放行（登录是核心路径，不因缓存抖动锁死用户）。
+   * M2：登录失败按 ip+username 计数封顶（防零成本定向锁死任意账号，含 admin）。
+   * Redis 故障降级放行（登录是核心路径，不因缓存抖动锁死用户）；触发锁定打告警供追踪。
    */
-  private async enforceLoginAttemptLimit(username: string): Promise<void> {
+  private async enforceLoginAttemptLimit(username: string, ip?: string): Promise<void> {
     try {
-      const fails = await this.redisService.get(`login:fail:${username}`)
+      const fails = await this.redisService.get(this.loginFailKey(username, ip))
       if (fails && Number(fails) >= AuthService.LOGIN_FAIL_LIMIT) {
+        this.logger.warn(
+          `登录锁定触发: user=${username} ip=${ip ?? 'unknown'}（15min 内 10 次失败）`,
+        )
         throw new HttpException('登录失败次数过多，请 15 分钟后重试', HttpStatus.TOO_MANY_REQUESTS)
       }
     } catch (error) {
@@ -122,7 +129,12 @@ export class AuthService {
     }
   }
 
-  private async recordLoginFailure(username: string): Promise<void> {
+  /** M2：锁定键含来源 IP；无 IP 时退化为仅用户名（与旧行为一致，不放大口径） */
+  private loginFailKey(username: string, ip?: string): string {
+    return ip ? `login:fail:${ip}:${username}` : `login:fail:${username}`
+  }
+
+  private async recordLoginFailure(username: string, ip?: string): Promise<void> {
     try {
       // Lua 保证 INCR + 首次 EXPIRE 原子：两步之间崩溃会导致 key 永驻、无 TTL，
       // 计数涨满后该账户被 429 永久锁死（同文件 register 尝试计数同款写法）
@@ -130,7 +142,7 @@ export class AuthService {
         `local n = redis.call('INCR', KEYS[1])
          if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
          return n`,
-        [`login:fail:${username}`],
+        [this.loginFailKey(username, ip)],
         [AuthService.LOGIN_FAIL_TTL],
       )
     } catch {
@@ -138,9 +150,9 @@ export class AuthService {
     }
   }
 
-  private async clearLoginFailures(username: string): Promise<void> {
+  private async clearLoginFailures(username: string, ip?: string): Promise<void> {
     try {
-      await this.redisService.del(`login:fail:${username}`)
+      await this.redisService.del(this.loginFailKey(username, ip))
     } catch {
       // 清理失败忽略，等待 TTL 过期
     }

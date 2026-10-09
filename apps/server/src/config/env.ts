@@ -139,15 +139,20 @@ const envSchema = z
     // 自定义备份命令（本机无 pg_dump 时用 docker exec 调用容器内的；{filepath} 为占位符）
     // 安全约束：必须含 {filepath}、长度 ≤500；禁止换行/命令拼接（;/&/&&/||)/管道/变量展开/反引号，
     // 与文案一致：如需管道请改走默认 pg_dump（仅允许 `>` 重定向给 docker exec 用法）
-    BACKUP_CMD: z
-      .string()
-      .max(500)
-      .refine((v) => v.includes('{filepath}'), 'BACKUP_CMD 必须包含 {filepath} 占位符')
-      .refine(
-        (v) => !/[\r\n`$|;&]/.test(v),
-        'BACKUP_CMD 禁止换行/反引号/变量展开($)/管道(|)/命令拼接(;，&,&&,||)（如需管道请改走默认 pg_dump）',
-      )
-      .optional(),
+    // M8：compose 可能注入空串（.env 删掉该[可选]行即空串），空串视为未配置——
+    // 否则 refine 的 includes('{filepath}') 直接启动失败 crash-loop（同 WECHAT_REDIRECT_URI）
+    BACKUP_CMD: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z
+        .string()
+        .max(500)
+        .refine((v) => v.includes('{filepath}'), 'BACKUP_CMD 必须包含 {filepath} 占位符')
+        .refine(
+          (v) => !/[\r\n`$|;&]/.test(v),
+          'BACKUP_CMD 禁止换行/反引号/变量展开($)/管道(|)/命令拼接(;，&,&&,||)（如需管道请改走默认 pg_dump）',
+        )
+        .optional(),
+    ),
   })
   .superRefine((data, ctx) => {
     // JWT 双密钥不可相同：相同值会导致 refresh 泄露即可伪造 access
