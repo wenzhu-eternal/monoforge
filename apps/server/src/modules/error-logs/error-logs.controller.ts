@@ -26,7 +26,7 @@ import {
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { z } from 'zod'
-import { AuditResource, SkipAudit } from '@/common/decorators/audit.decorator'
+import { AuditAction, AuditResource, SkipAudit } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { Public } from '@/common/decorators/public.decorator'
@@ -143,6 +143,7 @@ export class ErrorLogsController {
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '标记错误已处理' })
+  @AuditAction('处理')
   async resolve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: { sub: number }) {
     return this.errorLogsService.resolve(id, user.sub)
   }
@@ -153,6 +154,7 @@ export class ErrorLogsController {
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '批量标记相同报错已处理' })
+  @AuditAction('批量处理')
   async batchResolve(@Body() dto: BatchResolveDto, @CurrentUser() user: { sub: number }) {
     return this.errorLogsService.batchResolve(dto.message, dto.source, user.sub)
   }

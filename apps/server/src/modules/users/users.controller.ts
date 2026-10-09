@@ -21,6 +21,7 @@ import { DashboardStatsSchema } from '@shared/schemas/dashboard'
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { UserListItemSchema, UserSchema } from '@shared/schemas/user'
 import { ZodSerializerDto } from 'nestjs-zod'
+import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
@@ -157,6 +158,7 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '修改自己的密码（需验证旧密码）' })
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @AuditAction('改密')
   async changePassword(@CurrentUser() currentUser: TokenPayload, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword(currentUser.sub, dto.oldPassword, dto.newPassword)
   }

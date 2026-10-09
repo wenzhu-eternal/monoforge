@@ -11,7 +11,15 @@ import type { Observable } from 'rxjs'
 import { from, tap } from 'rxjs'
 import { switchMap } from 'rxjs/operators'
 import { db } from '@/db'
-import { errorLogs, files, notifications, roles, users } from '@/db/schema'
+import {
+  errorLogs,
+  files,
+  notifications,
+  permissions,
+  rolePermissions,
+  roles,
+  users,
+} from '@/db/schema'
 import { AuditService } from '@/modules/audit/audit.service'
 
 export const AUDIT_ACTION_KEY = 'audit_action'
@@ -52,7 +60,8 @@ const RESOURCE_MAP: Record<string, string> = {
 
 // Controller 类名到数据库表和ID字段的映射（用于查询旧值）
 // biome-ignore lint/suspicious/noExplicitAny: Drizzle Column 泛型推导过于复杂
-const TABLE_MAP: Record<string, { table: Table; idField: any; deletedAtField?: any }> = {
+type TableMapEntry = { table: Table; idField: any; deletedAtField?: any; allRows?: boolean }
+const TABLE_MAP: Record<string, TableMapEntry> = {
   UsersController: { table: users, idField: users.id, deletedAtField: users.deletedAt },
   RolesController: { table: roles, idField: roles.id, deletedAtField: roles.deletedAt },
   FilesController: { table: files, idField: files.id, deletedAtField: files.deletedAt },
@@ -66,6 +75,18 @@ const TABLE_MAP: Record<string, { table: Table; idField: any; deletedAtField?: a
     idField: notifications.id,
     deletedAtField: notifications.deletedAt,
   },
+  // L9：角色权限是 roleId 维度的多行集合（composite PK，无单行 id）——oldValue 记全量码列表，
+  // 权限洗牌/丢失争议可前后对照溯源
+  RolePermissionsController: {
+    table: rolePermissions,
+    idField: rolePermissions.roleId,
+    allRows: true,
+  },
+  PermissionsController: {
+    table: permissions,
+    idField: permissions.id,
+    deletedAtField: permissions.deletedAt,
+  },
 }
 
 const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
@@ -75,6 +96,8 @@ const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
   FilesController: new Set([]),
   ErrorLogsController: new Set([]),
   NotificationsController: new Set([]),
+  RolePermissionsController: new Set([]),
+  PermissionsController: new Set([]),
 }
 
 // 响应侧敏感字段：绝不能进 audit_logs.new_value
@@ -180,9 +203,9 @@ export class AuditInterceptor implements NestInterceptor {
       (request.params?.id ?? request.params?.roleId) as string | undefined,
     )
 
-    // 对于更新和删除操作，先查询旧值
+    // 对于更新/删除和 PUT（全仓唯一 PUT = 角色权限洗牌）操作，先查询旧值
     const shouldFetchOldValue =
-      ['PATCH', 'DELETE'].includes(method) && resourceId && TABLE_MAP[rawResource]
+      ['PATCH', 'PUT', 'DELETE'].includes(method) && resourceId && TABLE_MAP[rawResource]
 
     // L8：旧值必须在写操作执行前读到——原先 fetch 与 handler 并发，高压下 SELECT 可能排在
     // UPDATE/DELETE 之后完成，oldValue 读到新值。改串行（多一次 SELECT 延迟，换审计准确性）。
@@ -254,6 +277,14 @@ export class AuditInterceptor implements NestInterceptor {
       const whereClause = config.deletedAtField
         ? and(eq(config.idField, id), isNull(config.deletedAtField))
         : eq(config.idField, id)
+
+      // L9：多行集合表（角色权限按 roleId 全量换血）——oldValue 记当前权限码列表
+      if (config.allRows) {
+        const rows = await db.select().from(config.table).where(whereClause)
+        if (rows.length === 0) return undefined
+        return { permissions: rows.map((r) => (r as { permission: string }).permission) }
+      }
+
       const result = await db.select().from(config.table).where(whereClause).limit(1)
 
       if (result.length === 0) return undefined
