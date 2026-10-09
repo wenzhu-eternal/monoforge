@@ -172,6 +172,7 @@ export class AuthService {
       email: string
       roleId?: number | null
       jti?: string
+      iat?: number
     }
     try {
       const secret = this.configService.get<string>('JWT_REFRESH_SECRET')
@@ -182,6 +183,13 @@ export class AuthService {
       })
     } catch {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.REFRESH_TOKEN_INVALID])
+    }
+
+    // L7：登出失效时间戳早退——签发时间早于最近一次登出的 token 一律拒绝
+    //（iat 为秒、时间戳为毫秒，同秒边界按拒绝 fail-closed）
+    const logoutAt = Number((await this.redisService.get(`logout:at:${payload.sub}`)) ?? 0)
+    if (logoutAt > 0 && (payload.iat ?? 0) * 1000 < logoutAt) {
+      throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
 
     // 原子 get+del 校验并作废旧 token（防并发重放）
@@ -218,10 +226,26 @@ export class AuthService {
 
     await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)
 
+    // L7：签发后复检——早退与落盘之间发生的登出拦不住（竞态设备 getdel 先于
+    // deleteByPattern 完成、新 refresh 键晚于清理写入即存活）。令牌未出网关，
+    // 直接作废不返回即可（孤儿键 7d 自然过期）
+    const logoutAtFinal = Number((await this.redisService.get(`logout:at:${user.id}`)) ?? 0)
+    if (logoutAtFinal > 0 && (payload.iat ?? 0) * 1000 < logoutAtFinal) {
+      throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
+    }
+
     return tokens
   }
 
   async logout(userId: number): Promise<{ message: string }> {
+    // L7：先落登出失效时间戳——refresh 的 getdel 若先于 deleteByPattern 完成，竞态设备
+    // 会在清理之后签发存活 7d 的新令牌；时间戳供 refresh 早退 + 签发后复检判定作废。
+    // TTL 盖过 refresh 存续期（7d + 1d 余量）
+    await this.redisService.set(
+      `logout:at:${userId}`,
+      String(Date.now()),
+      REFRESH_TOKEN_TTL + 86400,
+    )
     await this.redisService.deleteByPattern(`refresh:${userId}:*`)
     // 批量吊销全部活跃 access token（多设备/refresh 轮换后遗留的旧 token 一并拉黑，TTL=15min 与 token 有效期一致）
     await this.revokeAllAccessTokens(userId)

@@ -8,8 +8,12 @@ import { ConfigService } from '@nestjs/config'
 import { Reflector } from '@nestjs/core'
 import { JwtService } from '@nestjs/jwt'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
+import { and, eq } from 'drizzle-orm'
 import type { Request } from 'express'
 import { IS_PUBLIC_KEY } from '@/common/decorators/public.decorator'
+import { db } from '@/db'
+import { notDeleted } from '@/db/helpers'
+import { users } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
 
 interface AuthenticatedRequest extends Request {
@@ -59,6 +63,14 @@ export class AuthGuard implements CanActivate {
         }
       }
 
+      // L12：账号存续薄复检——禁用/软删的强制力原全押 Redis 吊销，revoke 部分失败
+      // （DB 已提交）时，无 @Permissions 的路由（/users/me/password、/notifications*、
+      // /websocket/notify）不经 PermissionsGuard 复检，存在 ≤15min 可达窗口。
+      // 正向 5s 缓存免查库；负结果不缓存，恢复/重新登录即时生效
+      if (!(await this.isAccountAlive(payload.sub))) {
+        throw new UnauthorizedException('账号已被禁用或删除')
+      }
+
       // 强制改密场景：mustChangePassword 为 true 时，仅允许改密/个人信息/登出接口
       // 精确匹配 method + path，避免 startsWith 匹配子路径绕过
       if (payload.mustChangePassword) {
@@ -80,6 +92,23 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('访问令牌无效')
     }
 
+    return true
+  }
+
+  /** L12：账号存续复检——正向 5s Redis 缓存；未命中直查 DB（软删/禁用均判死） */
+  private async isAccountAlive(sub: number): Promise<boolean> {
+    const cacheKey = `user:alive:${sub}`
+    if ((await this.redisService.get(cacheKey)) === '1') {
+      return true
+    }
+    const record = await db.query.users.findFirst({
+      where: and(eq(users.id, sub), notDeleted(users.deletedAt)),
+      columns: { status: true },
+    })
+    if (record == null || record.status === false) {
+      return false
+    }
+    await this.redisService.set(cacheKey, '1', 5)
     return true
   }
 
