@@ -10,6 +10,11 @@ import { env } from './env'
  */
 export interface ApiRequestConfig extends AxiosRequestConfig {
   skipForbiddenRedirect?: boolean
+  /**
+   * M10：旁路请求（错误上报等）——401 不得触发刷新链（避免上报把用户刷登出/弹回登录页）、
+   * 403 不整页跳转、强制改密不劫持。这类请求静默失败即可，失败本身不值得打扰用户。
+   */
+  skipAuthFlow?: boolean
 }
 
 export const api = axios.create({
@@ -39,6 +44,52 @@ const processQueue = (error: unknown, token: string | null) => {
 }
 
 /**
+ * M11：跨 tab 刷新单飞——refresh token 轮换后，并发刷新互相打吊（旧码复用即失效），
+ * 多 tab 各自收到 401 再各自刷新会把彼此踢下线。Web Locks 把同 origin 的刷新串行化；
+ * 等锁期间已有 tab 刷成功（完成时刻晚于本请求发出）则直接复用其产物，不重复消费 refresh cookie。
+ */
+const REFRESH_LOCK_NAME = 'monoforge-auth-refresh'
+const REFRESH_AT_KEY = 'monoforge-auth-refresh-at'
+const REFRESH_TOKEN_KEY = 'monoforge-auth-refresh-token'
+
+/**
+ * 执行一次 access token 刷新（跨 tab 单飞 + 等锁复用）。
+ * L31：刷新请求必须带 15s 超时——排队请求有 15s 兜底，刷新者自身没有时网关挂起会永久悬挂。
+ * @param issuedAt 本方需要刷新的时刻（401 发生/调用发起），用于判定等锁期间他人是否已刷新
+ */
+export async function refreshAccessToken(issuedAt = Date.now()): Promise<string> {
+  const doRefresh = async (): Promise<string> => {
+    const doneAt = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
+    if (doneAt >= issuedAt) {
+      const shared = localStorage.getItem(REFRESH_TOKEN_KEY)
+      if (shared) {
+        // 同步本 tab store，后续请求直接用新 token
+        useAuthStore.getState().setToken(shared)
+        return shared
+      }
+    }
+    const response = await axios.post(refreshUrl, buildRefreshPayload(), {
+      withCredentials: true,
+      timeout: 15_000,
+    })
+    const { accessToken } = response.data.data as { accessToken: string }
+    try {
+      localStorage.setItem(REFRESH_AT_KEY, String(Date.now()))
+      localStorage.setItem(REFRESH_TOKEN_KEY, accessToken)
+    } catch {
+      // 存储不可用（隐私模式等）退化为无共享，锁仍生效
+    }
+    return accessToken
+  }
+
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  if (locks) {
+    return locks.request(REFRESH_LOCK_NAME, async () => doRefresh())
+  }
+  return doRefresh()
+}
+
+/**
  * 应用初始化时调用：若 isAuthenticated 但 token 为空（旧版本遗留的持久化数据），
  * 主动用 httpOnly cookie refresh token 恢复 access token，
  * 减少首个请求 401 的概率。
@@ -55,16 +106,7 @@ export async function bootstrapAuth(): Promise<void> {
   if (!isAuthenticated || token) return
 
   try {
-    // L31：刷新请求必须带超时——排队请求有 15s 兜底，刷新者自身没有，网关挂起时首屏永久悬挂
-    const response = await axios.post(
-      refreshUrl,
-      {},
-      {
-        withCredentials: true,
-        timeout: 15_000,
-      },
-    )
-    const { accessToken } = response.data.data
+    const accessToken = await refreshAccessToken()
     useAuthStore.getState().setToken(accessToken)
   } catch {
     clearUserScopedState()
@@ -86,6 +128,11 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config as typeof error.config & { _retry?: boolean }
+
+    // M10：旁路请求不卷入认证流程——401 不刷新、403 不跳转、强制改密不劫持，静默失败
+    if ((originalRequest as ApiRequestConfig | undefined)?.skipAuthFlow) {
+      return Promise.reject(error)
+    }
 
     // 403 统一跳转 /403，与前端 AuthenticatedLayout 行为一致。
     // 例外：调用方声明 skipForbiddenRedirect 的请求（如仪表盘统计）由页面右侧内容区
@@ -145,15 +192,13 @@ api.interceptors.response.use(
 
       originalRequest._retry = true
       isRefreshing = true
+      // M11：等锁起点取本方 401 时刻（略早于此刻），等锁期间他 tab 刷成功即可复用
+      const issuedAt = Date.now()
 
       try {
         // refreshToken 走 httpOnly cookie；同源部署（VITE_API_BASE_URL 为空）时走相对路径经 Vite 代理携带 cookie
-        // L31：与 bootstrapAuth 同款 15s 超时，防网关挂起时刷新永久悬挂
-        const response = await axios.post(refreshUrl, buildRefreshPayload(), {
-          withCredentials: true,
-          timeout: 15_000,
-        })
-        const { accessToken } = response.data.data
+        // L31 超时与 M11 跨 tab 单飞均收敛在 refreshAccessToken 内
+        const accessToken = await refreshAccessToken(issuedAt)
 
         useAuthStore.getState().setToken(accessToken)
         processQueue(null, accessToken)

@@ -18,6 +18,13 @@ export function setQueryClientForAuth(client: QueryClient | null) {
  * 在缓存过期前先渲染上一个用户的 users/files/error-logs 等数据，造成跨账号数据泄漏。
  */
 export function clearUserScopedState() {
+  // M11：清掉跨 tab 共享的刷新产物，防止登出/刷新失败后下个登录复用到上个用户的 token
+  try {
+    localStorage.removeItem('monoforge-auth-refresh-at')
+    localStorage.removeItem('monoforge-auth-refresh-token')
+  } catch {
+    // 存储不可用时无需清理
+  }
   useAuthStore.getState().logout()
   queryClientRef?.clear()
 }

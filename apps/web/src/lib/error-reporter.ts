@@ -1,5 +1,5 @@
 import type { ReportError } from '@shared'
-import { api } from '@/lib/api'
+import { type ApiRequestConfig, api } from '@/lib/api'
 
 /**
  * 上报前端错误到后端
@@ -30,16 +30,21 @@ export async function reportFrontendError(payload: ReportError): Promise<void> {
       }
       context = trimmed
     }
-    await api.post('/api/v1/error-logs/report', {
-      ...payload,
-      // L32：safeSlice 防止截断点落在 UTF-16 代理对（emoji 等）中间产生尾部乱字符
-      message: safeSlice(payload.message, 2000),
-      stack: payload.stack && safeSlice(payload.stack, 3000),
-      file: payload.file && safeSlice(payload.file, 500),
-      url: payload.url && safeSlice(payload.url, 500),
-      method: payload.method && safeSlice(payload.method, 10),
-      context,
-    })
+    await api.post(
+      '/api/v1/error-logs/report',
+      {
+        ...payload,
+        // L32：safeSlice 防止截断点落在 UTF-16 代理对（emoji 等）中间产生尾部乱字符
+        message: safeSlice(payload.message, 2000),
+        stack: payload.stack && safeSlice(payload.stack, 3000),
+        file: payload.file && safeSlice(payload.file, 500),
+        url: payload.url && safeSlice(payload.url, 500),
+        method: payload.method && safeSlice(payload.method, 10),
+        context,
+      },
+      // M10：上报请求旁路认证流程——401/403 不触发刷新链、登出、跳转（上报静默失败即可）
+      { skipAuthFlow: true } as ApiRequestConfig,
+    )
   } catch {}
 }
 
