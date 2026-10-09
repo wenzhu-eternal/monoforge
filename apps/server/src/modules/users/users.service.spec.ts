@@ -34,6 +34,7 @@ vi.mock('@/db/helpers', () => ({
 }))
 
 const { db: mockDb } = await import('@/db')
+const argon2 = await import('argon2')
 
 import { UsersService } from './users.service'
 
@@ -443,6 +444,51 @@ describe('UsersService', () => {
       const result = await service.update(2, { nickname: 'n' }, { roleId: 2 })
       expect(result.id).toBe(2)
       expect(mockDb.select).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('changePassword', () => {
+    it('L11: 并发软删致 update 落空 → 抛 NotFound，不误报成功也不吊销', async () => {
+      vi.mocked(argon2.verify).mockResolvedValue(true as never)
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        password: 'old-hash',
+        status: true,
+      } as never)
+      // 检查阶段命中、更新阶段已被并发软删 → returning 空
+      mockDb.update.mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      } as never)
+
+      await expect(service.changePassword(1, 'old-pass', 'new-pass-123')).rejects.toThrow(
+        NotFoundException,
+      )
+      expect(mockRedisService.deleteByPattern).not.toHaveBeenCalled()
+    })
+
+    it('L11: 正常改密成功并吊销 refresh token', async () => {
+      vi.mocked(argon2.verify).mockResolvedValue(true as never)
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        password: 'old-hash',
+        status: true,
+      } as never)
+      mockDb.update.mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.changePassword(1, 'old-pass', 'new-pass-123')
+
+      expect(result.message).toContain('密码修改成功')
+      expect(mockRedisService.deleteByPattern).toHaveBeenCalledWith('refresh:1:*')
     })
   })
 

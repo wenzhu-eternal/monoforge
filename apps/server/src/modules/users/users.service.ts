@@ -380,11 +380,15 @@ export class UsersService {
     }
 
     const hashedPassword = await argon2.hash(newPassword)
-    await db
+    const [updatedRow] = await db
       .update(users)
       .set({ password: hashedPassword, mustChangePassword: false, updatedAt: new Date() })
-      // L10：同 update，并发软删时落空（0 行），后续吊销按无用户处理由调用方 404 前置保证
+      // L11：并发软删下必须检测落空（0 行）——原无检测会向"已删除用户"报成功并吊销令牌
       .where(and(eq(users.id, userId), notDeleted(users.deletedAt)))
+      .returning({ id: users.id })
+    if (!updatedRow) {
+      throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
+    }
 
     // 改密后吊销所有 token，强制重新登录
     await this.redisService.deleteByPattern(`refresh:${userId}:*`)

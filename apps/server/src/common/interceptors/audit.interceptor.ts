@@ -93,6 +93,16 @@ const MASKED = '***MASKED***'
 // 审计响应为可序列化 DTO，正常嵌套不超过 2-3 层；超限原样返回防御循环引用
 const MASK_DEPTH_LIMIT = 5
 
+// L10：审计按 int4 落库——超 int4/非数字的 :id 会让 insertLog 自身 22003 被 catch 吞掉，
+// 越界写操作零留痕（可用于无痕探测）；校验后越界置 undefined，审计仍记仅缺该维度
+const INT4_MIN = -2_147_483_648
+const INT4_MAX = 2_147_483_647
+function toSafeResourceId(raw: string | undefined): number | undefined {
+  if (raw == null || raw === '') return undefined
+  const n = Number(raw)
+  return Number.isInteger(n) && n >= INT4_MIN && n <= INT4_MAX ? n : undefined
+}
+
 /**
  * newValue 脱敏：复用 SENSITIVE_COLUMNS 表级规则 + 响应级 token/PII 掩码。
  * 登录审计照常记录行为（action/resource/用户/IP），仅凭据与隐私字段掩码。
@@ -166,7 +176,9 @@ export class AuditInterceptor implements NestInterceptor {
     const userId = request.user?.sub as number | undefined
     const ip = (request.ip ?? '') as string
     const userAgent = request.headers['user-agent'] as string | undefined
-    const resourceId = (request.params?.id ?? request.params?.roleId) as string | undefined
+    const resourceId = toSafeResourceId(
+      (request.params?.id ?? request.params?.roleId) as string | undefined,
+    )
 
     // 对于更新和删除操作，先查询旧值
     const shouldFetchOldValue =
@@ -195,7 +207,7 @@ export class AuditInterceptor implements NestInterceptor {
             userId: recordUserId,
             action,
             resource,
-            resourceId: resourceId ? Number(resourceId) : undefined,
+            resourceId,
             oldValue,
             newValue: sanitizeNewValue(
               inner ?? (data as Record<string, unknown> | undefined),
@@ -212,7 +224,7 @@ export class AuditInterceptor implements NestInterceptor {
             userId: userId ?? 0,
             action,
             resource,
-            resourceId: resourceId ? Number(resourceId) : undefined,
+            resourceId,
             oldValue,
             newValue: undefined,
             ip,
@@ -226,7 +238,7 @@ export class AuditInterceptor implements NestInterceptor {
       return next.handle().pipe(tap(recordTap(undefined)))
     }
 
-    return from(this.fetchOldValue(rawResource, Number(resourceId))).pipe(
+    return from(this.fetchOldValue(rawResource, resourceId)).pipe(
       switchMap((oldValue) => next.handle().pipe(tap(recordTap(oldValue)))),
     )
   }

@@ -86,7 +86,14 @@ export const CreateUserSchema = z.object({
 export const UpdateUserSchema = z.object({
   email: UserEmailSchema.optional(),
   nickname: z.string().max(50).optional(),
-  avatar: z.string().url().max(255).optional(),
+  avatar: z
+    .string()
+    .url()
+    // L5：限 http(s)——.url() 会放行 javascript:/data: 等任意 scheme，
+    // 当前前端仅作 img src 无执行面，属契约纵深收口
+    .refine((v) => /^https?:\/\//i.test(v), '头像仅支持 http/https 链接')
+    .max(255)
+    .optional(),
   phone: PhoneSchema,
   status: z.boolean().optional(),
   password: PasswordSchema.optional(),
