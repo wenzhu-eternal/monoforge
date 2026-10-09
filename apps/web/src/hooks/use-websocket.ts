@@ -24,6 +24,9 @@ export function useWebSocket() {
       return
     }
     // token 变化时由 connect 内部走 closeSocket 重建（保留 listeners 并重绑），避免持有旧 token 的 socket
+    // M9：注册实时 token 提供者——重连触发时点取 store 最新值（connect 时捕获的旧 token
+    // 被网关拒绝会死循环；access token 轮换由拦截器 setToken 后此读取即为新值）
+    wsClient.setTokenProvider(() => useAuthStore.getState().token)
     wsClient.connect(token)
   }, [isAuthenticated, token])
 

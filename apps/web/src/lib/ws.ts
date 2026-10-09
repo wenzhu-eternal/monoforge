@@ -16,11 +16,25 @@ class WsClient {
   // M7/M8：重连定时器句柄（断开 1s 重连 + 耗尽后 60s 兜底）——closeSocket 统一清理，
   // 卸载/登出后不再幽灵重连
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // M9：重连时实时取 token 的提供者——connect 捕获的 token 会过期/被吊销，
+  // 陈旧 token 反复握手被拒即死循环；须在重连触发时点取 store 最新值
+  private tokenProvider: (() => string | null) | null = null
+  // M9：手动重连路径退避计数（原固定 1s 间隔无限踢-连，服务端持续拒时风暴）
+  private reconnectAttempts = 0
   private static readonly MAX_RECONNECT = 5
   private static readonly HEARTBEAT_INTERVAL = 10_000
   private static readonly PONG_TIMEOUT = 5_000
+  private static readonly RECONNECT_DELAY_CAP = 60_000
+
+  /** 注入实时 token 提供者（重连触发时调用，返回 null 则放弃本次重连） */
+  setTokenProvider(provider: (() => string | null) | null): void {
+    this.tokenProvider = provider
+  }
 
   connect(token: string): Socket {
+    // L23：入口先清待触发的重连定时器——否则旧定时器带旧 token 迟到触发，
+    // 会 closeSocket 掐死本次刚建好的新连接（token 轮换窗口必现）
+    this.clearReconnectTimer()
     // 同 token 且已连接：直接复用；token 轮换后重挂载则走下方 closeSocket 重建
     if (this.socket?.connected && this.currentToken === token) {
       return this.socket
@@ -48,17 +62,17 @@ class WsClient {
     })
 
     this.socket.on('connect', () => {
+      this.reconnectAttempts = 0
       this.startHeartbeat()
     })
 
     this.socket.on('disconnect', (reason) => {
       this.stopHeartbeat()
       // M5：服务端主动断开（jti 吊销/账号状态变更）属 io server disconnect，
-      // socket.io v4 不会自动重连，必须手动恢复（token 已轮换时 currentToken 为新值）
-      if (reason === 'io server disconnect' && this.currentToken) {
-        const token = this.currentToken
-        this.clearReconnectTimer()
-        this.reconnectTimer = setTimeout(() => this.connect(token), 1000)
+      // socket.io v4 不会自动重连，必须手动恢复
+      // M9：统一走 scheduleReconnect——触发时点实时取 token + 指数退避
+      if (reason === 'io server disconnect') {
+        this.scheduleReconnect(1000)
       }
     })
 
@@ -76,12 +90,8 @@ class WsClient {
     this.socket.io.on('reconnect_failed', () => {
       console.warn('[WS] 重连失败，已达最大重试次数')
       this.stopHeartbeat()
-      // M8：5 次耗尽后 60s 兜底重连一次（纳入清理，登出/卸载不再执行）
-      if (this.currentToken) {
-        const token = this.currentToken
-        this.clearReconnectTimer()
-        this.reconnectTimer = setTimeout(() => this.connect(token), 60_000)
-      }
+      // M8：5 次耗尽后 60s 兜底重连（纳入清理，登出/卸载不再执行）；M9：token 触发时点解析
+      this.scheduleReconnect(60_000)
     })
 
     // 重绑历史订阅到新 socket（connect 内 closeSocket 不清 listeners，全靠这里恢复）
@@ -112,6 +122,22 @@ class WsClient {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+  }
+
+  /**
+   * M9：手动重连统一入口——指数退避（base 起步、60s 封顶），触发时点实时解析 token
+   * （闭包捕获的旧 token 被网关反复拒绝即死循环），句柄纳入 reconnectTimer 统一清理
+   */
+  private scheduleReconnect(baseDelayMs: number): void {
+    this.clearReconnectTimer()
+    const delay = Math.min(baseDelayMs * 2 ** this.reconnectAttempts, WsClient.RECONNECT_DELAY_CAP)
+    this.reconnectAttempts += 1
+    this.reconnectTimer = setTimeout(() => {
+      const token = this.tokenProvider?.() ?? this.currentToken
+      if (token) {
+        this.connect(token)
+      }
+    }, delay)
   }
 
   disconnect(): void {
@@ -157,13 +183,9 @@ class WsClient {
       // 必须关闭后主动重建（closeSocket 保留 listeners，connect 会重绑）
       this.pongTimer = setTimeout(() => {
         console.warn('[WS] pong 超时，主动断开后重连')
-        const token = this.currentToken
+        // M9：closeSocket（清旧定时器）后走统一退避重连，token 触发时点实时解析
         this.closeSocket()
-        if (token) {
-          // 同 M7/M8 纳入清理：pong 超时窗口内登出/卸载不再幽灵重连
-          this.clearReconnectTimer()
-          this.reconnectTimer = setTimeout(() => this.connect(token), 1000)
-        }
+        this.scheduleReconnect(1000)
       }, WsClient.PONG_TIMEOUT)
     }, WsClient.HEARTBEAT_INTERVAL)
   }
