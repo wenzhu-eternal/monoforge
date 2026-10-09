@@ -18,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { useCan } from '@/hooks/use-auth'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import type { RouteMeta } from '@/hooks/use-permissions'
 import {
@@ -29,6 +30,7 @@ import {
   useUpdatePermission,
 } from '@/hooks/use-permissions'
 import { extractErrorMessage } from '@/lib/error'
+import { PermissionCodes } from '@/lib/permissions'
 
 const { Title } = Typography
 
@@ -67,6 +69,9 @@ function PermissionCodesContent() {
   const updatePermission = useUpdatePermission()
   const deletePermission = useDeletePermission()
   const restorePermission = useRestorePermission()
+
+  // M13：按钮级权限（与后端 PERMISSION_* 守卫同码），无权限不渲染
+  const can = useCan()
 
   const [form] = Form.useForm()
 
@@ -129,16 +134,18 @@ function PermissionCodesContent() {
       width: 280,
       render: (_, record) => {
         const isDeleted = !!record.deletedAt
-        const actions: { key: string; node: ReactNode }[] = [
-          {
+        // M13：编辑与配置路由提交均走 PATCH /permissions/:id（PERMISSION_UPDATE）
+        const actions: { key: string; node: ReactNode }[] = []
+        if (can(PermissionCodes.PERMISSION_UPDATE)) {
+          actions.push({
             key: 'edit',
             node: (
               <Button type="link" onClick={() => handleEdit(record)} disabled={isDeleted}>
                 编辑
               </Button>
             ),
-          },
-          {
+          })
+          actions.push({
             key: 'routes',
             node: (
               <Button
@@ -149,8 +156,10 @@ function PermissionCodesContent() {
                 配置路由
               </Button>
             ),
-          },
-          {
+          })
+        }
+        if (can(PermissionCodes.PERMISSION_DELETE)) {
+          actions.push({
             key: 'restore',
             node: (
               <Popconfirm title="确定要恢复该权限吗？" onConfirm={() => handleRestore(record.id)}>
@@ -159,8 +168,8 @@ function PermissionCodesContent() {
                 </Button>
               </Popconfirm>
             ),
-          },
-          {
+          })
+          actions.push({
             key: 'delete',
             node: (
               <Popconfirm
@@ -172,8 +181,8 @@ function PermissionCodesContent() {
                 </Button>
               </Popconfirm>
             ),
-          },
-        ]
+          })
+        }
         return (
           <Space size={0}>
             {actions.map((item, i) => (
@@ -268,16 +277,18 @@ function PermissionCodesContent() {
       {contextHolder}
       <div className="flex justify-between items-center mb-4">
         <Title level={3}>权限管理</Title>
-        <Button
-          type="primary"
-          onClick={() => {
-            setEditingPermission(null)
-            form.resetFields()
-            setIsModalOpen(true)
-          }}
-        >
-          新建权限
-        </Button>
+        {can(PermissionCodes.PERMISSION_CREATE) && (
+          <Button
+            type="primary"
+            onClick={() => {
+              setEditingPermission(null)
+              form.resetFields()
+              setIsModalOpen(true)
+            }}
+          >
+            新建权限
+          </Button>
+        )}
       </div>
       <Table
         bordered

@@ -18,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { useCan } from '@/hooks/use-auth'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import {
   useAllPermissions,
@@ -32,6 +33,7 @@ import {
   useUpdateRole,
 } from '@/hooks/use-roles'
 import { extractErrorMessage } from '@/lib/error'
+import { PermissionCodes } from '@/lib/permissions'
 
 const { Title } = Typography
 
@@ -82,6 +84,9 @@ function RolesContent() {
   const updateRole = useUpdateRole()
   const deleteRole = useDeleteRole()
   const restoreRole = useRestoreRole()
+
+  // M13：按钮级权限（与后端 ROLE_*/PERMISSION_UPDATE 守卫同码），无权限不渲染
+  const can = useCan()
 
   const { data: allPermissions, isLoading: allPermissionsLoading } = useAllPermissions()
   const { data: currentPermissions } = useRolePermissions(selectedRoleId || 0)
@@ -142,24 +147,30 @@ function RolesContent() {
       width: 280,
       render: (_, record) => {
         const isDeleted = !!record.deletedAt
-        const actions: { key: string; node: ReactNode }[] = [
-          {
+        // M13：动作按钮按权限码渲染——编辑/禁用/恢复 ROLE_*，配置权限对应后端 PERMISSION_UPDATE
+        const actions: { key: string; node: ReactNode }[] = []
+        if (can(PermissionCodes.ROLE_UPDATE)) {
+          actions.push({
             key: 'edit',
             node: (
               <Button type="link" onClick={() => handleEditRole(record)} disabled={isDeleted}>
                 编辑
               </Button>
             ),
-          },
-          {
+          })
+        }
+        if (can(PermissionCodes.PERMISSION_UPDATE)) {
+          actions.push({
             key: 'perm',
             node: (
               <Button type="link" onClick={() => handleOpenPermission(record)} disabled={isDeleted}>
                 配置权限
               </Button>
             ),
-          },
-          {
+          })
+        }
+        if (can(PermissionCodes.ROLE_DELETE)) {
+          actions.push({
             key: 'restore',
             node: (
               <Popconfirm
@@ -171,8 +182,8 @@ function RolesContent() {
                 </Button>
               </Popconfirm>
             ),
-          },
-          {
+          })
+          actions.push({
             key: 'delete',
             node: (
               <Popconfirm
@@ -184,8 +195,8 @@ function RolesContent() {
                 </Button>
               </Popconfirm>
             ),
-          },
-        ]
+          })
+        }
         return (
           <Space size={0}>
             {actions.map((item, i) => (
@@ -284,16 +295,18 @@ function RolesContent() {
       {contextHolder}
       <div className="flex justify-between items-center mb-4">
         <Title level={3}>角色管理</Title>
-        <Button
-          type="primary"
-          onClick={() => {
-            setEditingRole(null)
-            roleForm.resetFields()
-            setIsRoleModalOpen(true)
-          }}
-        >
-          新建角色
-        </Button>
+        {can(PermissionCodes.ROLE_CREATE) && (
+          <Button
+            type="primary"
+            onClick={() => {
+              setEditingRole(null)
+              roleForm.resetFields()
+              setIsRoleModalOpen(true)
+            }}
+          >
+            新建角色
+          </Button>
+        )}
       </div>
 
       <Table

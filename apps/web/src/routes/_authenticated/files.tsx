@@ -18,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { useCan } from '@/hooks/use-auth'
 import {
   downloadFile,
   type FileItem,
@@ -29,6 +30,7 @@ import {
 } from '@/hooks/use-files'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { extractErrorMessage } from '@/lib/error'
+import { PermissionCodes } from '@/lib/permissions'
 
 const { Title, Text } = Typography
 
@@ -70,6 +72,9 @@ function FilesContent() {
   const deleteMutation = useDeleteFile()
   const restoreMutation = useRestoreFile()
   const uploadMutation = useUploadFile()
+
+  // M13：按钮级权限（与后端 FILE_UPLOAD/FILE_DELETE 守卫同码），无权限不渲染
+  const can = useCan()
 
   useEffect(() => {
     if (isError) {
@@ -235,29 +240,31 @@ function FilesContent() {
             ),
           })
         }
-        actions.push({
-          key: 'restore',
-          node: (
-            <Popconfirm title="确定要恢复该文件吗？" onConfirm={() => handleRestore(record.id)}>
-              <Button type="link" size="small" disabled={!isDeleted}>
-                恢复
-              </Button>
-            </Popconfirm>
-          ),
-        })
-        actions.push({
-          key: 'delete',
-          node: (
-            <Popconfirm
-              title={isDeleted ? '文件已禁用' : '确定要禁用该文件吗？'}
-              onConfirm={() => handleDelete(record.id)}
-            >
-              <Button type="link" size="small" danger disabled={isDeleted}>
-                禁用
-              </Button>
-            </Popconfirm>
-          ),
-        })
+        if (can(PermissionCodes.FILE_DELETE)) {
+          actions.push({
+            key: 'restore',
+            node: (
+              <Popconfirm title="确定要恢复该文件吗？" onConfirm={() => handleRestore(record.id)}>
+                <Button type="link" size="small" disabled={!isDeleted}>
+                  恢复
+                </Button>
+              </Popconfirm>
+            ),
+          })
+          actions.push({
+            key: 'delete',
+            node: (
+              <Popconfirm
+                title={isDeleted ? '文件已禁用' : '确定要禁用该文件吗？'}
+                onConfirm={() => handleDelete(record.id)}
+              >
+                <Button type="link" size="small" danger disabled={isDeleted}>
+                  禁用
+                </Button>
+              </Popconfirm>
+            ),
+          })
+        }
         return (
           <Space size={0}>
             {actions.map((item, i) => (
@@ -277,9 +284,11 @@ function FilesContent() {
       {contextHolder}
       <div className="flex justify-between items-center mb-4">
         <Title level={3}>文件管理</Title>
-        <Upload {...uploadProps}>
-          <Button type="primary">上传文件</Button>
-        </Upload>
+        {can(PermissionCodes.FILE_UPLOAD) && (
+          <Upload {...uploadProps}>
+            <Button type="primary">上传文件</Button>
+          </Upload>
+        )}
       </div>
 
       <Alert

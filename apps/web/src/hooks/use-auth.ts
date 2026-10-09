@@ -59,6 +59,18 @@ export const useCurrentUser = () => {
   return query
 }
 
+/**
+ * M13：按钮级权限判定——读新鲜 me（布局层已预热同 key 缓存，react-query 按 key 去重），
+ * store 仅兜底。未加载完成/无该权限一律 false（默认拒绝），与后端 PermissionsGuard 同码，
+ * 避免无权限用户点按钮才被 403 打回
+ */
+export const useCan = () => {
+  const { data: meUser } = useCurrentUser()
+  const storeUser = useAuthStore((state) => state.user)
+  const user = meUser ?? storeUser
+  return (code: string) => user?.permissions?.includes(code) ?? false
+}
+
 export const useChangePassword = () => {
   return useMutation({
     mutationFn: async (data: ChangePassword) => {

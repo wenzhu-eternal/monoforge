@@ -18,7 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
-import { useCurrentUser } from '@/hooks/use-auth'
+import { useCan } from '@/hooks/use-auth'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { useAllRoles } from '@/hooks/use-roles'
 import {
@@ -31,7 +31,6 @@ import {
 import { extractErrorMessage } from '@/lib/error'
 import { emailRule, passwordRule, phoneRule, usernameRule } from '@/lib/form-rules'
 import { PermissionCodes } from '@/lib/permissions'
-import { useAuthStore } from '@/store/auth-store'
 
 const { Title } = Typography
 
@@ -67,12 +66,10 @@ function UsersContent() {
   const deleteUser = useDeleteUser()
   const restoreUser = useRestoreUser()
 
-  // 角色管理权限（创建时指定角色 / 编辑时改角色，后端要求 USER_ROLE_MANAGE）
-  // L18：权限判定读新鲜 me（布局层已预热同 key 缓存，无额外请求），store 仅兜底
-  const { data: meUser } = useCurrentUser()
-  const storeUser = useAuthStore((state) => state.user)
-  const user = meUser ?? storeUser
-  const canManageRole = user?.permissions?.includes(PermissionCodes.USER_ROLE_MANAGE) ?? false
+  // L18/M13：按钮级权限统一走 useCan——读新鲜 me（布局层已预热，query 去重），
+  // 与后端 PermissionsGuard 同码，无权限的写操作按钮直接不渲染
+  const can = useCan()
+  const canManageRole = can(PermissionCodes.USER_ROLE_MANAGE)
 
   const [form] = Form.useForm<CreateUser & UpdateUser & { roleId?: number }>()
 
@@ -122,18 +119,23 @@ function UsersContent() {
       key: 'actions',
       width: 200,
       render: (_, record) => {
-        const isAdmin = record.roleId === 1
+        // L19：按角色名判定初始管理员（原硬编码 roleId===1，ADMIN_ROLE_ID 改配后误放行/误禁用）
+        const isAdmin = record.roles?.[0]?.name === 'admin'
         const isDeleted = !!record.deletedAt
-        const actions: { key: string; node: ReactNode }[] = [
-          {
+        // M13：动作按钮按 USER_* 权限码渲染，与后端守卫同码
+        const actions: { key: string; node: ReactNode }[] = []
+        if (can(PermissionCodes.USER_UPDATE)) {
+          actions.push({
             key: 'edit',
             node: (
               <Button type="link" onClick={() => handleEdit(record)} disabled={isDeleted}>
                 编辑
               </Button>
             ),
-          },
-          {
+          })
+        }
+        if (can(PermissionCodes.USER_DELETE)) {
+          actions.push({
             key: 'restore',
             node: (
               <Popconfirm title="确定要恢复该用户吗？" onConfirm={() => handleRestore(record.id)}>
@@ -142,8 +144,8 @@ function UsersContent() {
                 </Button>
               </Popconfirm>
             ),
-          },
-          {
+          })
+          actions.push({
             key: 'delete',
             node: (
               <Popconfirm
@@ -162,8 +164,8 @@ function UsersContent() {
                 </Button>
               </Popconfirm>
             ),
-          },
-        ]
+          })
+        }
         return (
           <Space size={0}>
             {actions.map((item, i) => (
@@ -267,16 +269,18 @@ function UsersContent() {
       {contextHolder}
       <div className="flex justify-between items-center mb-4">
         <Title level={3}>用户管理</Title>
-        <Button
-          type="primary"
-          onClick={() => {
-            setEditingUser(null)
-            form.resetFields()
-            setIsModalOpen(true)
-          }}
-        >
-          新建用户
-        </Button>
+        {can(PermissionCodes.USER_CREATE) && (
+          <Button
+            type="primary"
+            onClick={() => {
+              setEditingUser(null)
+              form.resetFields()
+              setIsModalOpen(true)
+            }}
+          >
+            新建用户
+          </Button>
+        )}
       </div>
       <Table
         bordered

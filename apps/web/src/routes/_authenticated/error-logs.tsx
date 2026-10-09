@@ -26,6 +26,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { useCan } from '@/hooks/use-auth'
 import {
   type ErrorLog,
   type ErrorLogGroup,
@@ -44,6 +45,7 @@ import {
 } from '@/hooks/use-logs'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { extractErrorMessage } from '@/lib/error'
+import { PermissionCodes } from '@/lib/permissions'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -99,6 +101,9 @@ function LogsTab() {
   const deleteMutation = useDeleteErrorLog()
   const resolveMutation = useResolveErrorLog()
   const batchResolveMutation = useBatchResolveErrorLog()
+
+  // M13：按钮级权限（与后端 ERROR_LOG_MANAGE 守卫同码），无权限不渲染
+  const can = useCan()
 
   useEffect(() => {
     if (isError) {
@@ -205,7 +210,8 @@ function LogsTab() {
             ),
           },
         ]
-        if (!record.isResolved) {
+        // M13：处理/删除动作按 ERROR_LOG_MANAGE 渲染（详情仅查看，保留）
+        if (!record.isResolved && can(PermissionCodes.ERROR_LOG_MANAGE)) {
           actions.push({
             key: 'resolve',
             node: (
@@ -220,16 +226,18 @@ function LogsTab() {
             ),
           })
         }
-        actions.push({
-          key: 'delete',
-          node: (
-            <Popconfirm title="确认删除该错误日志？" onConfirm={() => handleDelete(record.id)}>
-              <Button type="link" size="small" danger>
-                删除
-              </Button>
-            </Popconfirm>
-          ),
-        })
+        if (can(PermissionCodes.ERROR_LOG_MANAGE)) {
+          actions.push({
+            key: 'delete',
+            node: (
+              <Popconfirm title="确认删除该错误日志？" onConfirm={() => handleDelete(record.id)}>
+                <Button type="link" size="small" danger>
+                  删除
+                </Button>
+              </Popconfirm>
+            ),
+          })
+        }
         return (
           <Space size={0}>
             {actions.map((item, i) => (
@@ -320,14 +328,20 @@ function LogsTab() {
                         >
                           查看详情
                         </Button>
-                        <Popconfirm
-                          title={`确认将这 ${item.count} 条相同错误全部标记为已处理？`}
-                          onConfirm={() => handleBatchResolve(item)}
-                        >
-                          <Button type="link" size="small" loading={batchResolveMutation.isPending}>
-                            全部已处理
-                          </Button>
-                        </Popconfirm>
+                        {can(PermissionCodes.ERROR_LOG_MANAGE) && (
+                          <Popconfirm
+                            title={`确认将这 ${item.count} 条相同错误全部标记为已处理？`}
+                            onConfirm={() => handleBatchResolve(item)}
+                          >
+                            <Button
+                              type="link"
+                              size="small"
+                              loading={batchResolveMutation.isPending}
+                            >
+                              全部已处理
+                            </Button>
+                          </Popconfirm>
+                        )}
                       </Space>
                     </div>
                   ))}
@@ -531,6 +545,9 @@ function WhitelistTab() {
   const deleteMutation = useDeleteWhitelist()
   const restoreMutation = useRestoreWhitelist()
 
+  // M13：白名单增删改均需 ERROR_LOG_MANAGE（与后端守卫同码），无权限不渲染
+  const can = useCan()
+
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form] = Form.useForm<WhitelistFormValues>()
@@ -669,8 +686,9 @@ function WhitelistTab() {
       width: 180,
       render: (_: unknown, record: ErrorWhitelist) => {
         const isDeleted = !!record.deletedAt
-        const actions: { key: string; node: ReactNode }[] = [
-          {
+        const actions: { key: string; node: ReactNode }[] = []
+        if (can(PermissionCodes.ERROR_LOG_MANAGE)) {
+          actions.push({
             key: 'edit',
             node: (
               <Button
@@ -682,8 +700,8 @@ function WhitelistTab() {
                 编辑
               </Button>
             ),
-          },
-          {
+          })
+          actions.push({
             key: 'restore',
             node: (
               <Popconfirm
@@ -695,8 +713,8 @@ function WhitelistTab() {
                 </Button>
               </Popconfirm>
             ),
-          },
-          {
+          })
+          actions.push({
             key: 'delete',
             node: (
               <Popconfirm
@@ -708,8 +726,8 @@ function WhitelistTab() {
                 </Button>
               </Popconfirm>
             ),
-          },
-        ]
+          })
+        }
         return (
           <Space size={0}>
             {actions.map((item, i) => (
@@ -729,9 +747,11 @@ function WhitelistTab() {
       {contextHolder}
 
       <div className="flex justify-end mb-4">
-        <Button type="primary" onClick={openCreate}>
-          新增白名单
-        </Button>
+        {can(PermissionCodes.ERROR_LOG_MANAGE) && (
+          <Button type="primary" onClick={openCreate}>
+            新增白名单
+          </Button>
+        )}
       </div>
 
       <Table<ErrorWhitelist>
