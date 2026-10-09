@@ -38,6 +38,10 @@ const envSchema = z
         }
       }, 'DATABASE_URL 用户名/密码含非法字符，请 URL-encode 后再配置'),
 
+    // L22：连接池上限收编进 env schema——原 db/index.ts 直接 Number(process.env.DB_POOL_MAX) || 10，
+    // 手滑值（abc/0/-1）静默回退默认，与"关键变量 fail-fast"口径不一致
+    DB_POOL_MAX: z.coerce.number().int().min(1).default(10),
+
     // Redis: auth/权限缓存/限流计数强依赖，必填
     REDIS_URL: z
       .string()

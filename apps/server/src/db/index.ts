@@ -1,6 +1,7 @@
 import { config } from 'dotenv'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
+import { getEnv } from '../config/env'
 import * as schema from './schema'
 
 // 显式加载根目录 .env，避免在 apps/server/ 下运行时找不到环境变量
@@ -14,7 +15,8 @@ const connUrl = new URL(connectionString)
 connUrl.searchParams.set('statement_timeout', '30000')
 connUrl.searchParams.set('idle_in_transaction_session_timeout', '10000')
 export const client = postgres(connUrl.toString(), {
-  max: Number(process.env.DB_POOL_MAX) || 10,
+  // L22：池上限走 env schema（zod 校验 fail-fast），不再静默 Number()||10 兜底
+  max: getEnv().DB_POOL_MAX,
   idle_timeout: 20,
   connect_timeout: 10,
   max_lifetime: 30 * 60,

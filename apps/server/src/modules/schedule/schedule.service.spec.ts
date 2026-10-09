@@ -18,8 +18,9 @@ vi.mock('node:fs', () => ({
   createWriteStream: vi.fn(() => ({ on: vi.fn() })),
 }))
 
-// getEnv mock：避免依赖真实 .env，单测内联控制环境变量
-const mockGetEnv = vi.fn()
+// getEnv mock：避免依赖真实 .env，单测内联控制环境变量。
+// 默认值补 DB_POOL_MAX——@/db 建池在模块加载期调 getEnv 消费它
+const mockGetEnv = vi.fn(() => ({ DB_POOL_MAX: 10 }))
 vi.mock('@/config/env', () => ({
   getEnv: (...args: unknown[]) => mockGetEnv(...(args as Parameters<typeof mockGetEnv>)),
 }))

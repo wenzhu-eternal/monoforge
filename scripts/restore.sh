@@ -69,7 +69,15 @@ docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXI
 docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "CREATE DATABASE $DB_NAME;"
 
 echo "📥 导入备份（psql 原生格式）..."
-cat "$BACKUP_FILE" | docker exec -i "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" 2>&1 | grep -E "(ERROR|FATAL|invalid)" && echo "❌ 恢复过程中出现错误" && exit 1 || true
+# L1：ON_ERROR_STOP=1 让任一语句失败即整体非退出 0——原实现靠 grep ERROR 文案判定，
+# 管道退出码来自 grep，未命中字样的半库态照样打印"恢复完成"。grep 现仅作展示辅助
+PSQL_EXIT=0
+OUTPUT=$(cat "$BACKUP_FILE" | docker exec -i "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 2>&1) || PSQL_EXIT=$?
+echo "$OUTPUT" | grep -E "(ERROR|FATAL|invalid)" || true
+if [ "$PSQL_EXIT" -ne 0 ]; then
+  echo "❌ 恢复失败（psql 退出码 $PSQL_EXIT），数据库可能处于半恢复状态，请勿投入使用"
+  exit 1
+fi
 
 echo ""
 echo "✅ 恢复完成: $BACKUP_FILE"

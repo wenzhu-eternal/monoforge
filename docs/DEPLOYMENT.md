@@ -121,7 +121,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
 docker compose up -d
 
 # 查看日志
-docker compose logs -f server
+docker compose logs -f app
 
 # 停止
 docker compose down

@@ -13,6 +13,7 @@
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL 连接串（DEV） | `postgresql://monoforge_user:monoforge_password@localhost:5432/monoforge_database` |
 | `E2E_DATABASE_URL` | e2e 专用 PostgreSQL 连接串（独立容器，DEV DB 零污染） | `postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db` |
+| `DB_POOL_MAX` | PG 连接池上限（drizzle/postgres-js `max`；zod 校验 int ≥1，非法值启动即失败而非静默回退） | `10` |
 | `E2E_POSTGRES_USER` | e2e-postgres 容器用户名 | `e2e_user` |
 | `E2E_POSTGRES_PASSWORD` | e2e-postgres 容器密码 | `e2e_password` |
 | `E2E_POSTGRES_DB` | e2e-postgres 容器库名 | `monoforge_e2e_db` |
@@ -121,7 +122,7 @@ const code = randomInt(0, 999999).toString().padStart(6, '0')
 
 ```ts
 export const SendVerificationCodeMailSchema = z.object({
-  to: z.string().email('请输入有效邮箱'),
+  to: UserEmailSchema,
   name: z.string().min(1).max(50).optional(),
 })
 ```
@@ -129,7 +130,7 @@ export const SendVerificationCodeMailSchema = z.object({
 ### 错误处理
 
 - `mail.service` 的 `send`/`sendHtml` catch 必须 `throw new Error(...)`，不能吞错
-- `loadTemplates` 的 catch 同样必须抛错（fail-fast），模板缺失属严重配置错误，不能静默降级
+- `loadTemplates` 的 catch 与代码口径一致：告警并降级纯文本 fallback（模板缺失不阻塞启动；发信时由纯文本模板兜底），不是 fail-fast
 - 让上层 controller 处理响应和 toast
 
 ### 邮件模板路径
