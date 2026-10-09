@@ -19,16 +19,29 @@ class WsClient {
   // M9：重连时实时取 token 的提供者——connect 捕获的 token 会过期/被吊销，
   // 陈旧 token 反复握手被拒即死循环；须在重连触发时点取 store 最新值
   private tokenProvider: (() => string | null) | null = null
+  // M9：鉴权踢线后的刷新器——store 里的 token 与被踢原因同源（过期/吊销），
+  // 只重连不换信物仍是死循环，须先真正轮换一次 access token
+  private refreshHandler: (() => Promise<string | null>) | null = null
+  // M9：connect_error 刷新冷却（socket.io 每次内部重试都回调，防 refresh 连发）
+  private lastRefreshAt = 0
   // M9：手动重连路径退避计数（原固定 1s 间隔无限踢-连，服务端持续拒时风暴）
   private reconnectAttempts = 0
   private static readonly MAX_RECONNECT = 5
   private static readonly HEARTBEAT_INTERVAL = 10_000
   private static readonly PONG_TIMEOUT = 5_000
   private static readonly RECONNECT_DELAY_CAP = 60_000
+  private static readonly REFRESH_COOLDOWN = 10_000
 
-  /** 注入实时 token 提供者（重连触发时调用，返回 null 则放弃本次重连） */
-  setTokenProvider(provider: (() => string | null) | null): void {
+  /**
+   * 注入实时 token 提供者与鉴权踢线刷新器。
+   * provider 在重连触发时调用，返回 null 放弃重连；refreshHandler 返回最新 token 或 null
+   */
+  setTokenProvider(
+    provider: (() => string | null) | null,
+    refreshHandler?: (() => Promise<string | null>) | null,
+  ): void {
     this.tokenProvider = provider
+    this.refreshHandler = refreshHandler ?? null
   }
 
   connect(token: string): Socket {
@@ -53,7 +66,9 @@ class WsClient {
 
     this.socket = io(baseURL, {
       path: '/socket.io',
-      auth: { token },
+      // M9：auth 用回调——socket.io 内部每次重试都实时向 provider 取最新 token，
+      // 静态对象会把 connect 时捕获的死信物一路用到底（重连风暴根源之一）
+      auth: (cb) => cb({ token: this.tokenProvider?.() ?? token }),
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: WsClient.MAX_RECONNECT,
@@ -70,9 +85,27 @@ class WsClient {
       this.stopHeartbeat()
       // M5：服务端主动断开（jti 吊销/账号状态变更）属 io server disconnect，
       // socket.io v4 不会自动重连，必须手动恢复
-      // M9：统一走 scheduleReconnect——触发时点实时取 token + 指数退避
+      // M9：先换新 token 再排退避重连——store 里的 token 与被踢同源，只重连即死循环
       if (reason === 'io server disconnect') {
-        this.scheduleReconnect(1000)
+        if (this.refreshHandler) {
+          void this.refreshHandler()
+            .catch(() => null)
+            .finally(() => this.scheduleReconnect(1000))
+        } else {
+          this.scheduleReconnect(1000)
+        }
+      }
+    })
+
+    // M9：握手鉴权类失败先换 token——auth 回调让 socket.io 下一次内部重试即用新值
+    this.socket.on('connect_error', (err: Error) => {
+      if (
+        this.refreshHandler &&
+        /token|jwt|auth|unauthor|forbidden|401/i.test(err.message) &&
+        Date.now() - this.lastRefreshAt > WsClient.REFRESH_COOLDOWN
+      ) {
+        this.lastRefreshAt = Date.now()
+        void this.refreshHandler().catch(() => null)
       }
     })
 

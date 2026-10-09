@@ -57,36 +57,49 @@ const REFRESH_TOKEN_KEY = 'monoforge-auth-refresh-token'
  * L31：刷新请求必须带 15s 超时——排队请求有 15s 兜底，刷新者自身没有时网关挂起会永久悬挂。
  * @param issuedAt 本方需要刷新的时刻（401 发生/调用发起），用于判定等锁期间他人是否已刷新
  */
-export async function refreshAccessToken(issuedAt = Date.now()): Promise<string> {
-  const doRefresh = async (): Promise<string> => {
-    const doneAt = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
-    if (doneAt >= issuedAt) {
-      const shared = localStorage.getItem(REFRESH_TOKEN_KEY)
-      if (shared) {
-        // 同步本 tab store，后续请求直接用新 token
-        useAuthStore.getState().setToken(shared)
-        return shared
-      }
-    }
-    const response = await axios.post(refreshUrl, buildRefreshPayload(), {
-      withCredentials: true,
-      timeout: 15_000,
-    })
-    const { accessToken } = response.data.data as { accessToken: string }
-    try {
-      localStorage.setItem(REFRESH_AT_KEY, String(Date.now()))
-      localStorage.setItem(REFRESH_TOKEN_KEY, accessToken)
-    } catch {
-      // 存储不可用（隐私模式等）退化为无共享，锁仍生效
-    }
-    return accessToken
-  }
+// M9/M11：同 tab 并发调用（拦截器队列 / bootstrapAuth / WS 踢线刷新）共享同一 in-flight——
+// refresh token 单次消费（Redis GETDEL），同 tab 内各发一次必有一发被打吊
+let inflightRefresh: Promise<string> | null = null
 
-  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
-  if (locks) {
-    return locks.request(REFRESH_LOCK_NAME, async () => doRefresh())
+export async function refreshAccessToken(issuedAt = Date.now()): Promise<string> {
+  if (inflightRefresh) return inflightRefresh
+  const task = (async () => {
+    const doRefresh = async (): Promise<string> => {
+      const doneAt = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
+      if (doneAt >= issuedAt) {
+        const shared = localStorage.getItem(REFRESH_TOKEN_KEY)
+        if (shared) {
+          // 同步本 tab store，后续请求直接用新 token
+          useAuthStore.getState().setToken(shared)
+          return shared
+        }
+      }
+      const response = await axios.post(refreshUrl, buildRefreshPayload(), {
+        withCredentials: true,
+        timeout: 15_000,
+      })
+      const { accessToken } = response.data.data as { accessToken: string }
+      try {
+        localStorage.setItem(REFRESH_AT_KEY, String(Date.now()))
+        localStorage.setItem(REFRESH_TOKEN_KEY, accessToken)
+      } catch {
+        // 存储不可用（隐私模式等）退化为无共享，锁仍生效
+      }
+      return accessToken
+    }
+
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+    if (locks) {
+      return locks.request(REFRESH_LOCK_NAME, async () => doRefresh())
+    }
+    return doRefresh()
+  })()
+  inflightRefresh = task
+  try {
+    return await task
+  } finally {
+    if (inflightRefresh === task) inflightRefresh = null
   }
-  return doRefresh()
 }
 
 /**
@@ -135,13 +148,16 @@ api.interceptors.response.use(
     }
 
     // 403 统一跳转 /403，与前端 AuthenticatedLayout 行为一致。
-    // 例外：调用方声明 skipForbiddenRedirect 的请求（如仪表盘统计）由页面右侧内容区
+    // 例外1：调用方声明 skipForbiddenRedirect 的请求（如仪表盘统计）由页面右侧内容区
     // 自行展示无权限，菜单照常显示，不整页跳转。
+    // 例外2（M13）：写操作 403 多为按钮点击与权限回收的竞态，整页跳 /403 会丢列表/搜索
+    // 语境——交给调用方 catch 展示错误即可，仅读操作 403 视为视图级无权限跳转
     if (
       error.response?.status === 403 &&
       !window.location.pathname.startsWith('/403') &&
       !window.location.pathname.startsWith('/login') &&
-      !(originalRequest as ApiRequestConfig | undefined)?.skipForbiddenRedirect
+      !(originalRequest as ApiRequestConfig | undefined)?.skipForbiddenRedirect &&
+      originalRequest?.method?.toUpperCase() === 'GET'
     ) {
       window.location.href = '/403'
       return Promise.reject(error)

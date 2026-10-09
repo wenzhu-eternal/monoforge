@@ -1,7 +1,7 @@
 import type { Notification, WebSocketMe, WebSocketNotifyResult, WebSocketOnline } from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api } from '@/lib/api'
+import { api, refreshAccessToken } from '@/lib/api'
 import { wsClient } from '@/lib/ws'
 import { useAuthStore } from '@/store/auth-store'
 
@@ -25,8 +25,21 @@ export function useWebSocket() {
     }
     // token 变化时由 connect 内部走 closeSocket 重建（保留 listeners 并重绑），避免持有旧 token 的 socket
     // M9：注册实时 token 提供者——重连触发时点取 store 最新值（connect 时捕获的旧 token
-    // 被网关拒绝会死循环；access token 轮换由拦截器 setToken 后此读取即为新值）
-    wsClient.setTokenProvider(() => useAuthStore.getState().token)
+    // 被网关拒绝会死循环；access token 轮换由拦截器 setToken 后此读取即为新值）。
+    // refreshHandler：被踢后 store 的 token 同样失效，须真正走一次跨 tab 单飞 refresh 换新
+    wsClient.setTokenProvider(
+      () => useAuthStore.getState().token,
+      async () => {
+        if (!useAuthStore.getState().isAuthenticated) return null
+        try {
+          const fresh = await refreshAccessToken()
+          useAuthStore.getState().setToken(fresh)
+          return fresh
+        } catch {
+          return null
+        }
+      },
+    )
     wsClient.connect(token)
   }, [isAuthenticated, token])
 
