@@ -16,7 +16,16 @@ import { permissions, rolePermissions, roles, users } from '@/db/schema'
 export class SetupService {
   private readonly logger = new Logger(SetupService.name)
 
+  // M3：本进程成功初始化过的内存标记——初始化完成后 /setup 立即失效（DB 查询之外的
+  // 二道闸），/setup/status 恒返回 true，未初始化窗口不再被轮询持续探测；
+  // 全量软删后的重新初始化需重启进程（配合 ALLOW_SETUP 显式开启），刻意从严
+  private setupCompleted = false
+
   async getStatus(): Promise<SetupStatus> {
+    if (this.setupCompleted) {
+      return { initialized: true }
+    }
+
     const [userCountResult] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(users)
@@ -33,6 +42,11 @@ export class SetupService {
     password: string
     nickname?: string
   }): Promise<SetupResult> {
+    // M3：本进程已初始化过 → 直接拒（不查库），配合下方事务双保险
+    if (this.setupCompleted) {
+      throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
+    }
+
     const status = await this.getStatus()
     if (status.initialized) {
       throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
@@ -108,6 +122,7 @@ export class SetupService {
         })
       })
 
+      this.setupCompleted = true
       this.logger.log(`系统初始化完成，管理员: ${input.username}`)
       return { message: '初始化成功', adminUsername: input.username }
     } catch (error) {

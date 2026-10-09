@@ -164,6 +164,12 @@ export class UsersService {
       throw new ForbiddenException('仅超级管理员可分配超管角色')
     }
 
+    // M1/J1：显式指定角色时按调用者权限集收敛——目标角色权限码集 ⊆ 调用者权限码集，
+    // 与 role-permissions 的"不能授予自身未持有权限"同口径（防借角色分配自我提权）
+    if (data.roleId !== undefined) {
+      await this.assertRoleWithinCallerScope(roleId, caller)
+    }
+
     const hashedPassword = await argon2.hash(data.password)
 
     try {
@@ -239,6 +245,12 @@ export class UsersService {
       throw new ForbiddenException('仅超级管理员可变更超管账号的敏感信息')
     }
 
+    // M1/J1：显式指定角色（含同值提交）时按调用者权限集收敛，口径同 create——
+    // 非超管无法对"权限集超出自身"的角色做任何指派动作
+    if (data.roleId !== undefined && data.roleId !== null) {
+      await this.assertRoleWithinCallerScope(data.roleId, caller)
+    }
+
     // email 唯一性校验（排除自身，仅查未软删用户）
     if (data.email && data.email !== existingUser.email) {
       const duplicateEmail = await db.query.users.findFirst({
@@ -299,6 +311,36 @@ export class UsersService {
         throw new ConflictException('邮箱已被注册（并发冲突）')
       }
       throw error
+    }
+  }
+
+  /**
+   * M1/J1：角色分配按调用者权限集收敛——目标角色权限码集必须 ⊆ 调用者权限码集，
+   * 与 role-permissions.service 的防越权授予同口径（users 与 role-permissions 两条
+   * 授权路径一致）。超管免检；调用者无角色时集合为空天然 fail-closed；目标角色为
+   * 零权限角色不构成提权，放行。
+   */
+  private async assertRoleWithinCallerScope(
+    targetRoleId: number,
+    caller?: { roleId?: number | null },
+  ): Promise<void> {
+    if (isAdminUser(caller)) return
+
+    const targetPerms = await db
+      .select({ permission: rolePermissions.permission })
+      .from(rolePermissions)
+      .where(eq(rolePermissions.roleId, targetRoleId))
+    if (targetPerms.length === 0) return
+
+    const callerPerms = caller?.roleId
+      ? await db
+          .select({ permission: rolePermissions.permission })
+          .from(rolePermissions)
+          .where(eq(rolePermissions.roleId, caller.roleId))
+      : []
+    const callerSet = new Set(callerPerms.map((p) => p.permission))
+    if (targetPerms.some((p) => !callerSet.has(p.permission))) {
+      throw new ForbiddenException('不能授予超出自身权限范围的角色')
     }
   }
 

@@ -36,6 +36,13 @@ export interface TokenPair {
 
 const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60
 
+/** M4：日志脱敏——保留首字符与域名，隐藏本地部分（防日志面明文邮箱） */
+const maskEmail = (email: string): string => {
+  const at = email.indexOf('@')
+  if (at <= 0) return '***'
+  return `${email[0]}***${email.slice(at)}`
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name)
@@ -320,20 +327,21 @@ export class AuthService {
    * 同一邮箱 60 秒内不能重复发送
    */
   async sendRegisterCode(email: string): Promise<{ message: string }> {
+    // M4：60s 抢锁先于已注册检查——原顺序下已注册恒 200、未注册第二次 409，
+    // 响应差异完整泄露账号存在性（锁在早退路径也不释放，两条路径时序一致）
+    const acquired = await this.redisService.setNx(`register:code:limit:${email}`, '1', 60)
+    if (!acquired) {
+      throw new ConflictException('验证码发送过于频繁，请 60 秒后重试')
+    }
+
     const existingEmail = await db.query.users.findFirst({
       where: and(eq(users.email, email), notDeleted(users.deletedAt)),
     })
 
     if (existingEmail) {
       // 防邮箱枚举：已注册邮箱返回与未注册一致的响应（与 login 防枚举策略对齐），不实际发送
-      this.logger.warn(`注册验证码请求命中已注册邮箱，静默跳过发送: ${email}`)
+      this.logger.warn(`注册验证码请求命中已注册邮箱，静默跳过发送: ${maskEmail(email)}`)
       return { message: '验证码已发送' }
-    }
-
-    // M6：60s 限流 SET NX EX 原子抢占（与 mail 层 acquireMailRateLimit 对齐），消除双击并发下两封邮件竞态
-    const acquired = await this.redisService.setNx(`register:code:limit:${email}`, '1', 60)
-    if (!acquired) {
-      throw new ConflictException('验证码发送过于频繁，请 60 秒后重试')
     }
 
     const code = randomInt(0, 999999).toString().padStart(6, '0')

@@ -180,6 +180,68 @@ describe('UsersService', () => {
       )
       expect(result.roleId).toBe(1)
     })
+
+    it('M1: 非超管指定权限超出自身范围的角色被拒', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 3,
+        name: 'editor',
+        deletedAt: null,
+      } as never)
+      vi.mocked(mockDb.select)
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ permission: 'user:delete' }]),
+          }),
+        } as never)
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ permission: 'user:view' }]),
+          }),
+        } as never)
+
+      await expect(
+        service.create(
+          { username: 'u1', email: 'u1@b.com', password: 'secret123', roleId: 3 },
+          { roleId: 2 },
+        ),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('M1: 目标角色权限 ⊆ 调用者权限时放行', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 3,
+        name: 'editor',
+        deletedAt: null,
+      } as never)
+      vi.mocked(mockDb.select)
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ permission: 'user:view' }]),
+          }),
+        } as never)
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi
+              .fn()
+              .mockResolvedValue([{ permission: 'user:view' }, { permission: 'user:create' }]),
+          }),
+        } as never)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi
+            .fn()
+            .mockResolvedValue([{ id: 7, username: 'u1', email: 'u1@b.com', roleId: 3 }]),
+        }),
+      } as never)
+
+      const result = await service.create(
+        { username: 'u1', email: 'u1@b.com', password: 'secret123', roleId: 3 },
+        { roleId: 2 },
+      )
+      expect(result.roleId).toBe(3)
+    })
   })
 
   describe('update', () => {
@@ -333,6 +395,54 @@ describe('UsersService', () => {
       await expect(service.update(1, { password: 'new-secret-1' }, { roleId: 1 })).resolves.toEqual(
         expect.objectContaining({ id: 1 }),
       )
+    })
+
+    it('M1: 非超管 update 显式指定超范围角色被拒', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 4,
+        deletedAt: null,
+      } as never)
+      vi.mocked(mockDb.select)
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ permission: 'role:manage' }]),
+          }),
+        } as never)
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ permission: 'user:view' }]),
+          }),
+        } as never)
+
+      await expect(service.update(2, { roleId: 4 }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+    })
+
+    it('M1: roleId 未变更（undefined）不触发权限集校验', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi
+              .fn()
+              .mockResolvedValue([{ id: 2, email: 'b@b.com', roleId: 2, nickname: 'n' }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.update(2, { nickname: 'n' }, { roleId: 2 })
+      expect(result.id).toBe(2)
+      expect(mockDb.select).not.toHaveBeenCalled()
     })
   })
 

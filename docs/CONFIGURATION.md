@@ -27,7 +27,7 @@
 | `NODE_ENV` | 环境 | `development` / `production` |
 | `COOKIE_SECURE` | refresh token cookie 的 secure 标志（HTTP=false，HTTPS=true；compose 缺省 `true` fail-secure，HTTP 调试显式设 false 或 `ALLOW_INSECURE_COOKIE=true`） | `false`（compose 缺省 `true`） |
 | `ALLOW_INSECURE_COOKIE` | 生产环境允许非 secure cookie（ngrok/单容器 HTTP 调试场景；生产强制 COOKIE_SECURE 除非此项为 true） | `false` |
-| `ALLOW_SETUP` | 首次部署初始化开关（true 时允许调用 /setup 接口创建管理员；初始化事务内同步灌入 `@shared` 的 `DEFAULT_PERMISSIONS` 并绑定 admin 角色，与 `db:seed` 同源；初始化后建议设为 false） | `false` |
+| `ALLOW_SETUP` | 首次部署初始化开关（true 时允许调用 /setup 接口创建管理员；初始化事务内同步灌入 `@shared` 的 `DEFAULT_PERMISSIONS` 并绑定 admin 角色，与 `db:seed` 同源；初始化后建议设为 false）。**M3：未初始化窗口内 /setup 先到先得，务必仅在受控网络（本机/VPN/内网）完成初始化后再对外暴露，初始化完成后立即改回 false** | `false` |
 | `ALLOW_REGISTER` | 公开注册开关（true 时允许调用 register/send-register-code；默认 false 最小开口，需要开放注册的项目显式打开；关闭时两接口直接 404，前端登录页翻译为"未开放公开注册"） | `false` |
 | `ADMIN_ROLE_ID` | admin 角色 ID（PermissionsGuard 超级管理员旁路判定用，seed 创建的 admin 默认 id=1） | `1` |
 | `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制）。备份经 Redis SETNX 互斥锁串行执行（进行中再触发返回 409；Redis 异常时降级无锁执行），产物按 `backup-YYYYMMDD-HHmmss.sql` 秒级命名防同日覆盖。成败通知发给 `ADMIN_ROLE_ID` 角色下第一个启用用户的邮箱（即初始化管理员），查不到时回退 `MAIL_FROM` | `false` |
