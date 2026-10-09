@@ -56,6 +56,8 @@ export default defineConfig({
         NODE_ENV: 'development',
         DATABASE_URL: 'postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db',
         THROTTLE_LIMIT: '1000',
+        // M7：webServer 内会重跑 db:seed，默认密码强制首登改密会踢飞 e2e 会话——显式豁免
+        SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false',
       },
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,

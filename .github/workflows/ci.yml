@@ -80,6 +80,8 @@ jobs:
       JWT_SECRET: ci-jwt-secret-must-be-at-least-32-chars-long-xyz
       JWT_REFRESH_SECRET: ci-jwt-refresh-secret-must-be-at-least-32-chars-long-xyz
       NODE_ENV: test
+      # M7：默认密码 888888 时 seed 强制首登改密，冒烟 GET /users 会 401 连锁全挂——CI 显式豁免
+      SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
@@ -116,6 +118,8 @@ jobs:
       # e2e 期间调高限流，避免频繁登录触发 429
       THROTTLE_TTL: 60
       THROTTLE_LIMIT: 1000
+      # M7：默认密码强制首登改密会让 e2e 首步 GET /users 401 全套崩，显式豁免
+      SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false'
       CI: 'true'
     steps:
       - uses: actions/checkout@v4

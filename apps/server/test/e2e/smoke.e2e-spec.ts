@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common'
+import { Reflector } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
 import { ZodValidationPipe } from 'nestjs-zod'
 import request from 'supertest'
@@ -45,8 +46,12 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
 
     app = moduleRef.createNestApplication()
     app.setGlobalPrefix('api/v1')
-    // 与 main.ts 保持一致的全局管道：清洗 → Zod 校验 → XSS 清洗
-    app.useGlobalPipes(new SanitizeBodyPipe(), new ZodValidationPipe(), new XssPipe())
+    // 与 main.ts 保持一致的全局管道：null 清洗 → XSS 清洗（Reflector 识别 @SkipXss）→ Zod 校验
+    app.useGlobalPipes(
+      new SanitizeBodyPipe(),
+      new XssPipe(moduleRef.get(Reflector)),
+      new ZodValidationPipe(),
+    )
     await app.init()
   }, 30000)
 
@@ -61,8 +66,9 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
     it('GET /health → 200 + status=ok', async () => {
       const res = await request(app.getHttpServer()).get('/api/v1/health').expect(200)
       expect(res.body.data.status).toBe('ok')
-      expect(res.body.data.database).toBe('ok')
-      expect(res.body.data.redis).toBe('ok')
+      // L34：未认证请求只返回基础状态，DB/Redis 细节仅超管可见
+      expect(res.body.data.database).toBeUndefined()
+      expect(res.body.data.redis).toBeUndefined()
     })
   })
 
@@ -134,6 +140,15 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
         .set('Authorization', `Bearer ${tempToken}`)
         .expect(200)
       expect(res.body).toBeTruthy()
+
+      // logout 吊销该用户全部活跃 access token（revokeAllAccessTokens），主 accessToken 一并失效——
+      // 重新登录续上，否则后续 authenticated 用例全 401
+      const reLogin = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send(adminCredentials)
+        .expect(200)
+      accessToken = reLogin.body.data.accessToken
+      expect(accessToken).toBeTruthy()
     })
 
     it('POST /auth/refresh 无 cookie → 401', async () => {
@@ -141,19 +156,21 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
       await request(app.getHttpServer()).post('/api/v1/auth/refresh').expect(401)
     })
 
-    it('POST /auth/send-register-code → 200/400/409/500（SMTP 视配置）', async () => {
+    it('POST /auth/send-register-code → 200/400/404/409/500（SMTP 视配置）', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/send-register-code')
         .send({ email: 'smoke-test@example.com' })
-      // 200: 发送成功；400: Zod 校验失败；409: 邮箱已注册或 60 秒内重复发送；500: SMTP 异常
-      expect([200, 400, 409, 500]).toContain(res.status)
+      // 200: 发送成功；400: Zod 校验失败；404: ALLOW_REGISTER 关闭（安全默认）；
+      // 409: 邮箱已注册或 60 秒内重复发送；500: SMTP 异常
+      expect([200, 400, 404, 409, 500]).toContain(res.status)
     }, 30000)
 
-    it('POST /auth/register 缺字段 → 400/422', async () => {
+    it('POST /auth/register 缺字段 → 400/404/422', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/register')
         .send({ username: 'sm', email: 'invalid', password: '123' })
-      expect([400, 422]).toContain(res.status)
+      // 404: ALLOW_REGISTER 关闭时先于校验拒绝（CI 无 .env 走默认关闭）
+      expect([400, 404, 422]).toContain(res.status)
     })
   })
 
@@ -696,21 +713,21 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
   // 14. mail 模块
   // ============================================================
   describe('mail 邮件', () => {
-    it('POST /mail/welcome → 200/400/500', async () => {
+    it('POST /mail/welcome → 200/400/409/500', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/mail/welcome')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ to: 'smoke-test@example.com', username: 'smoke-test' })
-      // 已配置 SMTP：200；未配置：400；SMTP 异常：500
-      expect([200, 400, 500]).toContain(res.status)
+      // 已配置 SMTP：200；未配置：400；60s 频控命中：409（重复跑测试即触发）；SMTP 异常：500
+      expect([200, 400, 409, 500]).toContain(res.status)
     }, 30000)
 
-    it('POST /mail/verification-code → 200/400/500', async () => {
+    it('POST /mail/verification-code → 200/400/409/500', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/mail/verification-code')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ to: 'smoke-test@example.com', name: 'smoke' })
-      expect([200, 400, 500]).toContain(res.status)
+      expect([200, 400, 409, 500]).toContain(res.status)
     }, 30000)
   })
 
