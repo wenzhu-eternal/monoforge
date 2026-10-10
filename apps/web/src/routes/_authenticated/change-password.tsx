@@ -61,7 +61,8 @@ function ChangePasswordPage() {
   }
 
   return (
-    <div className="flex items-center justify-center h-screen bg-gray-50">
+    // L29：路由在 _authenticated 布局内——原 h-screen 全屏层与外层布局叠成双层，首体验割裂
+    <div className="flex justify-center py-10">
       {contextHolder}
       <Card className="w-full max-w-md shadow-md">
         <Title level={3} className="text-center mb-2">

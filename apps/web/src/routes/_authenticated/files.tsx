@@ -292,7 +292,7 @@ function FilesContent() {
       </div>
 
       <Alert
-        title={`支持上传图片（jpg/png/gif/webp）、文档（pdf/doc/xls）、文本、压缩包等，单文件最大 ${MAX_FILE_SIZE / 1024 / 1024}MB`}
+        title={`支持上传图片（jpg/png/svg 等）、文档（pdf/doc/docx/xls/xlsx）、文本与 SQL、音视频（mp4/mp3/wav）、压缩包（zip/rar），单文件最大 ${MAX_FILE_SIZE / 1024 / 1024}MB`}
         type="info"
         showIcon
         style={{ marginBottom: 16 }}

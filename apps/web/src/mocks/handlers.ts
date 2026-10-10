@@ -8,6 +8,8 @@ const mockUser = {
   avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=admin',
   phone: '1234567890',
   status: true,
+  roleId: 1,
+  mustChangePassword: false,
   roles: [
     {
       id: 1,
@@ -55,6 +57,8 @@ const mockUsers = [
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=user1',
     phone: '0987654321',
     status: true,
+    roleId: 2,
+    mustChangePassword: false,
     roles: [
       {
         id: 2,
@@ -140,6 +144,7 @@ export const handlers = [
         total: mockUsers.length,
         page,
         pageSize,
+        totalPages: Math.max(1, Math.ceil(mockUsers.length / pageSize)),
       },
     })
   }),
@@ -166,6 +171,8 @@ export const handlers = [
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${body.username}`,
       phone: '',
       status: true,
+      roleId: 2,
+      mustChangePassword: true,
       roles: [
         {
           id: 2,

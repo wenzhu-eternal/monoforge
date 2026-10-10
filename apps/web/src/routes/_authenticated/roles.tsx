@@ -375,7 +375,11 @@ function RolesContent() {
           ) : (
             <>
               <div className="flex items-center justify-between px-2 py-2 bg-gray-50 rounded mb-0">
-                <Checkbox checked={allSelected} onChange={(e) => handleToggleAll(e.target.checked)}>
+                <Checkbox
+                  checked={allSelected}
+                  indeterminate={selectedPermissionCodes.length > 0 && !allSelected}
+                  onChange={(e) => handleToggleAll(e.target.checked)}
+                >
                   全选
                 </Checkbox>
                 <span className="text-xs text-gray-400">

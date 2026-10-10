@@ -264,6 +264,13 @@ function UsersContent() {
     setEditingUser(null)
   }
 
+  // L29：角色列表已过滤软删角色——下拉为空 ≠ 无角色，须视觉区分
+  //（保存时不提交 roleId，绑定保持不变，不会触发后端"角色已被禁用"409）
+  const roleDeletedHint =
+    editingUser?.roleId != null && editingUser.roles?.[0]?.id == null
+      ? `原角色已被删除（ID ${editingUser.roleId}），仍保持绑定；重新选择角色可更换`
+      : undefined
+
   return (
     <>
       {contextHolder}
@@ -366,7 +373,10 @@ function UsersContent() {
             name="roleId"
             label="角色"
             rules={canManageRole && !editingUser ? [{ required: true, message: '请选择角色' }] : []}
-            extra={canManageRole ? undefined : '无角色管理权限，将默认分配普通用户角色'}
+            extra={
+              roleDeletedHint ??
+              (canManageRole ? undefined : '无角色管理权限，将默认分配普通用户角色')
+            }
           >
             <Select
               placeholder="请选择角色"
