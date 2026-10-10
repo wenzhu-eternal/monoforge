@@ -73,7 +73,7 @@ describe('NotificationsService', () => {
       expect(mockDb.query.notifications.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ offset: 10 }),
       )
-      expect(result.totalPages).toBe(0)
+      expect(result.totalPages).toBe(1)
     })
 
     it('pageSize 超上限 100 被钳制', async () => {

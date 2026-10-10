@@ -46,11 +46,32 @@ function parseUserAgent(ua: string | null): { browser: string; os: string } {
 
 // 格式化值用于表格展示
 function formatValue(v: unknown): string {
-  if (!v) return '-'
+  // L24：仅 null/undefined/空串显示占位——falsy 真值（status:false、roleId:0）必须如实展示
+  if (v === null || v === undefined || v === '') return '-'
   if (typeof v === 'object') {
     return JSON.stringify(v, null, 0)
   }
   return String(v)
+}
+
+// L25：动作色卡与筛选下拉共用同一词表（后端 ACTION_MAP + HANDLER_ACTION_MAP + @AuditAction 全集），防两处漂移
+const ACTION_COLORS: Record<string, string> = {
+  创建: 'green',
+  更新: 'blue',
+  删除: 'red',
+  登录: 'cyan',
+  注册: 'green',
+  登出: 'default',
+  刷新令牌: 'blue',
+  发送验证码: 'purple',
+  改密: 'orange',
+  处理: 'geekblue',
+  批量处理: 'geekblue',
+  恢复: 'cyan',
+  触发备份: 'volcano',
+  发送通知: 'purple',
+  发送欢迎邮件: 'purple',
+  发送测试邮件: 'purple',
 }
 
 /**
@@ -100,8 +121,8 @@ function AuditLogsContent() {
           ? Number(values.userId.trim())
           : undefined,
       action: values.action || undefined,
-      resource: values.resource || undefined,
-      keyword: values.keyword || undefined,
+      resource: values.resource?.trim() || undefined,
+      keyword: values.keyword?.trim() || undefined,
     })
     setPage(1)
   }
@@ -135,17 +156,7 @@ function AuditLogsContent() {
       dataIndex: 'action',
       width: 100,
       render: (v: string) => {
-        const colorMap: Record<string, string> = {
-          创建: 'green',
-          更新: 'blue',
-          删除: 'red',
-          登录: 'cyan',
-          注册: 'green',
-          登出: 'default',
-          刷新令牌: 'blue',
-          发送验证码: 'purple',
-        }
-        return <Tag color={colorMap[v] ?? 'default'}>{v}</Tag>
+        return <Tag color={ACTION_COLORS[v] ?? 'default'}>{v}</Tag>
       },
     },
     { title: '资源', dataIndex: 'resource', width: 100 },
@@ -215,13 +226,9 @@ function AuditLogsContent() {
         <Form.Item name="action" label="动作">
           <Select
             placeholder="全部"
-            style={{ width: 100 }}
+            style={{ width: 120 }}
             allowClear
-            options={[
-              { label: '创建', value: '创建' },
-              { label: '更新', value: '更新' },
-              { label: '删除', value: '删除' },
-            ]}
+            options={Object.keys(ACTION_COLORS).map((a) => ({ label: a, value: a }))}
           />
         </Form.Item>
         <Form.Item name="resource" label="资源">

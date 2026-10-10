@@ -48,7 +48,8 @@ export class NotificationsService {
       total,
       page: safePage,
       pageSize: safePageSize,
-      totalPages: Math.ceil(total / safePageSize),
+      // L18：与其余六模块统一空态 totalPages=1（分页器至少渲染一页）
+      totalPages: Math.ceil(total / safePageSize) || 1,
     }
   }
 
