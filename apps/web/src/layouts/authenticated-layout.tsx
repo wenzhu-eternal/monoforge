@@ -47,6 +47,8 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   const logoutMutation = useLogout()
   const storeUser = useAuthStore((state) => state.user)
   const [collapsed, setCollapsed] = useState(false)
+  // L28：用户手动开合的分组（受控 openKeys 的用户侧状态，与路由推导合并见菜单处）
+  const [userOpenKeys, setUserOpenKeys] = useState<string[]>([])
 
   // 自动刷新用户信息（含 permissions/roles 字段，供权限校验使用）
   const { data: meUser, isLoading, isError, refetch } = useCurrentUser()
@@ -220,6 +222,10 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
     return []
   }
 
+  // L28：defaultOpenKeys 仅首挂载求值——直达分组子页（如 /audit-logs）时组不展开、高亮项不可见；
+  // 改受控并与路由推导合并：新页自动展开所属组，用户手动开合的其他组保留
+  const openKeys = Array.from(new Set([...getOpenKeys(), ...userOpenKeys]))
+
   return (
     <Layout className="h-screen">
       <Sider
@@ -247,7 +253,8 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
           theme="dark"
           mode="inline"
           selectedKeys={getSelectedKeys()}
-          defaultOpenKeys={getOpenKeys()}
+          openKeys={openKeys}
+          onOpenChange={(keys) => setUserOpenKeys(keys)}
           items={menuItems}
           onClick={handleMenuClick}
         />

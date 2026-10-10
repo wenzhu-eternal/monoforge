@@ -356,7 +356,7 @@ function UsersContent() {
               </Form.Item>
             </>
           )}
-          <Form.Item name="nickname" label="昵称">
+          <Form.Item name="nickname" label="昵称" rules={[{ max: 50, message: '昵称最多 50 字' }]}>
             <Input />
           </Form.Item>
           <Form.Item name="phone" label="手机号" rules={[phoneRule]}>

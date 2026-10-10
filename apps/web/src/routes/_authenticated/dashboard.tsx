@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Button, Card, Col, message, Result, Row, Spin, Typography } from 'antd'
 import { useEffect } from 'react'
-import { useDashboardStats } from '@/hooks/use-dashboard'
+import { useDashboardStats, useHealthStatus } from '@/hooks/use-dashboard'
 
 const { Title } = Typography
 
@@ -21,6 +21,7 @@ function DashboardPage() {
 
 function DashboardContent() {
   const { data, isLoading, isError, error, refetch } = useDashboardStats()
+  const health = useHealthStatus()
   const [messageApi, contextHolder] = message.useMessage()
 
   const status = (error as { response?: { status?: number } })?.response?.status
@@ -63,7 +64,14 @@ function DashboardContent() {
             </Col>
             <Col span={8}>
               <Card title="系统状态" hoverable>
-                <div className="text-3xl font-bold text-green-500">在线</div>
+                {/* L26：真实探测 /health——原先硬编码"在线"，后端故障时依旧全绿 */}
+                {health.isLoading ? (
+                  <div className="text-3xl font-bold">探测中</div>
+                ) : health.data === 'ok' ? (
+                  <div className="text-3xl font-bold text-green-500">在线</div>
+                ) : (
+                  <div className="text-3xl font-bold text-red-500">异常</div>
+                )}
               </Card>
             </Col>
           </Row>

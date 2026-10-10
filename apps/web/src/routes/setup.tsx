@@ -91,7 +91,11 @@ function SetupPage() {
           >
             <Input.Password placeholder="至少 8 位，需含字母和数字" />
           </Form.Item>
-          <Form.Item label="昵称（可选）" name="nickname">
+          <Form.Item
+            label="昵称（可选）"
+            name="nickname"
+            rules={[{ max: 50, message: '昵称最多 50 字' }]}
+          >
             <Input placeholder="可选" />
           </Form.Item>
           <Form.Item>
