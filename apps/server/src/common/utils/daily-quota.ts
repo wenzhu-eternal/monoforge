@@ -2,9 +2,10 @@ import { ConflictException } from '@nestjs/common'
 import type { RedisService } from '@/modules/redis/redis.service'
 
 /**
- * L6：按用户+动作的日配额（Redis INCR 计数，TTL 续期到当日 24:00）——
+ * L6：按用户+动作的日配额（Redis 计数，TTL 到当日 24:00）——
  * 收口 schedule:backup / file:upload 持有者无频控滥用（已授权功能的纵深项）。
- * 每次 incr 都续期，防首次 expire 丢失后计数键永不过期；超限抛 409
+ * INCR+EXPIRE 走 Lua 原子（SECURITY.md 限流规范：两步调用在进程中断时会留无 TTL
+ * 永驻 key）；超限抛 409
  */
 export async function consumeDailyQuota(
   redis: RedisService,
@@ -20,8 +21,15 @@ export async function consumeDailyQuota(
   const ttl = Math.max(1, Math.ceil((midnight.getTime() - now.getTime()) / 1000))
 
   const key = `quota:${action}:${userId}:${date}`
-  const used = await redis.incr(key)
-  await redis.expire(key, ttl)
+  const used = Number(
+    await redis.eval(
+      `local n = redis.call('INCR', KEYS[1])
+       if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+       return n`,
+      [key],
+      [ttl],
+    ),
+  )
 
   if (used > limit) {
     const label = action === 'backup' ? '备份' : '上传'

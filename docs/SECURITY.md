@@ -213,6 +213,8 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - **邮件每邮箱 60s 限流**：用 `SET NX EX` 原子抢占（`mail.service`），禁止 exists 检查 + 事后标记的两步模式——并发请求会同时通过检查发出多封
 
+- **日配额（L6）**：`POST /schedule/backup` 3 次/日/用户、`POST /files/upload` 100 次/日/用户，超限 409；`common/utils/daily-quota.ts` 按上款 Lua 原子计数（键 `quota:<action>:<uid>:<yyyymmdd>`，TTL 至当日 24:00），cron 每日备份不经此路径
+
 - error-logs 模块的只读接口（findAll/stats/grouped/whitelist）必须 `@SkipThrottle()`，避免 429
 
 - 单条查询接口（如 `@Get(':id')`）用 `@Throttle({ default: { limit: 60, ttl: 60000 } })` 放大限流（60 次/分钟），避免高频查详情被 429
