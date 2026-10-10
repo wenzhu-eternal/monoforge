@@ -31,7 +31,12 @@ describe('ScheduleService', () => {
   let service: InstanceType<typeof ScheduleService>
   let mailService: { sendBackupNotification: ReturnType<typeof vi.fn> }
   let errorLogsService: { record: ReturnType<typeof vi.fn> }
-  let redisService: { setNx: ReturnType<typeof vi.fn>; del: ReturnType<typeof vi.fn> }
+  let redisService: {
+    setNx: ReturnType<typeof vi.fn>
+    del: ReturnType<typeof vi.fn>
+    incr: ReturnType<typeof vi.fn>
+    expire: ReturnType<typeof vi.fn>
+  }
   let filesService: { purgeExpiredTrash: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
@@ -43,8 +48,13 @@ describe('ScheduleService', () => {
 
     mailService = { sendBackupNotification: vi.fn().mockResolvedValue(undefined) }
     errorLogsService = { record: vi.fn().mockResolvedValue(undefined) }
-    // M13：默认抢锁成功，del 无害
-    redisService = { setNx: vi.fn().mockResolvedValue(true), del: vi.fn().mockResolvedValue(1) }
+    // M13：默认抢锁成功，del 无害；L6：默认配额计数 1
+    redisService = {
+      setNx: vi.fn().mockResolvedValue(true),
+      del: vi.fn().mockResolvedValue(1),
+      incr: vi.fn().mockResolvedValue(1),
+      expire: vi.fn().mockResolvedValue(true),
+    }
     filesService = { purgeExpiredTrash: vi.fn().mockResolvedValue(0) }
 
     service = new ScheduleService(
@@ -119,6 +129,25 @@ describe('ScheduleService', () => {
       await service.dailyBackup()
 
       expect(spawnSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('manualBackup 日配额（L6）', () => {
+    it('超日配额 → 409 且不执行备份（未抢锁）', async () => {
+      redisService.incr.mockResolvedValue(4)
+
+      await expect(service.manualBackup(7)).rejects.toThrow(ConflictException)
+      await expect(service.manualBackup(7)).rejects.toThrow('今日备份次数已达上限')
+      expect(redisService.setNx).not.toHaveBeenCalled()
+    })
+
+    it('配额内 → 正常执行备份', async () => {
+      redisService.incr.mockResolvedValue(1)
+
+      await service.manualBackup(7)
+
+      expect(redisService.incr).toHaveBeenCalled()
+      expect(redisService.setNx).toHaveBeenCalled()
     })
   })
 

@@ -48,13 +48,21 @@ const { FilesService } = await import('./files.service')
 
 describe('FilesService', () => {
   let service: InstanceType<typeof FilesService>
+  let mockRedisQuota: {
+    incr: ReturnType<typeof vi.fn>
+    expire: ReturnType<typeof vi.fn>
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
     mockMkdir.mockResolvedValue(undefined)
     mockRename.mockResolvedValue(undefined)
     mockUnlink.mockResolvedValue(undefined)
-    service = new FilesService()
+    mockRedisQuota = {
+      incr: vi.fn().mockResolvedValue(1),
+      expire: vi.fn().mockResolvedValue(true),
+    }
+    service = new FilesService(mockRedisQuota as never)
   })
 
   describe('remove', () => {
@@ -255,6 +263,27 @@ describe('FilesService', () => {
       expect(result.message).toContain('1')
       expect(mockRename).not.toHaveBeenCalled()
       expect(mockUpdate).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('upload 日配额（L6）', () => {
+    const file = {
+      originalname: 'a.png',
+      path: '/uploads/a.png',
+      size: 1,
+      mimetype: 'image/png',
+    }
+
+    it('超配额 → 409 且清理 multer 临时文件', async () => {
+      mockRedisQuota.incr.mockResolvedValue(101)
+
+      await expect(service.upload(file as never, 7)).rejects.toThrow('今日上传次数已达上限')
+      expect(mockUnlink).toHaveBeenCalledWith('/uploads/a.png')
+    })
+
+    it('未传 uploadedBy 跳过配额（内部调用路径）', async () => {
+      await expect(service.upload(file as never)).rejects.toThrow()
+      expect(mockRedisQuota.incr).not.toHaveBeenCalled()
     })
   })
 

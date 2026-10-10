@@ -23,14 +23,18 @@ import {
   validateFileSize,
   validateMimeType,
 } from '@/common/file-validator'
+import { consumeDailyQuota } from '@/common/utils/daily-quota'
 import { db } from '@/db'
 import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, users } from '@/db/schema'
+import { RedisService } from '@/modules/redis/redis.service'
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
 const TRASH_DIR = join(process.cwd(), 'uploads-trash')
 // J3：回收站保留期（拍板 30 天）——到期软删文件物理删除，与 backups 30 份口径对齐
 const TRASH_RETENTION_DAYS = 30
+// L6：单用户上传日配额——防持有者持续写盘（超限留下的 multer 临时文件由每小时孤儿清理回收）
+const UPLOAD_DAILY_LIMIT = 100
 
 /**
  * 跨卷安全的文件移动：优先 rename（同卷快），EXDEV 时回退 copyFile+unlink（跨卷兼容）
@@ -52,6 +56,8 @@ async function safeMove(src: string, dest: string): Promise<void> {
 export class FilesService {
   private readonly logger = new Logger(FilesService.name)
 
+  constructor(private readonly redisService: RedisService) {}
+
   async upload(file: Express.Multer.File, uploadedBy?: number): Promise<UploadResult> {
     if (!file) {
       throw new NotFoundException('文件未上传')
@@ -59,6 +65,10 @@ export class FilesService {
 
     // 校验链任一步失败都需清理 multer 落盘的临时文件，防恶意文件残留
     try {
+      // L6：上传日配额放校验链内——超限时上面已落盘的临时文件随 catch 立即清理
+      if (uploadedBy !== undefined) {
+        await consumeDailyQuota(this.redisService, 'upload', uploadedBy, UPLOAD_DAILY_LIMIT)
+      }
       validateFilename(file.originalname)
       validateFileSize(file.size)
       validateMimeType(file.mimetype)

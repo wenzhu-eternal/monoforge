@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import { consumeDailyQuota } from '@/common/utils/daily-quota'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { files } from '@/db/schema'
@@ -20,6 +21,8 @@ const MAX_BACKUPS = 30
 // M13：备份进行中锁的 key 与 TTL（10min 兜底进程崩溃后死锁，备份链路本身 5min 超时）
 const BACKUP_LOCK_KEY = 'schedule:backup:running'
 const BACKUP_LOCK_TTL = 600
+// L6：手动备份日配额（cron 每日 1 次走 doBackup 不经此处，不受限）
+const MANUAL_BACKUP_DAILY_LIMIT = 3
 
 @Injectable()
 export class ScheduleService {
@@ -49,7 +52,11 @@ export class ScheduleService {
   /**
    * 手动触发数据库备份（不受 ENABLE_BACKUP 开关限制，供 POST /schedule/backup 调用）
    */
-  async manualBackup() {
+  async manualBackup(userId?: number) {
+    // L6：手动备份日配额——防持有者无频控制造整库 dump；未传 userId 的内部调用不受限
+    if (userId !== undefined) {
+      await consumeDailyQuota(this.redisService, 'backup', userId, MANUAL_BACKUP_DAILY_LIMIT)
+    }
     const executed = await this.doBackup()
     if (!executed) {
       throw new ConflictException('已有备份任务进行中，请稍后再试')

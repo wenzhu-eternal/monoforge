@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { AppModule } from '@/app.module'
 import { SanitizeBodyPipe } from '@/common/pipes/sanitize-body.pipe'
 import { XssPipe } from '@/common/pipes/xss.pipe'
+import { RedisService } from '@/modules/redis/redis.service'
 
 /**
  * 冒烟测试：部署后全量 API 可用性验证
@@ -53,6 +54,9 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
       new ZodValidationPipe(),
     )
     await app.init()
+
+    // L6：清日配额计数——smoke 每次运行都会打 /schedule/backup，跨运行同日累积会撞 3 次/日上限
+    await app.get(RedisService).deleteByPattern('quota:*')
   }, 30000)
 
   afterAll(async () => {
