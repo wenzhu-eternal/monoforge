@@ -1,9 +1,11 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock db（files.service 直接 import，需提供 query.files.findFirst + update）
+// Mock db（files.service 直接 import，需提供 query.files.findFirst + update + select/delete）
 const mockFindFirst = vi.fn()
 const mockUpdate = vi.fn()
+const mockSelect = vi.fn()
+const mockDelete = vi.fn()
 vi.mock('@/db', () => ({
   db: {
     query: {
@@ -12,6 +14,8 @@ vi.mock('@/db', () => ({
       },
     },
     update: (...args: unknown[]) => mockUpdate(...args),
+    select: (...args: unknown[]) => mockSelect(...args),
+    delete: (...args: unknown[]) => mockDelete(...args),
   },
 }))
 
@@ -33,9 +37,11 @@ vi.mock('@/common/file-validator', async (importOriginal) => {
 // Mock fs/promises（capture mkdir + rename 调用）
 const mockMkdir = vi.fn().mockResolvedValue(undefined)
 const mockRename = vi.fn().mockResolvedValue(undefined)
+const mockUnlink = vi.fn().mockResolvedValue(undefined)
 vi.mock('node:fs/promises', () => ({
   mkdir: (...args: unknown[]) => mockMkdir(...args),
   rename: (...args: unknown[]) => mockRename(...args),
+  unlink: (...args: unknown[]) => mockUnlink(...args),
 }))
 
 const { FilesService } = await import('./files.service')
@@ -47,6 +53,7 @@ describe('FilesService', () => {
     vi.clearAllMocks()
     mockMkdir.mockResolvedValue(undefined)
     mockRename.mockResolvedValue(undefined)
+    mockUnlink.mockResolvedValue(undefined)
     service = new FilesService()
   })
 
@@ -248,6 +255,66 @@ describe('FilesService', () => {
       expect(result.message).toContain('1')
       expect(mockRename).not.toHaveBeenCalled()
       expect(mockUpdate).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('purgeExpiredTrash', () => {
+    const expiredRows = [
+      { id: 1, path: '/u/a.png', trashPath: '/t/1-a.png' },
+      { id: 2, path: '/u/b.png', trashPath: '/t/2-b.png' },
+    ]
+
+    function mockChains(rows: typeof expiredRows) {
+      mockSelect.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(rows),
+        }),
+      })
+      const deleteWhere = vi.fn().mockResolvedValue(undefined)
+      mockDelete.mockReturnValue({ where: deleteWhere })
+      return deleteWhere
+    }
+
+    it('超期软删文件：trashPath + 原 path 磁盘双清并硬删行', async () => {
+      const deleteWhere = mockChains(expiredRows)
+
+      const removed = await service.purgeExpiredTrash()
+
+      expect(removed).toBe(2)
+      expect(mockUnlink).toHaveBeenCalledWith('/t/1-a.png')
+      expect(mockUnlink).toHaveBeenCalledWith('/u/a.png')
+      expect(mockUnlink).toHaveBeenCalledTimes(4)
+      expect(deleteWhere).toHaveBeenCalled()
+    })
+
+    it('无超期行 → 0，不动磁盘与 DB', async () => {
+      mockChains([])
+
+      const removed = await service.purgeExpiredTrash()
+
+      expect(removed).toBe(0)
+      expect(mockUnlink).not.toHaveBeenCalled()
+      expect(mockDelete).not.toHaveBeenCalled()
+    })
+
+    it('unlink 失败不阻塞删行（孤儿行不得永存）', async () => {
+      mockChains(expiredRows)
+      mockUnlink.mockRejectedValue(new Error('EACCES'))
+
+      const removed = await service.purgeExpiredTrash()
+
+      expect(removed).toBe(2)
+      expect(mockDelete).toHaveBeenCalled()
+    })
+
+    it('trashPath 为空的遗留行只清原 path', async () => {
+      mockChains([{ id: 3, path: '/u/c.png', trashPath: null }])
+
+      const removed = await service.purgeExpiredTrash()
+
+      expect(removed).toBe(1)
+      expect(mockUnlink).toHaveBeenCalledTimes(1)
+      expect(mockUnlink).toHaveBeenCalledWith('/u/c.png')
     })
   })
 

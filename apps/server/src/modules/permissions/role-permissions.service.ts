@@ -30,20 +30,6 @@ export class RolePermissionsService {
     return result.map((p) => p.permission)
   }
 
-  async findByRoleIdWithDetails(roleId: number): Promise<RolePermission[]> {
-    const result = await db
-      .select({
-        roleId: rolePermissions.roleId,
-        permission: rolePermissions.permission,
-        permissionName: permissions.name,
-      })
-      .from(rolePermissions)
-      .leftJoin(permissions, eq(rolePermissions.permission, permissions.code))
-      .where(and(eq(rolePermissions.roleId, roleId), notDeleted(permissions.deletedAt)))
-
-    return result
-  }
-
   async findAll(): Promise<RolePermission[]> {
     const allPermissions = await db
       .select({

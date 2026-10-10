@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common'
 import type { FileItem, UploadResult } from '@shared/schemas/file'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
-import { and, count, desc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
 import {
   generateSafeFilename,
   isPathSafe,
@@ -29,6 +29,8 @@ import { files, users } from '@/db/schema'
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
 const TRASH_DIR = join(process.cwd(), 'uploads-trash')
+// J3：回收站保留期（拍板 30 天）——到期软删文件物理删除，与 backups 30 份口径对齐
+const TRASH_RETENTION_DAYS = 30
 
 /**
  * 跨卷安全的文件移动：优先 rename（同卷快），EXDEV 时回退 copyFile+unlink（跨卷兼容）
@@ -242,6 +244,36 @@ export class FilesService {
     }
 
     return { message: `文件 ID ${id} 已删除` }
+  }
+
+  /**
+   * J3：回收站到期物理清理——超 30 天的软删文件连磁盘带行硬删。
+   * 磁盘两处都清：trashPath（已搬盘）+ 原 path（搬盘失败时文件仍在原位），均过路径
+   * 安全校验（DB 被篡改宁可漏删不可越界删）；单点 unlink 失败不阻塞删行
+   */
+  async purgeExpiredTrash(): Promise<number> {
+    const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+    const expired = await db
+      .select({ id: files.id, path: files.path, trashPath: files.trashPath })
+      .from(files)
+      .where(and(isNotNull(files.deletedAt), lt(files.deletedAt, cutoff)))
+    if (expired.length === 0) return 0
+
+    for (const row of expired) {
+      if (row.trashPath && isPathSafe(row.trashPath, TRASH_DIR)) {
+        await unlink(row.trashPath).catch(() => undefined)
+      }
+      if (isPathSafe(row.path, UPLOAD_DIR)) {
+        await unlink(row.path).catch(() => undefined)
+      }
+    }
+    await db.delete(files).where(
+      inArray(
+        files.id,
+        expired.map((r) => r.id),
+      ),
+    )
+    return expired.length
   }
 
   /**

@@ -42,12 +42,12 @@ describe('MailController', () => {
   })
 
   describe('sendVerificationCode', () => {
-    it('发送验证码邮件成功', async () => {
+    it('发送测试邮件成功（J2-C：不带 code 即通道测试，不再伪造验证码）', async () => {
       const dto = { to: 'user@test.com', name: '文竹' }
 
       const result = await controller.sendVerificationCode(dto)
 
-      expect(result).toEqual({ message: '验证码邮件已发送至 user@test.com' })
+      expect(result).toEqual({ message: '测试邮件已发送至 user@test.com' })
       expect(service.sendVerificationCode).toHaveBeenCalledWith('user@test.com', '文竹')
     })
 

@@ -5,7 +5,7 @@
 1. **禁止 `synchronize`** - 所有表结构变更走 `drizzle-kit generate` 迁移
 2. **表名使用 snake_case 复数** - `users` / `roles` / `error_logs`
 3. **使用 PostgreSQL** - JSONB 存可变结构
-4. **软删除** - 所有业务表添加 `deleted_at` 字段，删除操作仅设置时间戳，查询时过滤 `deleted_at IS NULL`；审计日志（`audit_logs`）等 append-only 表例外。注意：`files` 表软删时**同步将磁盘文件 `rename` 到 `uploads-trash/` 隔离目录**（带 `${Date.now()}-` 前缀防冲突），静态托管中间件不服务该目录；隔离目录可由运维定期清理或审计回溯，既避免"已删文件仍可凭 URL 访问"的隐私泄露，又保留可恢复性
+4. **软删除** - 所有业务表添加 `deleted_at` 字段，删除操作仅设置时间戳，查询时过滤 `deleted_at IS NULL`；审计日志（`audit_logs`）等 append-only 表例外。注意：`files` 表软删时**同步将磁盘文件 `rename` 到 `uploads-trash/` 隔离目录**（带 `${Date.now()}-` 前缀防冲突），静态托管中间件不服务该目录；回收站保留 **30 天**（J3 拍板）：每日 0:30 cron（`schedule.dailyTrashCleanup` → `files.purgeExpiredTrash`）对 `deleted_at` 超期的软删文件物理删除磁盘文件（`trash_path` 与原 `path` 双清，均过路径安全校验）并硬删行，既避免"已删文件仍可凭 URL 访问"的隐私泄露，又保留可恢复性与磁盘水位
 5. **部分唯一索引** - 唯一字段（username/email/wechatOpenId/role.name/permission.code）必须用 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，禁止使用列级 `.unique()`。原因：列级 unique 会阻止软删后同名重建。**配套要求**：对这类字段做 upsert 时，`onConflictDoUpdate` 必须带上同款 `targetWhere`（值为 `deleted_at IS NULL` 的 sql 片段），否则 PG 报 42P10「no unique or exclusion constraint matching the ON CONFLICT specification」
 6. **外键引用列用 `integer` 不用 `serial`** - `serial` 会创建多余的自增序列且无外键约束，引用列（如 `audit_logs.user_id` / `error_logs.user_id`）必须用 `integer`。可空的外键引用列不加 `.notNull()`（如 `error_logs.user_id` 允许未登录用户上报错误）
 7. **唯一约束冲突兜底** - service 层 `create` 方法必须 `try/catch` 包裹 `db.insert`，捕获 23505 错误码转 `ConflictException`，防止 TOCTOU 竞态（先查询再插入之间被并发插入）

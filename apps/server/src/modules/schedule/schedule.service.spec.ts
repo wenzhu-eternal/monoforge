@@ -32,6 +32,7 @@ describe('ScheduleService', () => {
   let mailService: { sendBackupNotification: ReturnType<typeof vi.fn> }
   let errorLogsService: { record: ReturnType<typeof vi.fn> }
   let redisService: { setNx: ReturnType<typeof vi.fn>; del: ReturnType<typeof vi.fn> }
+  let filesService: { purgeExpiredTrash: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
     mockMkdir.mockClear().mockResolvedValue(undefined)
@@ -44,11 +45,13 @@ describe('ScheduleService', () => {
     errorLogsService = { record: vi.fn().mockResolvedValue(undefined) }
     // M13：默认抢锁成功，del 无害
     redisService = { setNx: vi.fn().mockResolvedValue(true), del: vi.fn().mockResolvedValue(1) }
+    filesService = { purgeExpiredTrash: vi.fn().mockResolvedValue(0) }
 
     service = new ScheduleService(
       mailService as never,
       errorLogsService as never,
       redisService as never,
+      filesService as never,
     )
   })
 
@@ -56,6 +59,22 @@ describe('ScheduleService', () => {
   function mockSpawnPgDump(impl: () => Promise<void>) {
     return vi.spyOn(service as never, 'spawnPgDump' as never).mockImplementation(impl as never)
   }
+
+  describe('dailyTrashCleanup（J3 回收站到期清理）', () => {
+    it('委托 filesService.purgeExpiredTrash', async () => {
+      filesService.purgeExpiredTrash.mockResolvedValueOnce(3)
+
+      await service.dailyTrashCleanup()
+
+      expect(filesService.purgeExpiredTrash).toHaveBeenCalledTimes(1)
+    })
+
+    it('清理抛错只记录不外抛（cron 不因单次失败中断）', async () => {
+      filesService.purgeExpiredTrash.mockRejectedValueOnce(new Error('disk error'))
+
+      await expect(service.dailyTrashCleanup()).resolves.toBeUndefined()
+    })
+  })
 
   describe('dailyBackup - ENABLE_BACKUP 开关', () => {
     it('ENABLE_BACKUP=false → 跳过备份，不发邮件不入库', async () => {

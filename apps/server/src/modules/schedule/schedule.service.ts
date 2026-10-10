@@ -9,6 +9,7 @@ import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { files } from '@/db/schema'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
+import { FilesService } from '@/modules/files/files.service'
 import { MailService } from '@/modules/mail/mail.service'
 import { RedisService } from '@/modules/redis/redis.service'
 
@@ -28,6 +29,7 @@ export class ScheduleService {
     private readonly mailService: MailService,
     private readonly errorLogsService: ErrorLogsService,
     private readonly redisService: RedisService,
+    private readonly filesService: FilesService,
   ) {}
 
   /**
@@ -81,6 +83,22 @@ export class ScheduleService {
       }
     } catch (err) {
       this.logger.warn(`孤儿文件清理失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  /**
+   * J3：每天 0:30 清理回收站——超 30 天软删文件物理删除（磁盘 + 行），
+   * 与 backups 30 份上限、error-logs deletedAt 口径对齐
+   */
+  @Cron('30 0 * * *')
+  async dailyTrashCleanup() {
+    try {
+      const removed = await this.filesService.purgeExpiredTrash()
+      if (removed > 0) {
+        this.logger.log(`回收站清理：${removed} 个超期软删文件已物理删除`)
+      }
+    } catch (err) {
+      this.logger.error(`回收站清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

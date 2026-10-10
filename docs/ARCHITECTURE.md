@@ -112,7 +112,7 @@ monoforge/
 | POST | /api/v1/files/upload | 上传文件 | 是 |
 | DELETE | /api/v1/files/:id | 删除文件 | 是 |
 | POST | /api/v1/mail/welcome | 发送欢迎邮件 | 是 |
-| POST | /api/v1/mail/verification-code | 发送验证码邮件 | 是 |
+| POST | /api/v1/mail/verification-code | 发送测试邮件（通道连通性验证，J2-C 不再伪造验证码） | 是 |
 | POST | /api/v1/schedule/backup | 手动触发数据库备份 | 是 |
 | GET | /api/v1/notifications | 通知列表 | 是 |
 | GET | /api/v1/notifications/unread-count | 未读通知数 | 是 |

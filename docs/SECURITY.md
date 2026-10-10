@@ -89,7 +89,7 @@
 
 - 仅管理员（`isAdminUser`）或原始上传者可删除文件
 
-- **软删时磁盘文件必须移到隔离目录**：`files.service.remove` 在 `set({ deletedAt })` 前调用 `moveToTrash(filePath, filename)`，将文件 `rename` 到 `uploads-trash/{timestamp}-{filename}`。静态托管中间件只服务 `uploads/`，不服务 `uploads-trash/`，避免"已删文件仍可凭 URL 访问"的隐私泄露。`rename` 失败仅告警不阻断软删（DB 记录仍标记删除），保证业务可用性
+- **软删时磁盘文件必须移到隔离目录**：`files.service.remove` 在 `set({ deletedAt })` 前调用 `moveToTrash(filePath, filename)`，将文件 `rename` 到 `uploads-trash/{timestamp}-{filename}`。静态托管中间件只服务 `uploads/`，不服务 `uploads-trash/`，避免"已删文件仍可凭 URL 访问"的隐私泄露。`rename` 失败仅告警不阻断软删（DB 记录仍标记删除），保证业务可用性。超 30 天的软删文件由每日 0:30 cron 物理清理（磁盘双路径 + DB 行，J3）
 
 ## 越权防护
 

@@ -46,6 +46,6 @@ export class MailController {
       throw new BadRequestException('邮件服务未配置（缺少 MAIL_HOST/PORT/USER/PASSWORD），无法发送')
     }
     await this.mailService.sendVerificationCode(dto.to, dto.name)
-    return { message: `验证码邮件已发送至 ${dto.to}` }
+    return { message: `测试邮件已发送至 ${dto.to}` }
   }
 }

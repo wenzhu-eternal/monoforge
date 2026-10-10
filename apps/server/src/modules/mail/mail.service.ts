@@ -1,4 +1,3 @@
-import { randomInt } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ConflictException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
@@ -116,7 +115,8 @@ export class MailService {
 
   /**
    * 发送验证码邮件（HTML 模板）
-   * @param code 外部传入验证码（如注册流程由 auth.service 生成并存 Redis）。不传则内部随机生成（如邮件测试接口）
+   * @param code 外部传入验证码（注册流程由 auth.service 生成并存 Redis）。
+   *             不传 = 邮件通道测试（J2=C：发测试邮件，不再伪造必然不可用的验证码）
    */
   async sendVerificationCode(to: string, name?: string, code?: string): Promise<void> {
     const locked = await this.acquireMailRateLimit(to)
@@ -124,7 +124,16 @@ export class MailService {
       throw new ConflictException('发送过于频繁，请60秒后重试')
     }
     try {
-      const finalCode = code ?? randomInt(0, 999999).toString().padStart(6, '0')
+      // J2=C：测试端点不带 code——原内部随机码从未落 register:code 键，收件人拿到
+      // "5 分钟内有效"的验证码却必然不可用，与真注册码互为镜像、钓鱼场景难辨
+      if (code === undefined) {
+        await this.sendHtml(
+          to,
+          `【${this.appName}】测试邮件`,
+          `<p>${name ?? '用户'}，你好：</p><p>这是一封 ${this.appName} 的测试邮件，用于验证邮件通道连通性，无需回复、不含验证码。</p>`,
+        )
+        return
+      }
       const template = this.templates.get('verification')
       if (template) {
         await this.sendHtml(
@@ -133,7 +142,7 @@ export class MailService {
           template({
             name: name ?? '用户',
             appName: this.appName,
-            code: finalCode,
+            code,
             expireMinutes: 5,
           }),
         )
@@ -141,7 +150,7 @@ export class MailService {
         await this.send(
           to,
           `【${this.appName}】验证码`,
-          `你的验证码是: ${finalCode}\n\n验证码 5 分钟内有效，请勿泄露给他人。`,
+          `你的验证码是: ${code}\n\n验证码 5 分钟内有效，请勿泄露给他人。`,
         )
       }
     } catch (err) {
