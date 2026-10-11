@@ -50,6 +50,10 @@ export const UserSchema = z.object({
   roleName: z.string().nullable().optional(),
   roles: z.array(RoleBriefSchema).optional(),
   permissions: z.array(z.string()).optional(),
+  // L19：/auth/me 下发的配置派生字段——adminRoleId 供前端行级判定初始管理员，
+  // isAdmin 为当前用户是否超管；均由服务端判断，前端不再硬编码角色 id/名称
+  adminRoleId: z.number().int().optional(),
+  isAdmin: z.boolean().optional(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 })

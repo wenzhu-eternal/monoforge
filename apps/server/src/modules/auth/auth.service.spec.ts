@@ -9,6 +9,11 @@ vi.mock('@/db', () => ({
   },
 }))
 
+// L19：getProfile 读 ADMIN_ROLE_ID 派生字段——固定为 1，断言不随运行环境漂移
+vi.mock('@/config/env', () => ({
+  getEnv: vi.fn(() => ({ ADMIN_ROLE_ID: 1 })),
+}))
+
 const { db } = await import('@/db')
 const { AuthService } = await import('./auth.service')
 
@@ -117,5 +122,39 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     )
     expect(Number(redisService.set.mock.calls[0][1])).toBeGreaterThan(0)
     expect(redisService.deleteByPattern).toHaveBeenCalledWith('refresh:7:*')
+  })
+
+  describe('getProfile（L19 /auth/me 配置派生字段）', () => {
+    function stubProfileDeps() {
+      vi.spyOn(service as never, 'getPermissionsByUserId' as never).mockResolvedValue([
+        'user:view',
+      ] as never)
+      vi.spyOn(service as never, 'getRoleByUserId' as never).mockResolvedValue({
+        id: 1,
+        name: 'admin',
+        description: null,
+      } as never)
+    }
+
+    it('超管命中配置 → 下发 adminRoleId 且 isAdmin=true', async () => {
+      stubProfileDeps()
+
+      const profile = await service.getProfile(7)
+
+      expect(profile.adminRoleId).toBe(1)
+      expect(profile.isAdmin).toBe(true)
+      expect(profile.roles).toEqual([{ id: 1, name: 'admin', description: null }])
+      expect(profile.permissions).toEqual(['user:view'])
+    })
+
+    it('非超管角色 → isAdmin=false，adminRoleId 照常下发（行级判定依据）', async () => {
+      vi.mocked(db.query.users.findFirst).mockResolvedValue({ ...userRow, roleId: 2 } as never)
+      stubProfileDeps()
+
+      const profile = await service.getProfile(7)
+
+      expect(profile.adminRoleId).toBe(1)
+      expect(profile.isAdmin).toBe(false)
+    })
   })
 })

@@ -10,6 +10,9 @@ const mockUser = {
   status: true,
   roleId: 1,
   mustChangePassword: false,
+  // L19：/auth/me 配置派生字段（MSW 同构，admin 行判定用）
+  adminRoleId: 1,
+  isAdmin: true,
   roles: [
     {
       id: 1,

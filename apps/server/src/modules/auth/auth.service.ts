@@ -14,6 +14,7 @@ import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { RoleBrief } from '@shared/schemas/role'
 import * as argon2 from 'argon2'
 import { and, eq } from 'drizzle-orm'
+import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import type { User } from '@/db/schema'
@@ -272,6 +273,8 @@ export class AuthService {
     Omit<User, 'password'> & {
       permissions: string[]
       roles: RoleBrief[]
+      adminRoleId: number
+      isAdmin: boolean
     }
   > {
     const user = await db.query.users.findFirst({
@@ -285,7 +288,15 @@ export class AuthService {
     const permissions = await this.getPermissionsByUserId(userId)
     const role = await this.getRoleByUserId(userId)
     const { password: _, ...userWithoutPassword } = user
-    return { ...userWithoutPassword, permissions, roles: role ? [role] : [] }
+    // L19：配置派生字段单源下发——adminRoleId 供前端行级判定初始管理员，isAdmin 判当前用户
+    const { ADMIN_ROLE_ID } = getEnv()
+    return {
+      ...userWithoutPassword,
+      permissions,
+      roles: role ? [role] : [],
+      adminRoleId: ADMIN_ROLE_ID,
+      isAdmin: user.roleId != null && user.roleId === ADMIN_ROLE_ID,
+    }
   }
 
   async register(

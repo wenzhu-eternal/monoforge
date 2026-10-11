@@ -18,7 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
-import { useCan } from '@/hooks/use-auth'
+import { useCan, useCurrentUser } from '@/hooks/use-auth'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { useAllRoles } from '@/hooks/use-roles'
 import {
@@ -70,6 +70,8 @@ function UsersContent() {
   // 与后端 PermissionsGuard 同码，无权限的写操作按钮直接不渲染
   const can = useCan()
   const canManageRole = can(PermissionCodes.USER_ROLE_MANAGE)
+  // L19：行级初始管理员判定所需 adminRoleId（与 useCan 同 key ['auth','me']，无额外请求）
+  const { data: me } = useCurrentUser()
 
   const [form] = Form.useForm<CreateUser & UpdateUser & { roleId?: number }>()
 
@@ -119,8 +121,9 @@ function UsersContent() {
       key: 'actions',
       width: 200,
       render: (_, record) => {
-        // L19：按角色名判定初始管理员（原硬编码 roleId===1，ADMIN_ROLE_ID 改配后误放行/误禁用）
-        const isAdmin = record.roles?.[0]?.name === 'admin'
+        // L19：行级判定读 /auth/me 下发的配置派生 adminRoleId（服务端单源），
+        // 替代硬编码 roleId===1 与角色名判定——ADMIN_ROLE_ID 改配后同步跟随
+        const isAdmin = record.roleId != null && record.roleId === me?.adminRoleId
         const isDeleted = !!record.deletedAt
         // M13：动作按钮按 USER_* 权限码渲染，与后端守卫同码
         const actions: { key: string; node: ReactNode }[] = []
