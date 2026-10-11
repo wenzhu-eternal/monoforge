@@ -278,9 +278,15 @@ export class FilesService {
       }
     }
     await db.delete(files).where(
-      inArray(
-        files.id,
-        expired.map((r) => r.id),
+      and(
+        inArray(
+          files.id,
+          expired.map((r) => r.id),
+        ),
+        // F-1：delete 复查过期条件——查出到删除窗口内被 restore 的行（deletedAt 已清）
+        // 不得硬删，restore 抢锁赢则此处空操作
+        isNotNull(files.deletedAt),
+        lt(files.deletedAt, cutoff),
       ),
     )
     return expired.length

@@ -343,6 +343,44 @@ describe('FilesService', () => {
       expect(mockUnlink).toHaveBeenCalledTimes(1)
       expect(mockUnlink).toHaveBeenCalledWith('/u/c.png')
     })
+
+    // drizzle SQL 由嵌套 SQL/StringChunk/Column 组成，递归展平成文本供断言（不依赖方言渲染）
+    function flattenSql(obj: unknown): string {
+      const parts: string[] = []
+      const walk = (v: unknown): void => {
+        if (typeof v === 'string') {
+          parts.push(v)
+          return
+        }
+        if (!v || typeof v !== 'object') return
+        const rec = v as { queryChunks?: unknown; value?: unknown; name?: unknown; table?: unknown }
+        if (Array.isArray(rec.queryChunks)) {
+          rec.queryChunks.forEach(walk)
+          return
+        }
+        // StringChunk.value 为原始串数组；Param.value 为参数值（非串跳过）
+        if (Array.isArray(rec.value)) rec.value.forEach(walk)
+        else if (typeof rec.value === 'string') parts.push(rec.value)
+        // Column：取列名（如 deleted_at），表名取不到时仅列名也足够断言
+        else if (typeof rec.name === 'string' && rec.table != null) parts.push(rec.name)
+      }
+      walk(obj)
+      return parts.join(' ')
+    }
+
+    it('F-1 复现：delete 必须带过期复查，窗口内被 restore 的行不得硬删', async () => {
+      // 场景：select 查出过期行后、delete 执行前，restore 抢锁把 deletedAt 清空——
+      // 旧实现 delete 只带 id in，会把已恢复的活跃行硬删；条件复查后该行自动豁免
+      const deleteWhere = mockChains(expiredRows)
+
+      await service.purgeExpiredTrash()
+
+      expect(deleteWhere).toHaveBeenCalled()
+      const whereText = flattenSql(deleteWhere.mock.calls[0]?.[0])
+      expect(whereText).toContain('deleted_at')
+      expect(whereText).toMatch(/is not null/i)
+      expect(whereText).toContain('<')
+    })
   })
 
   describe('ensureUploadDir', () => {
