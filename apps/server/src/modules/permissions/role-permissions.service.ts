@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common'
 import type { RolePermission } from '@shared/schemas/permission'
 import { and, eq, inArray } from 'drizzle-orm'
+import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions, roles } from '@/db/schema'
@@ -56,6 +57,12 @@ export class RolePermissionsService {
     })
     if (!role) {
       throw new NotFoundException(`角色 ID ${roleId} 不存在`)
+    }
+
+    // M1：超管角色权限集定义加闸——与 users 路径 H1 同口径（防持 permission:update 的
+    // 委托管理员整体改写超管角色定义，致其 /auth/me permissions 塌缩；caller 缺失 fail-closed）
+    if (roleId === getEnv().ADMIN_ROLE_ID && !caller?.isAdmin) {
+      throw new ForbiddenException('仅超级管理员可修改超管角色权限')
     }
 
     // 防自提权: 非 admin 禁止修改自己所属角色的权限集合

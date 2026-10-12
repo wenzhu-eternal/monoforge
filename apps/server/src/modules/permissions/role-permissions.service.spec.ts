@@ -17,6 +17,11 @@ vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
 }))
 
+// L34 同款：getEnv().ADMIN_ROLE_ID mock 固定为 1，单测不随 .env 漂移
+vi.mock('@/config/env', () => ({
+  getEnv: () => ({ ADMIN_ROLE_ID: 1 }),
+}))
+
 const { db: mockDb } = await import('@/db')
 
 import { RolePermissionsService } from './role-permissions.service'
@@ -63,6 +68,40 @@ describe('RolePermissionsService', () => {
       await expect(service.updateRolePermissions(2, ['user:view'], editorCaller)).rejects.toThrow(
         ForbiddenException,
       )
+    })
+
+    it('M1: 非超管修改超管角色权限集被拒（与 users H1 同口径）', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, name: 'admin' } as never)
+
+      await expect(service.updateRolePermissions(1, ['user:view'], editorCaller)).rejects.toThrow(
+        ForbiddenException,
+      )
+      // 闸在最前，未触达任何查询/事务
+      expect(mockDb.select).not.toHaveBeenCalled()
+      expect(mockDb.transaction).not.toHaveBeenCalled()
+    })
+
+    it('M1: caller 缺失时超管角色闸 fail-closed', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, name: 'admin' } as never)
+
+      await expect(service.updateRolePermissions(1, ['user:view'])).rejects.toThrow(
+        ForbiddenException,
+      )
+      expect(mockDb.transaction).not.toHaveBeenCalled()
+    })
+
+    it('M1: 超管改写超管角色权限集放行', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, name: 'admin' } as never)
+      vi.mocked(mockDb.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ code: 'user:view' }]),
+        }),
+      } as never)
+
+      const result = await service.updateRolePermissions(1, ['user:view'], adminCaller)
+
+      expect(result.permissions).toEqual(['user:view'])
+      expect(mockDb.transaction).toHaveBeenCalled()
     })
 
     it('M2: 传入码全部无效时应拒绝而非清空角色权限', async () => {
