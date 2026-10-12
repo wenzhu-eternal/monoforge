@@ -7,7 +7,8 @@ import {
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { SetupResult, SetupStatus } from '@shared/schemas/setup'
 import * as argon2 from 'argon2'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions, roles, users } from '@/db/schema'
@@ -68,6 +69,24 @@ export class SetupService {
           throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
         }
 
+        // L2：全量软删后重初始化——roles 部分唯一索引（WHERE deleted_at IS NULL）令
+        // onConflictDoNothing 不命中，会新建 serial 续号角色；admin 新 id≠ADMIN_ROLE_ID 时
+        // isAdminUser 恒 false，超管闸/includeDeleted 视图/路由编辑全 403 静默降级。
+        // 无同名活跃行时复活软删原行复用原 id，随后的插入即被索引拦下（幂等）
+        for (const roleName of ['admin', 'user']) {
+          const active = await tx.query.roles.findFirst({
+            where: and(eq(roles.name, roleName), notDeleted(roles.deletedAt)),
+          })
+          if (active) continue
+          const stale = await tx.query.roles.findFirst({
+            where: and(eq(roles.name, roleName), isNotNull(roles.deletedAt)),
+            orderBy: (t, ops) => ops.asc(t.id),
+          })
+          if (stale) {
+            await tx.update(roles).set({ deletedAt: null }).where(eq(roles.id, stale.id))
+          }
+        }
+
         const createdRoles = await tx
           .insert(roles)
           .values(DEFAULT_ROLES)
@@ -82,6 +101,14 @@ export class SetupService {
 
         if (!adminRole) {
           throw new BadRequestException('默认角色创建失败')
+        }
+
+        // L2：解析出的 admin id 必须与配置一致——否则超管判定恒 false，
+        // 显式失败优于管理面静默降级（复活原行仍漂移时指引人工核对）
+        if (adminRole.id !== getEnv().ADMIN_ROLE_ID) {
+          throw new BadRequestException(
+            `admin 角色 id ${adminRole.id} 与 ADMIN_ROLE_ID ${getEnv().ADMIN_ROLE_ID} 不一致，请核对 roles 表`,
+          )
         }
 
         // M11：与 seed 同源灌入 22 条默认权限并给 admin 绑全量（原 setup 不灌权限不绑定，

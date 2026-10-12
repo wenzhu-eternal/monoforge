@@ -22,6 +22,11 @@ vi.mock('@/db/helpers', () => ({
   }),
 }))
 
+// L34 同款：getEnv().ADMIN_ROLE_ID mock 固定为 1，单测不随 .env 漂移
+vi.mock('@/config/env', () => ({
+  getEnv: () => ({ ADMIN_ROLE_ID: 1 }),
+}))
+
 const { db: mockDb } = await import('@/db')
 
 import { SetupService } from './setup.service'
@@ -271,6 +276,107 @@ describe('SetupService', () => {
           password: 'secret123',
         }),
       ).rejects.toThrow(BadRequestException)
+    })
+
+    it('L2: 全量软删后重初始化复活原行，建户复用原 admin id', async () => {
+      vi.mocked(mockDb.select).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ count: 0 }]),
+        }),
+      } as never)
+
+      const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) })
+      const updateMock = vi.fn().mockReturnValue({ set: updateSet })
+      // 调用序列：活跃 admin → 软删 admin → 活跃 user → 软删 user → 之后兜底
+      const findFirst = vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ id: 1, name: 'admin' })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ id: 2, name: 'user' })
+        .mockResolvedValue({ id: 1, name: 'admin' })
+      const insertMock = vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockReturnValue({
+            // 复活后部分唯一索引拦下插入，无新行返回
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      })
+      vi.mocked(mockDb.transaction).mockImplementation(
+        async (cb: (tx: unknown) => Promise<unknown>) => {
+          const tx = {
+            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+            select: vi.fn().mockReturnValue({
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([{ count: 0 }]),
+              }),
+            }),
+            insert: insertMock,
+            update: updateMock,
+            query: { roles: { findFirst } },
+          }
+          return cb(tx)
+        },
+      )
+
+      await service.initialize({
+        username: 'admin',
+        email: 'admin@example.com',
+        password: 'secret123',
+      })
+
+      // admin/user 两个软删角色均复活（set deletedAt=null）
+      expect(updateSet).toHaveBeenCalledTimes(2)
+      expect(updateSet).toHaveBeenCalledWith({ deletedAt: null })
+      // 建户绑定的是复活的原 admin id=1，而非 serial 续号的新角色
+      // （values 为共享 mock，calls 序列 = 4 次 insert 入参，第 4 次是建户）
+      const allValues = insertMock.mock.results[0].value.values.mock.calls.map((c) => c[0])
+      expect(allValues[3]).toMatchObject({ username: 'admin', roleId: 1 })
+    })
+
+    it('L2: 解析出的 admin id 与 ADMIN_ROLE_ID 不一致时显式失败', async () => {
+      vi.mocked(mockDb.select).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ count: 0 }]),
+        }),
+      } as never)
+
+      vi.mocked(mockDb.transaction).mockImplementation(
+        async (cb: (tx: unknown) => Promise<unknown>) => {
+          const tx = {
+            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+            select: vi.fn().mockReturnValue({
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockResolvedValue([{ count: 0 }]),
+              }),
+            }),
+            insert: vi.fn().mockReturnValue({
+              values: vi.fn().mockReturnValue({
+                onConflictDoNothing: vi.fn().mockReturnValue({
+                  returning: vi
+                    .fn()
+                    .mockResolvedValue([{ id: 9, name: 'admin', description: '漂移的 admin' }]),
+                }),
+              }),
+            }),
+            query: {
+              roles: {
+                findFirst: vi.fn().mockResolvedValue({ id: 1, name: 'admin' }),
+              },
+            },
+          }
+          return cb(tx)
+        },
+      )
+
+      await expect(
+        service.initialize({
+          username: 'admin',
+          email: 'admin@example.com',
+          password: 'secret123',
+        }),
+      ).rejects.toThrow('与 ADMIN_ROLE_ID 1 不一致')
     })
   })
 })

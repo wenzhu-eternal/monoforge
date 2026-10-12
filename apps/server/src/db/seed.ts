@@ -1,7 +1,8 @@
 import { DEFAULT_PERMISSIONS, DEFAULT_USER_ROLE_PERMISSIONS } from '@shared/constants/default-seed'
 import argon2 from 'argon2'
 import { config } from 'dotenv'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
+import { getEnv } from '../config/env'
 import { notDeleted } from './helpers'
 import { db } from './index'
 import { permissions, rolePermissions, roles, users } from './schema'
@@ -33,6 +34,23 @@ async function seed() {
     await tx.insert(permissions).values(DEFAULT_PERMISSIONS).onConflictDoNothing()
     console.log(`Default permissions seeded (${DEFAULT_PERMISSIONS.length} items)`)
 
+    // L2：与 setup 同款——软删 'admin'/'user' 不命中部分唯一索引，插入会新建 serial
+    // 续号角色（admin id 漂移后 isAdminUser 恒 false）。无同名活跃行时复活原行复用
+    // 原 id，随后的插入即被索引拦下
+    for (const roleName of ['admin', 'user']) {
+      const active = await tx.query.roles.findFirst({
+        where: and(eq(roles.name, roleName), notDeleted(roles.deletedAt)),
+      })
+      if (active) continue
+      const stale = await tx.query.roles.findFirst({
+        where: and(eq(roles.name, roleName), isNotNull(roles.deletedAt)),
+        orderBy: (t, ops) => ops.asc(t.id),
+      })
+      if (stale) {
+        await tx.update(roles).set({ deletedAt: null }).where(eq(roles.id, stale.id))
+      }
+    }
+
     const [adminRole] = await tx
       .insert(roles)
       .values({
@@ -51,6 +69,13 @@ async function seed() {
 
     if (!role) {
       throw new Error('Failed to create or find admin role')
+    }
+
+    // L2：admin id 必须与 ADMIN_ROLE_ID 一致，否则超管判定恒失败——显式失败指路
+    if (role.id !== getEnv().ADMIN_ROLE_ID) {
+      throw new Error(
+        `admin 角色 id ${role.id} 与 ADMIN_ROLE_ID ${getEnv().ADMIN_ROLE_ID} 不一致，请核对 roles 表`,
+      )
     }
 
     console.log('Admin role ready:', role)
