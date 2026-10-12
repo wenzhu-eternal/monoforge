@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common'
 import { describe, expect, it, vi } from 'vitest'
-import { consumeDailyQuota } from './daily-quota'
+import { consumeDailyQuota, rollbackDailyQuota } from './daily-quota'
 
 function mockRedis(evalResult: number) {
   return { eval: vi.fn().mockResolvedValue(evalResult) }
@@ -27,5 +27,20 @@ describe('consumeDailyQuota（L6 日配额）', () => {
     await expect(consumeDailyQuota(mockRedis(4) as never, 'backup', 7, 3)).rejects.toThrow(
       ConflictException,
     )
+  })
+})
+
+describe('rollbackDailyQuota（L1 配额退还）', () => {
+  it('GET>0 守卫后 DECR，键含动作/用户/当日日期', async () => {
+    const redis = mockRedis(1)
+
+    await expect(rollbackDailyQuota(redis as never, 'backup', 7)).resolves.toBeUndefined()
+
+    const [script, keys, args] = redis.eval.mock.calls[0] as [string, string[], unknown[]]
+    expect(script).toContain('GET')
+    expect(script).toContain('DECR')
+    expect(script).toContain('> 0')
+    expect(keys[0]).toMatch(/^quota:backup:7:\d{8}$/)
+    expect(args).toEqual([])
   })
 })

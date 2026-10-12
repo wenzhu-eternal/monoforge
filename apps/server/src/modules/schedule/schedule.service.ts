@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
-import { consumeDailyQuota } from '@/common/utils/daily-quota'
+import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { files } from '@/db/schema'
@@ -59,6 +59,14 @@ export class ScheduleService {
     }
     const executed = await this.doBackup()
     if (!executed) {
+      // L1：锁忙未实际执行 → 退还刚扣的配额，防连点把 3 次额度耗在 409 上、真需备份时被拒
+      if (userId !== undefined) {
+        try {
+          await rollbackDailyQuota(this.redisService, 'backup', userId)
+        } catch (err) {
+          this.logger.warn(`备份配额回滚失败: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
       throw new ConflictException('已有备份任务进行中，请稍后再试')
     }
   }

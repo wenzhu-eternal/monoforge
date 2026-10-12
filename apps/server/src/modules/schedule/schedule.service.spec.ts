@@ -147,6 +147,33 @@ describe('ScheduleService', () => {
       expect(redisService.eval).toHaveBeenCalled()
       expect(redisService.setNx).toHaveBeenCalled()
     })
+
+    it('L1: 锁忙未执行 → 退还刚扣配额（二次 eval 为守卫 DECR）', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      redisService.setNx.mockResolvedValue(false)
+
+      await expect(service.manualBackup(7)).rejects.toThrow('已有备份任务进行中')
+
+      // 第一次 eval = 扣配额（INCR），第二次 = 退还（守卫 DECR）
+      expect(redisService.eval).toHaveBeenCalledTimes(2)
+      const [rollbackScript, rollbackKeys] = redisService.eval.mock.calls[1] as [string, string[]]
+      expect(rollbackScript).toContain('DECR')
+      expect(rollbackKeys[0]).toMatch(/^quota:backup:7:\d{8}$/)
+    })
+
+    it('L1: 内部调用（无 userId）锁忙不涉及配额，无 eval', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      redisService.setNx.mockResolvedValue(false)
+
+      await expect(service.manualBackup()).rejects.toThrow('已有备份任务进行中')
+      expect(redisService.eval).not.toHaveBeenCalled()
+    })
   })
 
   describe('manualBackup - 不受 ENABLE_BACKUP 开关限制', () => {

@@ -14,13 +14,11 @@ export async function consumeDailyQuota(
   limit: number,
 ): Promise<void> {
   const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
   const midnight = new Date(now)
   midnight.setHours(24, 0, 0, 0)
   const ttl = Math.max(1, Math.ceil((midnight.getTime() - now.getTime()) / 1000))
 
-  const key = `quota:${action}:${userId}:${date}`
+  const key = quotaKey(action, userId, now)
   const used = Number(
     await redis.eval(
       `local n = redis.call('INCR', KEYS[1])
@@ -35,4 +33,28 @@ export async function consumeDailyQuota(
     const label = action === 'backup' ? '备份' : '上传'
     throw new ConflictException(`今日${label}次数已达上限（${limit} 次），请明日再试`)
   }
+}
+
+/**
+ * L1：回滚一次已扣配额（备份锁忙未实际执行时退还）——GET>0 守卫后再 DECR，
+ * 与并发消耗交错也不会打负
+ */
+export async function rollbackDailyQuota(
+  redis: RedisService,
+  action: 'backup' | 'upload',
+  userId: number,
+): Promise<void> {
+  await redis.eval(
+    `local n = tonumber(redis.call('GET', KEYS[1]))
+     if n and n > 0 then return redis.call('DECR', KEYS[1]) end
+     return 0`,
+    [quotaKey(action, userId)],
+    [],
+  )
+}
+
+function quotaKey(action: 'backup' | 'upload', userId: number, now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+  return `quota:${action}:${userId}:${date}`
 }
