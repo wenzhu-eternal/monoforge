@@ -48,7 +48,7 @@ function UsersPage() {
   return <UsersContent />
 }
 
-function UsersContent() {
+export function UsersContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [editingUser, setEditingUser] = useState<User | null>(null)
@@ -74,6 +74,8 @@ function UsersContent() {
   const canViewRoles = can(PermissionCodes.ROLE_VIEW)
   // L19：行级初始管理员判定所需 adminRoleId（与 useCan 同 key ['auth','me']，无额外请求）
   const { data: me } = useCurrentUser()
+  // L8：与后端 403 同条件——改自己须走 /me/password，改他人须 USER_ROLE_MANAGE
+  const isSelf = editingUser != null && me?.id === editingUser.id
 
   const [form] = Form.useForm<CreateUser & UpdateUser & { roleId?: number }>()
 
@@ -235,7 +237,8 @@ function UsersContent() {
             values.roleId ?? (editingUser.roles?.[0]?.id != null ? null : undefined)
           updateData.status = values.status
         }
-        if (values.password) {
+        // L8：与后端 403 条件对齐——改自己须走 /me/password，改他人须 USER_ROLE_MANAGE
+        if (values.password && !isSelf && canManageRole) {
           updateData.password = values.password
         }
         await updateUser.mutateAsync({ id: editingUser.id, data: updateData })
@@ -362,9 +365,15 @@ function UsersContent() {
                 name="password"
                 label="新密码"
                 rules={[passwordRule]}
-                extra="留空则不修改密码"
+                extra={
+                  isSelf
+                    ? '修改自己的密码请使用「修改密码」功能'
+                    : canManageRole
+                      ? '留空则不修改密码'
+                      : '无权限修改他人密码'
+                }
               >
-                <Input.Password placeholder="留空则不修改" />
+                <Input.Password disabled={isSelf || !canManageRole} placeholder="留空则不修改" />
               </Form.Item>
             </>
           )}
