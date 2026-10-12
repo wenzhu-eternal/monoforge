@@ -47,6 +47,16 @@ describe('SetupController', () => {
 
       expect(result).toEqual({ initialized: true })
     })
+
+    it('L5：status 公开端点补限流 60/min（方法级元数据，防无限轮询探测）', () => {
+      // 方法级 @Throttle 元数据写在 handler 函数上（组名 default）
+      expect(Reflect.getMetadata('THROTTLER:TTLdefault', SetupController.prototype.status)).toBe(
+        60_000,
+      )
+      expect(Reflect.getMetadata('THROTTLER:LIMITdefault', SetupController.prototype.status)).toBe(
+        60,
+      )
+    })
   })
 
   describe('setup', () => {

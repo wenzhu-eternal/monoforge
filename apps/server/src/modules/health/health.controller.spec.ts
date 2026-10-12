@@ -91,4 +91,11 @@ describe('HealthController', () => {
       expect(service.check).toHaveBeenCalledOnce()
     })
   })
+
+  it('L5：类级 @Throttle 60/min 生效且不再 @SkipThrottle（防公开端点被无限探测）', () => {
+    // @nestjs/throttler 装饰器契约：元数据键 = THROTTLER_TTL/LIMIT/SKIP + 节流组名
+    expect(Reflect.getMetadata('THROTTLER:TTLdefault', HealthController)).toBe(60_000)
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', HealthController)).toBe(60)
+    expect(Reflect.getMetadata('THROTTLER:SKIPdefault', HealthController)).toBeUndefined()
+  })
 })

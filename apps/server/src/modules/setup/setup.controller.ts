@@ -23,6 +23,8 @@ export class SetupController {
   constructor(private readonly setupService: SetupService) {}
 
   @Get('status')
+  // L5：公开轮询端点原无限流，补 60/min（初始化前前端会轮询，不影响正常加载）
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOperation({ summary: '查询系统初始化状态（公开）' })
   @ZodSerializerDto(SetupStatusSchema)
   status() {

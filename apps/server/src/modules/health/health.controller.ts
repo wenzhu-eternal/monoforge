@@ -7,7 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common'
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
-import { SkipThrottle } from '@nestjs/throttler'
+import { Throttle } from '@nestjs/throttler'
 import { Public } from '@/common/decorators/public.decorator'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { HealthService } from './health.service'
@@ -19,7 +19,9 @@ interface AuthRequest {
 @ApiTags('Health')
 @Controller('health')
 @Public()
-@SkipThrottle()
+// L5：原 @SkipThrottle 使公开健康检查成为无限探测/放大入口；
+// 60/min 仍远高于 docker healthcheck（30s 间隔 = 2/min）
+@Throttle({ default: { limit: 60, ttl: 60_000 } })
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
