@@ -1,5 +1,6 @@
 import { Reflector } from '@nestjs/core'
 import { describe, expect, it, vi } from 'vitest'
+import { BatchResolveDto } from '@/modules/error-logs/dto/batch-resolve.dto'
 import { CreateWhitelistDto } from '@/modules/error-logs/dto/create-whitelist.dto'
 import { ReportErrorDto } from '@/modules/error-logs/dto/report-error.dto'
 import { UpdateWhitelistDto } from '@/modules/error-logs/dto/update-whitelist.dto'
@@ -24,6 +25,19 @@ describe('XssPipe（L8 豁免）', () => {
       const result = pipe.transform(raw, { type: 'body', metatype, data: '' })
       expect(result).toBe(raw)
     }
+  })
+
+  it('M4b：BatchResolveDto 原文透传（message 是 eq 等值匹配键，剥 HTML 后恒 0 命中）', () => {
+    const raw = { message: 'Unexpected token <script>alert(1)</script> at line 3' }
+    const result = pipe.transform(raw, { type: 'body', metatype: BatchResolveDto, data: '' })
+    expect(result).toBe(raw)
+  })
+
+  it('M4a：非 body（query/param）不剥 HTML——keyword 搜索不被 strip 成空', () => {
+    const raw = { keyword: 'boom <script>x</script> failed' }
+    // query 与 param 均直接透传（identity），交由 Zod 契约校验
+    expect(pipe.transform(raw, { type: 'query', metatype: Object, data: '' })).toBe(raw)
+    expect(pipe.transform(raw, { type: 'param', metatype: undefined, data: 'id' })).toBe(raw)
   })
 
   it('reflector 无元数据时按普通清洗处理（防御）', () => {

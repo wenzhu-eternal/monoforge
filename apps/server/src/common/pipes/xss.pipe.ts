@@ -16,6 +16,11 @@ export class XssPipe implements PipeTransform {
   constructor(private readonly reflector: Reflector) {}
 
   transform(value: unknown, metadata: ArgumentMetadata): unknown {
+    // M4：仅清洗 body——query/param 入参走 Zod 契约校验即可，剥 HTML 反而击穿等值/搜索语义
+    // （error-logs keyword 搜索过管道被 strip 成空 → ILIKE 恒 0 结果）
+    if (metadata?.type && metadata.type !== 'body') {
+      return value
+    }
     // L8：@SkipXss() 标注的 DTO 跳过清洗（错误上报/白名单 pattern 需原文入库，
     // 这些字段无渲染面且前端 React 默认转义）
     const metatype = metadata?.metatype as (new (...args: never[]) => unknown) | undefined
