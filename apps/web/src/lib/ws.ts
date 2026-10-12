@@ -27,6 +27,9 @@ class WsClient {
   // M9：手动重连路径退避计数（原固定 1s 间隔无限踢-连，服务端持续拒时风暴）
   private reconnectAttempts = 0
   private static readonly MAX_RECONNECT = 5
+  // M6：连续手动重连无成功连接的放弃阈值——非鉴权类持续失败（连接数超限等）不再
+  // 无限 60s 循环污染审计/监控，页面停留"未连接"待用户刷新恢复
+  private static readonly MAX_MANUAL_RECONNECT = 10
   private static readonly HEARTBEAT_INTERVAL = 10_000
   private static readonly PONG_TIMEOUT = 5_000
   private static readonly RECONNECT_DELAY_CAP = 60_000
@@ -163,6 +166,11 @@ class WsClient {
    */
   private scheduleReconnect(baseDelayMs: number): void {
     this.clearReconnectTimer()
+    // M6：达到上限后放弃（reconnectAttempts 在 connect 成功时归零，只拦"从未连上"的死循环）
+    if (this.reconnectAttempts >= WsClient.MAX_MANUAL_RECONNECT) {
+      console.warn(`[WS] 连续 ${WsClient.MAX_MANUAL_RECONNECT} 次重连未成功，放弃自动重连`)
+      return
+    }
     const delay = Math.min(baseDelayMs * 2 ** this.reconnectAttempts, WsClient.RECONNECT_DELAY_CAP)
     this.reconnectAttempts += 1
     this.reconnectTimer = setTimeout(() => {

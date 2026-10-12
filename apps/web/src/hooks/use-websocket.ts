@@ -2,6 +2,7 @@ import type { Notification, WebSocketMe, WebSocketNotifyResult, WebSocketOnline 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api, refreshAccessToken } from '@/lib/api'
+import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { wsClient } from '@/lib/ws'
 import { useAuthStore } from '@/store/auth-store'
 
@@ -10,20 +11,21 @@ import { useAuthStore } from '@/store/auth-store'
  * （当前仅 /websocket 演示页使用，并非全局连接）
  */
 export function useWebSocket() {
-  const token = useAuthStore((state) => state.token)
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const [connected, setConnected] = useState(false)
 
   // M6：连接管理与事件订阅拆开——token 轮换只重建 socket，绝不能 disconnect()
   // （它会 listeners.clear()，demo 页注册的 notification/presence:update 将永久失联）
+  // J2：依赖仅 isAuthenticated——token 15min 轮换不再触发 closeSocket 全量重建
+  // （presence 掉线/上线抖动）；轮换后新 token 由 auth 回调在每次重试/重连时点实时取
   useEffect(() => {
     // setConnected(false) 必须手动调：closeSocket 会先 removeAllListeners，断开事件不会触发 onDisconnect
-    if (!isAuthenticated || !token?.trim()) {
+    const currentToken = useAuthStore.getState().token
+    if (!isAuthenticated || !currentToken?.trim()) {
       wsClient.disconnect()
       setConnected(false)
       return
     }
-    // token 变化时由 connect 内部走 closeSocket 重建（保留 listeners 并重绑），避免持有旧 token 的 socket
     // M9：注册实时 token 提供者——重连触发时点取 store 最新值（connect 时捕获的旧 token
     // 被网关拒绝会死循环；access token 轮换由拦截器 setToken 后此读取即为新值）。
     // refreshHandler：被踢后 store 的 token 同样失效，须真正走一次跨 tab 单飞 refresh 换新
@@ -35,13 +37,20 @@ export function useWebSocket() {
           const fresh = await refreshAccessToken()
           useAuthStore.getState().setToken(fresh)
           return fresh
-        } catch {
+        } catch (err) {
+          // M6：refresh 被 401 明确拒绝（刷新信物已吊销/消费）——终态清态跳 /login，
+          // 切断"被踢→重连→refresh 失败→再排重连"死循环；
+          // 网络/限流/5xx 保留 null 由退避重连接管，不误登出
+          if ((err as { response?: { status?: number } })?.response?.status === 401) {
+            clearUserScopedState()
+            window.location.href = '/login'
+          }
           return null
         }
       },
     )
-    wsClient.connect(token)
-  }, [isAuthenticated, token])
+    wsClient.connect(currentToken)
+  }, [isAuthenticated])
 
   // 连接状态跟踪：独立订阅 connect/disconnect 事件，不参与连接生命周期
   useEffect(() => {
