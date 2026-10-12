@@ -72,7 +72,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return
     }
 
-    const { userId, jti } = auth
+    const { userId, jti, exp } = auth
 
     // 原子登记（Lua 保证 SCARD 判断 + SADD + TTL 续期无竞态）:
     // 返回 -1 表示连接数超限；否则返回登记后的全局连接数（含本次）
@@ -124,6 +124,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // 防止长连接超过 TTL 300s 后 key 过期导致 pushToUser 不可达
     const refreshTimer = setInterval(async () => {
       try {
+        // L4：access token 自然过期不写黑名单，握手只校验一次 exp——不重查则连接
+        // 无限存活，presence 泄露面与 5 连接配额占用远超 15min 会话语义
+        if (exp && Date.now() >= exp * 1000) {
+          client.emit('error', { message: '登录状态已过期，连接被断开' })
+          client.disconnect()
+          return
+        }
         if (jti) {
           const revoked = await this.redisService.get(`access:${userId}:${jti}`)
           if (revoked === '1') {
@@ -257,11 +264,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /**
    * 从握手 auth.token（JWT）解析 userId + username，并校验 jti 黑名单
+   * L4：返回 exp 供 60s 重校验判定自然过期（verifyAsync 只在握手时校验一次）
    */
   private async extractAuth(client: Socket): Promise<{
     userId: number
     username: string
     jti?: string
+    exp?: number
     mustChangePassword?: boolean
   } | null> {
     const authToken = (client.handshake.auth as { token?: string } | undefined)?.token
@@ -272,6 +281,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         sub: number
         username: string
         jti?: string
+        exp?: number
         mustChangePassword?: boolean
       }>(authToken, { secret, algorithms: ['HS256'] })
       if (!payload?.sub || payload.sub <= 0) return null
@@ -288,7 +298,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.logger.warn(`WebSocket 拒绝需强制改密用户: user=${payload.sub}`)
         return null
       }
-      return { userId: payload.sub, username: payload.username, jti: payload.jti }
+      return { userId: payload.sub, username: payload.username, jti: payload.jti, exp: payload.exp }
     } catch (err) {
       this.logger.warn(`WebSocket 鉴权失败: ${(err as Error).message}`)
       return null
