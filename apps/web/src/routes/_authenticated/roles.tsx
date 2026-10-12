@@ -42,8 +42,14 @@ export const Route = createFileRoute('/_authenticated/roles')({
 })
 
 function RolePermissionCodes({ roleId }: { roleId: number }) {
+  const can = useCan()
   const { data: permissions } = useRolePermissions(roleId)
   const { data: allPermissions } = useAllPermissions()
+
+  // M5：查询按 permission:view 门控，无权限时显式占位区分"没权限"与"没有权限项"
+  if (!can(PermissionCodes.PERMISSION_VIEW)) {
+    return <span className="text-gray-400">无查看权限</span>
+  }
 
   if (!permissions || permissions.length === 0) {
     return <span className="text-gray-400">-</span>
@@ -87,6 +93,8 @@ function RolesContent() {
 
   // M13：按钮级权限（与后端 ROLE_*/PERMISSION_UPDATE 守卫同码），无权限不渲染
   const can = useCan()
+  // M5：权限下拉按 permission:view 门控，无权限时配置弹窗给显式占位
+  const canViewPerms = can(PermissionCodes.PERMISSION_VIEW)
 
   const { data: allPermissions, isLoading: allPermissionsLoading } = useAllPermissions()
   const { data: currentPermissions } = useRolePermissions(selectedRoleId || 0)
@@ -400,7 +408,9 @@ function RolesContent() {
                 ))}
               </div>
               {(!allPermissions || allPermissions.length === 0) && (
-                <div className="text-center text-gray-500 py-4">暂无可用权限</div>
+                <div className="text-center text-gray-500 py-4">
+                  {canViewPerms ? '暂无可用权限' : '无权限查看权限列表'}
+                </div>
               )}
             </>
           )}

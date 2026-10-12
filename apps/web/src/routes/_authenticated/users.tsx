@@ -70,6 +70,8 @@ function UsersContent() {
   // 与后端 PermissionsGuard 同码，无权限的写操作按钮直接不渲染
   const can = useCan()
   const canManageRole = can(PermissionCodes.USER_ROLE_MANAGE)
+  // M5：角色下拉走 role:view 门控，无权限时给显式占位而非静默空下拉
+  const canViewRoles = can(PermissionCodes.ROLE_VIEW)
   // L19：行级初始管理员判定所需 adminRoleId（与 useCan 同 key ['auth','me']，无额外请求）
   const { data: me } = useCurrentUser()
 
@@ -378,11 +380,15 @@ function UsersContent() {
             rules={canManageRole && !editingUser ? [{ required: true, message: '请选择角色' }] : []}
             extra={
               roleDeletedHint ??
-              (canManageRole ? undefined : '无角色管理权限，将默认分配普通用户角色')
+              (!canManageRole
+                ? '无角色管理权限，将默认分配普通用户角色'
+                : canViewRoles
+                  ? undefined
+                  : '无角色查看权限，无法加载角色列表')
             }
           >
             <Select
-              placeholder="请选择角色"
+              placeholder={canViewRoles ? '请选择角色' : '无角色查看权限'}
               // J5：编辑时允许清空以解绑角色；新建仍必填（rules 保证）
               allowClear={!canManageRole || !!editingUser}
               disabled={!canManageRole}
