@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common'
 import type { FileItem, UploadResult } from '@shared/schemas/file'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
-import { and, count, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
+import { and, count, desc, eq, isNotNull, isNull, lt } from 'drizzle-orm'
 import {
   generateSafeFilename,
   isPathSafe,
@@ -258,18 +258,23 @@ export class FilesService {
 
   /**
    * J3：回收站到期物理清理——超 30 天的软删文件连磁盘带行硬删。
+   * 先条件删行（returning 拿归属）再清盘（M2），与 restore 的条件锁同口径无共享窗口；
    * 磁盘两处都清：trashPath（已搬盘）+ 原 path（搬盘失败时文件仍在原位），均过路径
    * 安全校验（DB 被篡改宁可漏删不可越界删）；单点 unlink 失败不阻塞删行
    */
   async purgeExpiredTrash(): Promise<number> {
     const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-    const expired = await db
-      .select({ id: files.id, path: files.path, trashPath: files.trashPath })
-      .from(files)
-      .where(and(isNotNull(files.deletedAt), lt(files.deletedAt, cutoff)))
-    if (expired.length === 0) return 0
 
-    for (const row of expired) {
+    // M2：先条件硬删拿 returning 行、再清盘——删行与过期复查同一语句原子完成（含 F-1 窗口）：
+    // restore 抢锁在前则行不删不返回、磁盘分毫不碰；restore 在后则其条件更新 0 命中直接 409，
+    // 先于任何磁盘操作——磁盘所有权随行归属确定，杜绝"DB 显示存活但磁盘被 purge 双删"
+    const purged = await db
+      .delete(files)
+      .where(and(isNotNull(files.deletedAt), lt(files.deletedAt, cutoff)))
+      .returning({ id: files.id, path: files.path, trashPath: files.trashPath })
+    if (purged.length === 0) return 0
+
+    for (const row of purged) {
       if (row.trashPath && isPathSafe(row.trashPath, TRASH_DIR)) {
         await unlink(row.trashPath).catch(() => undefined)
       }
@@ -277,19 +282,7 @@ export class FilesService {
         await unlink(row.path).catch(() => undefined)
       }
     }
-    await db.delete(files).where(
-      and(
-        inArray(
-          files.id,
-          expired.map((r) => r.id),
-        ),
-        // F-1：delete 复查过期条件——查出到删除窗口内被 restore 的行（deletedAt 已清）
-        // 不得硬删，restore 抢锁赢则此处空操作
-        isNotNull(files.deletedAt),
-        lt(files.deletedAt, cutoff),
-      ),
-    )
-    return expired.length
+    return purged.length
   }
 
   /**

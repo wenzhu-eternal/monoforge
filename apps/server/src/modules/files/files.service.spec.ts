@@ -291,18 +291,14 @@ describe('FilesService', () => {
       { id: 2, path: '/u/b.png', trashPath: '/t/2-b.png' },
     ]
 
+    // M2 后的链路：条件 delete → returning 返回归属行 → 才允许清盘
     function mockChains(rows: typeof expiredRows) {
-      mockSelect.mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(rows),
-        }),
-      })
-      const deleteWhere = vi.fn().mockResolvedValue(undefined)
+      const deleteWhere = vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue(rows) })
       mockDelete.mockReturnValue({ where: deleteWhere })
       return deleteWhere
     }
 
-    it('超期软删文件：trashPath + 原 path 磁盘双清并硬删行', async () => {
+    it('超期软删文件：returning 行磁盘双清，且删行先于清盘', async () => {
       const deleteWhere = mockChains(expiredRows)
 
       const removed = await service.purgeExpiredTrash()
@@ -312,19 +308,22 @@ describe('FilesService', () => {
       expect(mockUnlink).toHaveBeenCalledWith('/u/a.png')
       expect(mockUnlink).toHaveBeenCalledTimes(4)
       expect(deleteWhere).toHaveBeenCalled()
+      // M2 核心顺序：行先硬删（returning 定归属）后才碰磁盘，与 restore 条件锁无共享窗口
+      expect(mockDelete.mock.invocationCallOrder[0]).toBeLessThan(
+        mockUnlink.mock.invocationCallOrder[0],
+      )
     })
 
-    it('无超期行 → 0，不动磁盘与 DB', async () => {
+    it('无超期行 → 0，条件 delete 空命中不碰磁盘', async () => {
       mockChains([])
 
       const removed = await service.purgeExpiredTrash()
 
       expect(removed).toBe(0)
       expect(mockUnlink).not.toHaveBeenCalled()
-      expect(mockDelete).not.toHaveBeenCalled()
     })
 
-    it('unlink 失败不阻塞删行（孤儿行不得永存）', async () => {
+    it('unlink 失败不阻塞流程（行已先删，计数以 returning 为准）', async () => {
       mockChains(expiredRows)
       mockUnlink.mockRejectedValue(new Error('EACCES'))
 
@@ -368,9 +367,9 @@ describe('FilesService', () => {
       return parts.join(' ')
     }
 
-    it('F-1 复现：delete 必须带过期复查，窗口内被 restore 的行不得硬删', async () => {
-      // 场景：select 查出过期行后、delete 执行前，restore 抢锁把 deletedAt 清空——
-      // 旧实现 delete 只带 id in，会把已恢复的活跃行硬删；条件复查后该行自动豁免
+    it('F-1 复现：delete 必带过期复查（与删行同语句原子），窗口内被 restore 的行不硬删', async () => {
+      // 场景：restore 与 purge 交错——条件复查（deleted_at is not null and < cutoff）
+      // 与 delete 同语句执行，restore 抢锁赢则该行根本不命中删除条件
       const deleteWhere = mockChains(expiredRows)
 
       await service.purgeExpiredTrash()
@@ -380,6 +379,21 @@ describe('FilesService', () => {
       expect(whereText).toContain('deleted_at')
       expect(whereText).toMatch(/is not null/i)
       expect(whereText).toContain('<')
+    })
+
+    it('M2 复现：restore 抢锁赢的行不在 returning 内，其磁盘不被清', async () => {
+      // 场景：select-then-删的旧链路里，purge 会无条件 unlink 全部查出行——
+      // 已被 restore 搬回原路径的文件被物理删掉（DB 存活、磁盘双删）。
+      // 新链路磁盘范围 = returning 行：被恢复的行不返回，两处路径均不得触碰
+      mockChains([expiredRows[1]])
+
+      const removed = await service.purgeExpiredTrash()
+
+      expect(removed).toBe(1)
+      expect(mockUnlink).not.toHaveBeenCalledWith('/t/1-a.png')
+      expect(mockUnlink).not.toHaveBeenCalledWith('/u/a.png')
+      expect(mockUnlink).toHaveBeenCalledWith('/t/2-b.png')
+      expect(mockUnlink).toHaveBeenCalledWith('/u/b.png')
     })
   })
 
