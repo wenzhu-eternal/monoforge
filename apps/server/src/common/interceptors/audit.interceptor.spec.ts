@@ -1,8 +1,9 @@
 import { Reflector } from '@nestjs/core'
 import { firstValueFrom, type Observable, of } from 'rxjs'
 import { describe, expect, it, vi } from 'vitest'
+import { db } from '@/db'
 import { ErrorLogsController } from '@/modules/error-logs/error-logs.controller'
-import { AuditInterceptor, sanitizeNewValue } from './audit.interceptor'
+import { AUDIT_RESOURCE_KEY, AuditInterceptor, sanitizeNewValue } from './audit.interceptor'
 
 const MASKED = '***MASKED***'
 
@@ -53,6 +54,59 @@ describe('intercept 方法白名单（M2）', () => {
     const result = interceptor.intercept(ctx, next as never) as Observable<unknown>
     expect(await firstValueFrom(result)).toEqual({ data: {} })
     expect(record).not.toHaveBeenCalled()
+  })
+})
+
+describe('L12：白名单规则回读旧值（TABLE_MAP 按 @AuditResource 键）', () => {
+  it('error_whitelist 键命中表配置，PATCH 审计带出原始行', async () => {
+    const reflector = {
+      get: vi.fn((key: string) => (key === AUDIT_RESOURCE_KEY ? 'error_whitelist' : undefined)),
+    }
+    const record = vi.fn().mockResolvedValue(undefined)
+    const interceptor = new AuditInterceptor(reflector as never, { record } as never)
+
+    const row = {
+      id: 3,
+      pattern: 'ECONNRESET',
+      matchType: 'message',
+      isActive: true,
+      deletedAt: null,
+    }
+    const selectSpy = vi.spyOn(db, 'select').mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([row]),
+        }),
+      }),
+    } as never)
+
+    const ctx = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          method: 'PATCH',
+          headers: {},
+          params: { id: '3' },
+          ip: '127.0.0.1',
+        }),
+      }),
+      getHandler: () => ErrorLogsController.prototype.updateWhitelist,
+      getClass: () => ErrorLogsController,
+    } as never
+
+    const next = { handle: vi.fn(() => of({ data: { id: 3, pattern: 'ECONNRESET' } })) }
+    await firstValueFrom(interceptor.intercept(ctx, next as never) as Observable<unknown>)
+
+    // 修复前：TABLE_MAP 缺 error_whitelist 键 → 不回读，oldValue 恒 undefined
+    expect(selectSpy).toHaveBeenCalled()
+    expect(record).toHaveBeenCalledTimes(1)
+    expect(record.mock.calls[0][0]).toMatchObject({
+      action: '更新',
+      resource: '白名单规则',
+      resourceId: 3,
+      oldValue: row,
+    })
+
+    selectSpy.mockRestore()
   })
 })
 

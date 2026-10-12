@@ -13,6 +13,7 @@ import { switchMap } from 'rxjs/operators'
 import { db } from '@/db'
 import {
   errorLogs,
+  errorWhitelist,
   files,
   notifications,
   permissions,
@@ -87,6 +88,13 @@ const TABLE_MAP: Record<string, TableMapEntry> = {
     idField: permissions.id,
     deletedAtField: permissions.deletedAt,
   },
+  // L12：白名单路由带 @AuditResource('error_whitelist')，旧值按该键查表——
+  // 原漏配致 PATCH/DELETE/恢复审计的 oldValue 恒空，误删/误改规则无从对照溯源
+  error_whitelist: {
+    table: errorWhitelist,
+    idField: errorWhitelist.id,
+    deletedAtField: errorWhitelist.deletedAt,
+  },
 }
 
 const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
@@ -98,6 +106,8 @@ const SENSITIVE_COLUMNS: Record<string, Set<string>> = {
   NotificationsController: new Set([]),
   RolePermissionsController: new Set([]),
   PermissionsController: new Set([]),
+  // L12：pattern 是匹配串非敏感列，空集显式声明（与其余表同构，防后续误加）
+  error_whitelist: new Set([]),
 }
 
 // 响应侧敏感字段：绝不能进 audit_logs.new_value
