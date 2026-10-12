@@ -7,7 +7,9 @@ import type {
   UpdateRole,
 } from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCan } from '@/hooks/use-auth'
 import { api } from '@/lib/api'
+import { PermissionCodes } from '@/lib/permissions'
 
 export const useRoles = (params: PaginationQuery) => {
   return useQuery({
@@ -25,6 +27,9 @@ export const useRoles = (params: PaginationQuery) => {
  * L15：角色下拉全量加载（逐页拉取，不受单页 100 上限截断；角色数少，staleTime 60s 降请求）
  */
 export const useAllRoles = () => {
+  // M5：无 role:view 不发请求——GET /roles 要求 ROLE_VIEW，403 被拦截器整页踢 /403，
+  // "仅持 user:*" 是权限细分的合法组合，不能让辅助下拉陪葬整个 users 页
+  const can = useCan()
   return useQuery({
     queryKey: ['roles', 'all'],
     queryFn: async () => {
@@ -41,6 +46,7 @@ export const useAllRoles = () => {
       }
       return all
     },
+    enabled: can(PermissionCodes.ROLE_VIEW),
     staleTime: 60_000,
   })
 }

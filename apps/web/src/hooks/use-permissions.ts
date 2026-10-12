@@ -7,7 +7,9 @@ import type {
   UpdatePermission,
 } from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCan } from '@/hooks/use-auth'
 import { api } from '@/lib/api'
+import { PermissionCodes } from '@/lib/permissions'
 
 export type { RouteMeta }
 
@@ -30,12 +32,16 @@ export function usePermissions(params: UsePermissionsParams = {}) {
 }
 
 export function useAllPermissions() {
+  // M5：无 permission:view 不发请求——GET /permissions/list 403 会把整个 roles 页踢 /403，
+  // "仅持 role:*" 是权限细分的合法组合，辅助查询不得陪葬整页
+  const can = useCan()
   return useQuery({
     queryKey: ['permissions', 'all'],
     queryFn: async () => {
       const res = await api.get<ApiResponse<Permission[]>>('/api/v1/permissions/list')
       return res.data.data
     },
+    enabled: can(PermissionCodes.PERMISSION_VIEW),
   })
 }
 
@@ -102,13 +108,15 @@ export function useRestorePermission() {
 }
 
 export function useRolePermissions(roleId: number) {
+  // M5：与 useAllPermissions 同口径，GET role/:roleId 同样要求 PERMISSION_VIEW
+  const can = useCan()
   return useQuery({
     queryKey: ['role-permissions', roleId],
     queryFn: async () => {
       const res = await api.get<ApiResponse<string[]>>(`/api/v1/role-permissions/role/${roleId}`)
       return res.data.data
     },
-    enabled: roleId > 0,
+    enabled: roleId > 0 && can(PermissionCodes.PERMISSION_VIEW),
   })
 }
 
