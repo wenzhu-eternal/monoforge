@@ -50,11 +50,14 @@ export default defineConfig({
       command:
         'pnpm --filter=server db:push && pnpm --filter=server db:seed && pnpm --filter=@monoforge/server dev',
       url: 'http://localhost:9000/api/v1/health',
-      // e2e 专用 DATABASE_URL 指向 5433 的 mf-e2e-postgres，与 DEV DB(5432) 完全隔离
+      // DATABASE_URL 环境感知：外部传入即用（CI e2e job 只有 5432 service，硬编码 5433 必 ECONNREFUSED），
+      // 本地无则落 5433 的 mf-e2e-postgres 默认值，与 DEV DB(5432) 完全隔离
       // THROTTLE_LIMIT 调高避免 e2e 频繁登录触发 429（.env 可保持生产值 10）
       env: {
         NODE_ENV: 'development',
-        DATABASE_URL: 'postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db',
+        DATABASE_URL:
+          process.env.DATABASE_URL ??
+          'postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db',
         THROTTLE_LIMIT: '1000',
         // M7：webServer 内会重跑 db:seed，默认密码强制首登改密会踢飞 e2e 会话——显式豁免
         SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false',
