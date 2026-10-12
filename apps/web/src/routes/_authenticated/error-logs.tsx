@@ -778,6 +778,7 @@ function WhitelistTab() {
             label="匹配模式"
             rules={[
               { required: true, message: '请输入匹配模式' },
+              { min: 4, message: '匹配模式至少 4 个字符' },
               { max: 500, message: '匹配模式最多 500 个字符' },
             ]}
             extra="匹配类型为消息时，错误消息包含此字符串则过滤；为 URL 时，请求 URL 包含此字符串则过滤"

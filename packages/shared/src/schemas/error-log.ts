@@ -85,6 +85,7 @@ export const ErrorLogGroupSchema = z.object({
 
 export const ErrorWhitelistSchema = z.object({
   id: z.number().int().positive(),
+  // L7：写入侧限 ≥4 字符；回显侧保持 ≥1——存量短规则照常读出，不因校验加严 500
   pattern: z.string().min(1).max(500),
   matchType: WhitelistMatchType,
   description: z.string().max(500).optional().nullable(),
@@ -95,14 +96,16 @@ export const ErrorWhitelistSchema = z.object({
 })
 
 export const CreateErrorWhitelistSchema = z.object({
-  pattern: z.string().min(1).max(500),
+  // L7：≥4 才不会被 "E1"、"/x" 之类的模式静默吞掉全部同类报错（命中即过滤、无处可见）
+  pattern: z.string().min(4).max(500),
   matchType: WhitelistMatchType.default('message'),
   description: z.string().max(500).optional(),
   isActive: z.boolean().default(true),
 })
 
 export const UpdateErrorWhitelistSchema = z.object({
-  pattern: z.string().min(1).max(500).optional(),
+  // L7：PATCH 同样限 ≥4，否则建完再改短即可绕过创建侧下限
+  pattern: z.string().min(4).max(500).optional(),
   matchType: WhitelistMatchType.optional(),
   description: z.string().max(500).optional(),
   isActive: z.boolean().optional(),
