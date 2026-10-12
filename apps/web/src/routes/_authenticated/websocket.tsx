@@ -37,7 +37,7 @@ function WebSocketPage() {
   return <WebSocketContent />
 }
 
-function WebSocketContent() {
+export function WebSocketContent() {
   const user = useAuthStore((state) => state.user)
   const { connected, onlineUsers, me, receivedNotifications, sendNotify } = useWebSocketDemo()
   const [messageApi, contextHolder] = message.useMessage()
@@ -134,8 +134,9 @@ function WebSocketContent() {
                 label="目标用户 ID"
                 name="userId"
                 rules={[{ required: true, message: '请输入用户 ID' }]}
+                extra="后端仅支持给自己发送测试通知（防越权推送），已锁定为当前用户"
               >
-                <InputNumber min={1} style={{ width: '100%' }} placeholder="输入用户 ID" />
+                <InputNumber min={1} style={{ width: '100%' }} disabled placeholder="当前用户 ID" />
               </Form.Item>
               <Form.Item
                 label="标题"
