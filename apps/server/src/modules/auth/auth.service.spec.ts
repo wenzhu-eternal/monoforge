@@ -9,6 +9,12 @@ vi.mock('@/db', () => ({
   },
 }))
 
+// L3：登录路径的 argon2 走 mock——单测不跑真实哈希运算
+vi.mock('argon2', () => ({
+  verify: vi.fn().mockResolvedValue(false),
+  hash: vi.fn().mockResolvedValue('hashed'),
+}))
+
 // L19：getProfile 读 ADMIN_ROLE_ID 派生字段——固定为 1，断言不随运行环境漂移
 vi.mock('@/config/env', () => ({
   getEnv: vi.fn(() => ({ ADMIN_ROLE_ID: 1 })),
@@ -30,6 +36,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     deleteByPattern: ReturnType<typeof vi.fn>
     del: ReturnType<typeof vi.fn>
     scanKeys: ReturnType<typeof vi.fn>
+    eval: ReturnType<typeof vi.fn>
   }
 
   const userRow = {
@@ -62,6 +69,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       deleteByPattern: vi.fn().mockResolvedValue(0),
       del: vi.fn().mockResolvedValue(undefined),
       scanKeys: vi.fn().mockResolvedValue([]),
+      eval: vi.fn().mockResolvedValue(0),
     }
     const configService = { get: vi.fn().mockReturnValue('secret') }
     service = new AuthService(
@@ -155,6 +163,38 @@ describe('AuthService（L7 登出失效时间戳）', () => {
 
       expect(profile.adminRoleId).toBe(1)
       expect(profile.isAdmin).toBe(false)
+    })
+  })
+
+  describe('登录锁定（L3 原子化）', () => {
+    it('L3: 检查与计数合并为单次 Lua，不再 GET-then-act', async () => {
+      vi.mocked(db.query.users.findFirst).mockResolvedValue(undefined as never)
+
+      await expect(service.login('u', 'pw', '1.2.3.4')).rejects.toThrow(UnauthorizedException)
+
+      // 旧实现先 get 读计数再放行（并发全读旧值），现全程仅一次原子 eval
+      expect(redisService.get).not.toHaveBeenCalled()
+      expect(redisService.eval).toHaveBeenCalledTimes(1)
+      const [script, keys, args] = redisService.eval.mock.calls[0] as [string, string[], number[]]
+      expect(script).toContain('INCR')
+      expect(script).toContain('EXPIRE')
+      expect(keys[0]).toBe('login:fail:1.2.3.4:u')
+      expect(args).toEqual([900, 10]) // LOGIN_FAIL_TTL=15min、LOGIN_FAIL_LIMIT=10
+    })
+
+    it('L3: 计数超限 → 429 且不再查库', async () => {
+      redisService.eval.mockResolvedValue(1)
+
+      await expect(service.login('u', 'pw', '1.2.3.4')).rejects.toThrow('登录失败次数过多')
+      expect(db.query.users.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('L3: Redis 故障降级放行，不因缓存抖动锁死登录', async () => {
+      redisService.eval.mockRejectedValue(new Error('redis down'))
+      vi.mocked(db.query.users.findFirst).mockResolvedValue(undefined as never)
+
+      // 走到密码校验（用户不存在 401），而非 redis 错误上抛
+      await expect(service.login('u', 'pw', '1.2.3.4')).rejects.toThrow(UnauthorizedException)
     })
   })
 })
