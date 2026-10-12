@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as NotFoundRouteImport } from './routes/not-found'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as R403RouteImport } from './routes/403'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -23,7 +24,6 @@ import { Route as AuthenticatedMailRouteImport } from './routes/_authenticated/m
 import { Route as AuthenticatedFilesRouteImport } from './routes/_authenticated/files'
 import { Route as AuthenticatedErrorLogsRouteImport } from './routes/_authenticated/error-logs'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as AuthenticatedChangePasswordRouteImport } from './routes/_authenticated/change-password'
 import { Route as AuthenticatedAuditLogsRouteImport } from './routes/_authenticated/audit-logs'
 
 const SetupRoute = SetupRouteImport.update({
@@ -39,6 +39,11 @@ const NotFoundRoute = NotFoundRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChangePasswordRoute = ChangePasswordRouteImport.update({
+  id: '/change-password',
+  path: '/change-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const R403Route = R403RouteImport.update({
@@ -96,12 +101,6 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedChangePasswordRoute =
-  AuthenticatedChangePasswordRouteImport.update({
-    id: '/change-password',
-    path: '/change-password',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedAuditLogsRoute = AuthenticatedAuditLogsRouteImport.update({
   id: '/audit-logs',
   path: '/audit-logs',
@@ -111,11 +110,11 @@ const AuthenticatedAuditLogsRoute = AuthenticatedAuditLogsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/403': typeof R403Route
+  '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/not-found': typeof NotFoundRoute
   '/setup': typeof SetupRoute
   '/audit-logs': typeof AuthenticatedAuditLogsRoute
-  '/change-password': typeof AuthenticatedChangePasswordRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/error-logs': typeof AuthenticatedErrorLogsRoute
   '/files': typeof AuthenticatedFilesRoute
@@ -128,11 +127,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/403': typeof R403Route
+  '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/not-found': typeof NotFoundRoute
   '/setup': typeof SetupRoute
   '/audit-logs': typeof AuthenticatedAuditLogsRoute
-  '/change-password': typeof AuthenticatedChangePasswordRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/error-logs': typeof AuthenticatedErrorLogsRoute
   '/files': typeof AuthenticatedFilesRoute
@@ -147,11 +146,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/403': typeof R403Route
+  '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/not-found': typeof NotFoundRoute
   '/setup': typeof SetupRoute
   '/_authenticated/audit-logs': typeof AuthenticatedAuditLogsRoute
-  '/_authenticated/change-password': typeof AuthenticatedChangePasswordRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/error-logs': typeof AuthenticatedErrorLogsRoute
   '/_authenticated/files': typeof AuthenticatedFilesRoute
@@ -166,11 +165,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/403'
+    | '/change-password'
     | '/login'
     | '/not-found'
     | '/setup'
     | '/audit-logs'
-    | '/change-password'
     | '/dashboard'
     | '/error-logs'
     | '/files'
@@ -183,11 +182,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/403'
+    | '/change-password'
     | '/login'
     | '/not-found'
     | '/setup'
     | '/audit-logs'
-    | '/change-password'
     | '/dashboard'
     | '/error-logs'
     | '/files'
@@ -201,11 +200,11 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/403'
+    | '/change-password'
     | '/login'
     | '/not-found'
     | '/setup'
     | '/_authenticated/audit-logs'
-    | '/_authenticated/change-password'
     | '/_authenticated/dashboard'
     | '/_authenticated/error-logs'
     | '/_authenticated/files'
@@ -220,6 +219,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   R403Route: typeof R403Route
+  ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
   NotFoundRoute: typeof NotFoundRoute
   SetupRoute: typeof SetupRoute
@@ -246,6 +246,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/change-password': {
+      id: '/change-password'
+      path: '/change-password'
+      fullPath: '/change-password'
+      preLoaderRoute: typeof ChangePasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/403': {
@@ -325,13 +332,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/change-password': {
-      id: '/_authenticated/change-password'
-      path: '/change-password'
-      fullPath: '/change-password'
-      preLoaderRoute: typeof AuthenticatedChangePasswordRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/audit-logs': {
       id: '/_authenticated/audit-logs'
       path: '/audit-logs'
@@ -344,7 +344,6 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAuditLogsRoute: typeof AuthenticatedAuditLogsRoute
-  AuthenticatedChangePasswordRoute: typeof AuthenticatedChangePasswordRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedErrorLogsRoute: typeof AuthenticatedErrorLogsRoute
   AuthenticatedFilesRoute: typeof AuthenticatedFilesRoute
@@ -357,7 +356,6 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAuditLogsRoute: AuthenticatedAuditLogsRoute,
-  AuthenticatedChangePasswordRoute: AuthenticatedChangePasswordRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedErrorLogsRoute: AuthenticatedErrorLogsRoute,
   AuthenticatedFilesRoute: AuthenticatedFilesRoute,
@@ -375,6 +373,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   R403Route: R403Route,
+  ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
   NotFoundRoute: NotFoundRoute,
   SetupRoute: SetupRoute,

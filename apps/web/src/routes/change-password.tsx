@@ -6,11 +6,13 @@ import { useChangePassword } from '@/hooks/use-auth'
 import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { extractErrorMessage } from '@/lib/error'
 import { passwordRule } from '@/lib/form-rules'
+import { requireAuth } from '@/lib/route-guards'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Title } = Typography
 
-export const Route = createFileRoute('/_authenticated/change-password')({
+export const Route = createFileRoute('/change-password')({
+  beforeLoad: requireAuth(),
   component: ChangePasswordPage,
 })
 
@@ -61,8 +63,8 @@ function ChangePasswordPage() {
   }
 
   return (
-    // L29：路由在 _authenticated 布局内——原 h-screen 全屏层与外层布局叠成双层，首体验割裂
-    <div className="flex justify-center py-10">
+    // 空白布局（同 login）——强制改密属认证流程页，不进登录态工作区，也不与侧边栏叠双层（L29）
+    <div className="flex items-center justify-center h-screen bg-gray-50">
       {contextHolder}
       <Card className="w-full max-w-md shadow-md">
         <Title level={3} className="text-center mb-2">

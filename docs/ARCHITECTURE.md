@@ -179,18 +179,19 @@ monoforge/
 
 ```
 src/routes/
-├── __root.tsx                    # 根路由 (布局 + 全局 provider)
-├── _authenticated.tsx             # 需认证的路由组
-│   ├── index.tsx                  # 首页
-│   ├── users/
-│   │   ├── index.tsx              # 用户列表
-│   │   └── $userId.tsx            # 用户详情
-│   ├── roles/
-│   │   └── index.tsx              # 角色列表
-│   └── error-logs/
-│       └── index.tsx              # 错误日志
-├── login.tsx                      # 登录页
-└── not-found.tsx                  # 404 页
+├── __root.tsx                    # 根路由 (ErrorBoundary + 全局 provider)
+├── _authenticated/
+│   ├── route.tsx                 # 需认证 pathless 布局 (requireAuth + 侧边栏 + 权限重定向)
+│   ├── dashboard.tsx             # 仪表盘
+│   ├── users.tsx / roles.tsx / permissions.tsx
+│   ├── files.tsx / error-logs.tsx / audit-logs.tsx
+│   └── mail.tsx / websocket.tsx
+├── index.tsx                     # 首页
+├── login.tsx                     # 登录页
+├── setup.tsx                     # 初始化向导
+├── change-password.tsx           # 改密页 (空白布局同 login，requireAuth 挂自身)
+├── 403.tsx                       # 403 页
+└── not-found.tsx                 # 404 页
 ```
 
 ### 数据层 (TanStack Query)
