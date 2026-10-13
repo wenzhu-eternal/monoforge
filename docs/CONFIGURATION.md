@@ -22,7 +22,7 @@
 | `JWT_SECRET` | JWT access token 密钥 | 必填，长度 >= 32 |
 | `JWT_REFRESH_SECRET` | JWT refresh token 密钥 | 必填，长度 >= 32 |
 | `API_PORT` | 后端端口 | `9000` |
-| `TRUST_PROXY` | 反向代理信任（Express trust proxy）：`false` 不信任（本地直跑，防 XFF 伪造绕过 IP 限流）；`1` 信任一层代理（nginx/ngrok 前置时取真实客户端 IP） | `false` |
+| `TRUST_PROXY` | 反向代理信任（Express trust proxy）：`false` 不信任（本地直跑，防 XFF 伪造绕过 IP 限流）；`1` 信任一层代理（nginx/ngrok 前置时取真实客户端 IP）。反代下遗漏 `1` 时登录失败锁定同步退化（全员共享代理 IP，可按用户名锁死任意账号，L6/J3） | `false` |
 | `APP_NAME` | 应用名（Swagger 标题、邮件主题、邮件模板均引用，新项目通过 .env 配置） | `MonoForge` |
 | `ALLOW_ORIGIN` | CORS 白名单 | `http://localhost:3000` |
 | `NODE_ENV` | 环境 | `development` / `production` |

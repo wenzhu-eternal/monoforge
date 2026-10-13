@@ -154,7 +154,7 @@ docker compose down
 
 ### 反向代理信任
 
-后端前置 nginx/ngrok 等 proxy 时，必须设 `TRUST_PROXY=1`（信任一层代理），否则 Express 取到的是代理 IP，XFF 伪造可绕过基于 IP 的限流；本地直跑必须保持 `false`（详见 [CONFIGURATION.md](./CONFIGURATION.md)）。
+后端前置 nginx/ngrok 等 proxy 时，必须设 `TRUST_PROXY=1`（信任一层代理），否则 Express 取到的是代理 IP，XFF 伪造可绕过基于 IP 的限流；**且登录失败锁定键（`login:fail:<ip>:<username>`）会把全体来源并成同一 IP，退化为按用户名全局锁死——任意攻击者可零成本锁死 admin（L6/J3）**。本地直跑必须保持 `false`（详见 [CONFIGURATION.md](./CONFIGURATION.md)）。
 
 ## 回滚
 

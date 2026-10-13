@@ -15,7 +15,6 @@ import { NotificationSchema } from '@shared/schemas/notification'
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
-import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { NotificationsService } from './notifications.service'
 
@@ -46,13 +45,9 @@ export class NotificationsController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    return this.notificationsService.list(
-      user.sub,
-      pageNum,
-      size,
-      unreadOnly === 'true',
-      isAdminUser(user),
-    )
+    // L14：个人通知资源不套"管理员全局视图"——隐式 includeDeleted 会让管理员
+    // 删除自己的通知后 refetch 仍看到该条；固定 false，无全局视图语义
+    return this.notificationsService.list(user.sub, pageNum, size, unreadOnly === 'true', false)
   }
 
   @Get('unread-count')
