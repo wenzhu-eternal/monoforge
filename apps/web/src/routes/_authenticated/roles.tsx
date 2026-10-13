@@ -74,7 +74,7 @@ function RolePermissionCodes({ roleId }: { roleId: number }) {
  * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
  * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
  */
-function RolesContent() {
+export function RolesContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [editingRole, setEditingRole] = useState<Role | null>(null)
@@ -97,7 +97,9 @@ function RolesContent() {
   const canViewPerms = can(PermissionCodes.PERMISSION_VIEW)
 
   const { data: allPermissions, isLoading: allPermissionsLoading } = useAllPermissions()
-  const { data: currentPermissions } = useRolePermissions(selectedRoleId || 0)
+  const { data: currentPermissions, isFetching: currentPermsFetching } = useRolePermissions(
+    selectedRoleId || 0,
+  )
   const updateRolePermissions = useUpdateRolePermissions()
 
   const [roleForm] = Form.useForm<CreateRole & UpdateRole>()
@@ -298,6 +300,12 @@ function RolesContent() {
 
   const allSelected = allPermissions && selectedPermissionCodes.length === allPermissions.length
 
+  // L10：首次打开且服务端回显仍在途——期间禁用勾选/确定，防晚到数据覆盖用户已勾选项后静默丢失
+  const permsSyncing =
+    selectedRoleId !== null &&
+    initializedForRoleId.current !== selectedRoleId &&
+    currentPermsFetching
+
   return (
     <>
       {contextHolder}
@@ -374,7 +382,8 @@ function RolesContent() {
           initializedForRoleId.current = null
         }}
         onOk={handlePermissionSubmit}
-        confirmLoading={updateRolePermissions.isPending}
+        confirmLoading={updateRolePermissions.isPending || permsSyncing}
+        okButtonProps={{ disabled: permsSyncing }}
         width={640}
       >
         <div className="max-h-96 overflow-y-auto">
@@ -387,6 +396,7 @@ function RolesContent() {
                   checked={allSelected}
                   indeterminate={selectedPermissionCodes.length > 0 && !allSelected}
                   onChange={(e) => handleToggleAll(e.target.checked)}
+                  disabled={permsSyncing}
                 >
                   全选
                 </Checkbox>
@@ -400,6 +410,7 @@ function RolesContent() {
                     <Checkbox
                       checked={selectedPermissionCodes.includes(p.code)}
                       onChange={(e) => handlePermissionToggle(p.code, e.target.checked)}
+                      disabled={permsSyncing}
                     >
                       <span>{p.name}</span>
                       <span className="text-gray-400 text-xs ml-2">({p.code})</span>
