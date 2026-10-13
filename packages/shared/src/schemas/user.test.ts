@@ -17,6 +17,11 @@ describe('PhoneSchema', () => {
   it('可选字段，未传 undefined 也合法', () => {
     expect(PhoneSchema.safeParse(undefined).success).toBe(true)
   })
+
+  it('L13：null 合法（置空通道）；空串仍拒（清空须显式 null）', () => {
+    expect(PhoneSchema.safeParse(null).success).toBe(true)
+    expect(PhoneSchema.safeParse('').success).toBe(false)
+  })
 })
 
 describe('CreateUserSchema', () => {
@@ -109,6 +114,13 @@ describe('UpdateUserSchema', () => {
   it('非法 roleId 失败', () => {
     const r = UpdateUserSchema.safeParse({ roleId: 0 })
     expect(r.success).toBe(false)
+  })
+
+  it('L13：phone/avatar 置空通道——null 通过，空串仍拒', () => {
+    expect(UpdateUserSchema.safeParse({ phone: null }).success).toBe(true)
+    expect(UpdateUserSchema.safeParse({ avatar: null }).success).toBe(true)
+    expect(UpdateUserSchema.safeParse({ phone: '' }).success).toBe(false)
+    expect(UpdateUserSchema.safeParse({ avatar: '' }).success).toBe(false)
   })
 })
 

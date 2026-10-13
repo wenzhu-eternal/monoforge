@@ -226,7 +226,8 @@ export function UsersContent() {
         // 额外字段触发 Zod 校验失败（avatar 必须是合法 URL）
         const updateData: UpdateUser = {
           nickname: values.nickname,
-          phone: values.phone,
+          // L13：清空手机号提交 null（'' 会被 regex 拒 400）——与 DB nullable 对齐
+          phone: values.phone || null,
         }
         // 邮箱/角色/状态变更后端要求 USER_ROLE_MANAGE，无权限时不提交避免 403
         if (canManageRole) {
@@ -249,7 +250,8 @@ export function UsersContent() {
           email: values.email,
           password: values.password,
           nickname: values.nickname,
-          phone: values.phone,
+          // L13：未填/清空统一提交 null（'' 会被 regex 拒 400）
+          phone: values.phone || null,
         }
         // 仅持角色管理权限时才提交 roleId（后端对越权指定返回 403）
         if (canManageRole && values.roleId) {

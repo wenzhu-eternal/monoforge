@@ -117,7 +117,8 @@ export class UsersService {
       email: string
       password: string
       nickname?: string
-      phone?: string
+      // L13：phone 置空通道，null 直写 DB NULL
+      phone?: string | null
       roleId?: number | null
       mustChangePassword?: boolean
     },
@@ -204,8 +205,9 @@ export class UsersService {
     data: {
       email?: string
       nickname?: string
-      avatar?: string
-      phone?: string
+      // L13：avatar/phone 置空通道，null 直写 DB NULL
+      avatar?: string | null
+      phone?: string | null
       status?: boolean
       password?: string
       roleId?: number | null

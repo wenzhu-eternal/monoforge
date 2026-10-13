@@ -1,9 +1,12 @@
 import { z } from 'zod'
 import { RoleBriefSchema } from './role'
 
+// L13：DB 列 nullable，契约补 .nullable() 置空通道——空串仍拒，清空须显式 null
+//（前端做空串→null 映射；SanitizeBodyPipe 按 schema nullable 保留 null 自动放行）
 export const PhoneSchema = z
   .string()
   .regex(/^1[3-9]\d{9}$/, '手机号格式不正确')
+  .nullable()
   .optional()
 
 // 拒绝微信登录占位邮箱域，防止攻击者抢占领位邮箱导致微信用户无法登录
@@ -97,6 +100,8 @@ export const UpdateUserSchema = z.object({
     // 当前前端仅作 img src 无执行面，属契约纵深收口
     .refine((v) => /^https?:\/\//i.test(v), '头像仅支持 http/https 链接')
     .max(255)
+    // L13：同 phone，提供置空通道
+    .nullable()
     .optional(),
   phone: PhoneSchema,
   status: z.boolean().optional(),

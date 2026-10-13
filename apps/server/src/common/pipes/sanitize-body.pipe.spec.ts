@@ -20,6 +20,15 @@ describe('SanitizeBodyPipe', () => {
     expect(out.nickname).toBe('n')
   })
 
+  it('L13: UpdateUserDto 的 phone null 被保留（清空手机号不被吞成未改动）', () => {
+    const out = pipe.transform({ phone: null, nickname: 'n' }, meta(UpdateUserDto)) as Record<
+      string,
+      unknown
+    >
+    expect(out.phone).toBeNull()
+    expect(out.nickname).toBe('n')
+  })
+
   it('H2: 非 nullable 字段的 null 仍转 undefined（保持原有 optional 匹配语义）', () => {
     const out = pipe.transform({ email: null, nickname: null }, meta(UpdateUserDto)) as Record<
       string,
