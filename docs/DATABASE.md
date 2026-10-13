@@ -58,7 +58,7 @@ try {
 
 ## 迁移规范
 
-- 表结构变更必须 `pnpm db:generate` 生成迁移文件，禁止手写 SQL 改表；**数据修复类迁移**（不改表结构，如 `0002_lowercase_identity` 存量小写归一）可手写 SQL + 手动补 `meta/_journal.json` 条目，文件头注释动机与失败语义
+- 表结构变更必须 `pnpm db:generate` 生成迁移文件，禁止手写 SQL 改表；**数据修复类迁移**（不改表结构，如 `0002_lowercase_identity` 存量小写归一）可手写 SQL + 手动补 `meta/_journal.json` 条目，文件头注释动机与失败语义；此时 **无需重跑 `db:generate`**（schema 无变化），只需复制前一快照更新 `id`/`prevId` 接链（J1）
 - 迁移文件一旦提交不可修改，新增变更生成新迁移。唯一例外：**不影响已应用环境语义的加固可修改**（drizzle journal 按 tag 追踪、已应用环境不会重跑）——如 0001 补 `SET timezone = 'UTC'`（仅对未来新环境生效），须在文件头注释说明动机
 - 部分唯一索引用 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，不用列级 `.unique()`
 - 生产容器启动时自动执行迁移：入口为 `apps/server/src/db/migrate.ts`（编译产物 `dist/db/migrate.js`，基于 drizzle-orm migrator 运行时依赖）；`drizzle-kit` 仅用于开发期 generate/push，属 devDep 不进生产镜像
