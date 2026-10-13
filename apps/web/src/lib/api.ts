@@ -92,7 +92,25 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
     if (locks) {
       return locks.request(REFRESH_LOCK_NAME, async () => doRefresh())
     }
-    return doRefresh()
+    // L11：无 Web Locks（Safari<16.4 等）跨 tab 并发刷新无互斥——他 tab 先消费单次
+    // cookie 后本方必 401，被无差别登出。失败后等 500ms 二次检查共享 AT 键：他 tab
+    // 已刷新则直接采用其结果；存储不可用时无共享可言，照常抛原错误
+    try {
+      return await doRefresh()
+    } catch (error) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      try {
+        const doneAt = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
+        const shared = localStorage.getItem(REFRESH_TOKEN_KEY)
+        if (doneAt >= issuedAt && shared) {
+          useAuthStore.getState().setToken(shared)
+          return shared
+        }
+      } catch {
+        // 存储不可访问，落入下方抛原错误
+      }
+      throw error
+    }
   })()
   inflightRefresh = task
   try {
