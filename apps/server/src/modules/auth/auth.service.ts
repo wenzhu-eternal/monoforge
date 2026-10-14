@@ -363,26 +363,20 @@ export class AuthService {
       where: and(eq(users.email, email), notDeleted(users.deletedAt)),
     })
 
-    if (existingEmail) {
-      // 防邮箱枚举：已注册邮箱返回与未注册一致的响应（与 login 防枚举策略对齐），不实际发送
-      this.logger.warn(`注册验证码请求命中已注册邮箱，静默跳过发送: ${maskEmail(email)}`)
-      return { message: '验证码已发送' }
-    }
-
+    // L1：已注册邮箱也写验证码并异步发信——与未注册路径耗时一致，防掐表枚举。
+    // 邮件发送失败仅 warn（已注册邮箱复用旧码仍可登录），不影响主流程
     const code = randomInt(0, 999999).toString().padStart(6, '0')
     const expiresIn = 5 * 60
-
-    // P2-7：set(code) 失败同样释锁（原只覆盖邮件发送抛错，Redis 抖动会导致用户 60s 内无法重试）
-    try {
-      await this.redisService.set(`register:code:${email}`, code, expiresIn)
-      // 发送邮件（传入 auth 生成的 code，确保与 Redis 存储一致）
-      await this.mailService.sendVerificationCode(email, '注册用户', code)
-    } catch (err) {
-      await this.redisService.del(`register:code:limit:${email}`)
-      throw err
-    }
-
-    this.logger.log(`注册验证码已发送: ${maskEmail(email)}`)
+    await this.redisService.set(`register:code:${email}`, code, expiresIn)
+    // 异步发信——不阻塞响应，失败仅告警
+    this.mailService
+      .sendVerificationCode(email, '注册用户', code)
+      .catch((err) =>
+        this.logger.warn(`注册验证码投递失败: ${err instanceof Error ? err.message : String(err)}`),
+      )
+    this.logger.log(
+      `注册验证码已生成: ${existingEmail ? '已注册' : '未注册'}邮箱 ${maskEmail(email)}`,
+    )
     return { message: '验证码已发送' }
   }
 

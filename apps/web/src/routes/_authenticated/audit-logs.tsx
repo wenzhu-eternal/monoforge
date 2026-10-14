@@ -1,3 +1,4 @@
+import { DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
@@ -86,7 +87,7 @@ function AuditLogsPage() {
 
 function AuditLogsContent() {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [filters, setFilters] = useState<{
     userId?: number
     action?: string

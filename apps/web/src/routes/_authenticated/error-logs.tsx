@@ -1,4 +1,5 @@
 import type { WhitelistMatchType } from '@shared'
+import { DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
@@ -80,7 +81,7 @@ function ErrorLogsPage() {
 
 function LogsTab() {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [keyword, setKeyword] = useState<string | undefined>(undefined)
   const [searchInput, setSearchInput] = useState('')
   const [sourceFilter, setSourceFilter] = useState<string | undefined>(undefined)

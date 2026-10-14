@@ -62,3 +62,9 @@ try {
 - 迁移文件一旦提交不可修改，新增变更生成新迁移。唯一例外：**不影响已应用环境语义的加固可修改**（drizzle journal 按 tag 追踪、已应用环境不会重跑）——如 0001 补 `SET timezone = 'UTC'`（仅对未来新环境生效），须在文件头注释说明动机
 - 部分唯一索引用 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，不用列级 `.unique()`
 - 生产容器启动时自动执行迁移：入口为 `apps/server/src/db/migrate.ts`（编译产物 `dist/db/migrate.js`，基于 drizzle-orm migrator 运行时依赖）；`drizzle-kit` 仅用于开发期 generate/push，属 devDep 不进生产镜像
+
+## 留档不修项
+
+| 条目 | 说明 | 触发条件变化时重启评估 |
+|---|---|---|
+| **L12** TOCTOU 角色指派 | `users.service` create/update 分步查 role + 写 user 之间存在毫秒窗口，并发软删角色可造"绑定已软删角色的活跃用户"；自愈路径：重新指派 | 出现高频并发指派场景时评估加事务+细粒度锁 |

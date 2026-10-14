@@ -1,4 +1,4 @@
-import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE } from '@shared'
+import { ALLOWED_EXTENSIONS, DEFAULT_PAGE_SIZE, MAX_FILE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import type { UploadProps } from 'antd'
 import {
@@ -50,15 +50,18 @@ function FilesPage() {
 
 function FilesContent() {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   // L26：objectURL 的当前值镜像——卸载回收必须直接 revoke，借道 setState updater 在
   // 组件卸载后不保证执行（React 契约），ref 读取无此限制
   const previewUrlRef = useRef<string | null>(null)
+  // L17：在途请求卸载防护——previewFile 在途时切路由，resolve 后需检测 isMounted 再写入
+  const previewMountedRef = useRef(true)
 
   // 预览 blob 卸载兜底：直接切路由时回收，否则驻留到页签关闭
   useEffect(() => {
     return () => {
+      previewMountedRef.current = false
       if (previewUrlRef.current) {
         URL.revokeObjectURL(previewUrlRef.current)
         previewUrlRef.current = null
@@ -114,6 +117,11 @@ function FilesContent() {
   const handlePreview = async (record: FileItem) => {
     try {
       const url = await previewFile(record.id)
+      // L17：组件已在途请求时卸载，立即回收，防止 objectURL 泄漏至页签关闭
+      if (!previewMountedRef.current) {
+        URL.revokeObjectURL(url)
+        return
+      }
       // L12：连续预览先回收旧 objectURL，否则旧 blob 常驻内存
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
       previewUrlRef.current = url

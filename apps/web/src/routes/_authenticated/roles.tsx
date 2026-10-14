@@ -1,4 +1,5 @@
 import type { CreateRole, Role, UpdateRole } from '@shared'
+import { DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
@@ -76,7 +77,7 @@ function RolePermissionCodes({ roleId }: { roleId: number }) {
  */
 export function RolesContent() {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [editingRole, setEditingRole] = useState<Role | null>(null)
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false)
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false)

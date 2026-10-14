@@ -1,4 +1,5 @@
 import type { Permission } from '@shared'
+import { DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
@@ -50,7 +51,7 @@ function PermissionCodesPage() {
  */
 function PermissionCodesContent() {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [editingPermission, setEditingPermission] = useState<Permission | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isRouteModalOpen, setIsRouteModalOpen] = useState(false)

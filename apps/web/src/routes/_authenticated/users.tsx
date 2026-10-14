@@ -1,4 +1,5 @@
 import type { CreateUser, UpdateUser, User } from '@shared'
+import { DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
@@ -50,7 +51,7 @@ function UsersPage() {
 
 export function UsersContent() {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
