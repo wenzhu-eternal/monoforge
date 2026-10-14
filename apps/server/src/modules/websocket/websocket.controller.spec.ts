@@ -18,6 +18,7 @@ describe('WebsocketController', () => {
 
     notificationsService = {
       create: vi.fn(),
+      consumeNotifyQuota: vi.fn().mockResolvedValue(undefined),
     } as unknown as NotificationsService
 
     controller = new WebsocketController(eventsService, notificationsService)

@@ -9,7 +9,7 @@ import type { RedisService } from '@/modules/redis/redis.service'
  */
 export async function consumeDailyQuota(
   redis: RedisService,
-  action: 'backup' | 'upload',
+  action: 'backup' | 'upload' | 'notify',
   userId: number,
   limit: number,
 ): Promise<void> {
@@ -30,7 +30,7 @@ export async function consumeDailyQuota(
   )
 
   if (used > limit) {
-    const label = action === 'backup' ? '备份' : '上传'
+    const label = action === 'backup' ? '备份' : action === 'upload' ? '上传' : '通知'
     throw new ConflictException(`今日${label}次数已达上限（${limit} 次），请明日再试`)
   }
 }
@@ -41,7 +41,7 @@ export async function consumeDailyQuota(
  */
 export async function rollbackDailyQuota(
   redis: RedisService,
-  action: 'backup' | 'upload',
+  action: 'backup' | 'upload' | 'notify',
   userId: number,
 ): Promise<void> {
   await redis.eval(
@@ -53,7 +53,11 @@ export async function rollbackDailyQuota(
   )
 }
 
-function quotaKey(action: 'backup' | 'upload', userId: number, now: Date = new Date()): string {
+function quotaKey(
+  action: 'backup' | 'upload' | 'notify',
+  userId: number,
+  now: Date = new Date(),
+): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
   return `quota:${action}:${userId}:${date}`

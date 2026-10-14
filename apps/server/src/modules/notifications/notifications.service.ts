@@ -5,13 +5,17 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { notifications } from '@/db/schema'
+import { RedisService } from '@/modules/redis/redis.service'
 import { EventsService } from '@/modules/websocket/events.service'
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name)
 
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(
+    private readonly eventsService: EventsService,
+    private readonly redisService: RedisService,
+  ) {}
 
   async list(
     userId: number,
@@ -147,5 +151,26 @@ export class NotificationsService {
       throw new NotFoundException(`通知 ID ${id} 不存在`)
     }
     return { message: `通知 ID ${id} 已删除` }
+  }
+
+  // L4：通知日配额检查——50 条/日，超限抛 409
+  async consumeNotifyQuota(userId: number, limit: number): Promise<void> {
+    const now = new Date()
+    const midnight = new Date(now)
+    midnight.setHours(24, 0, 0, 0)
+    const ttl = Math.max(1, Math.ceil((midnight.getTime() - now.getTime()) / 1000))
+    const key = `quota:notify:${userId}:${now.toISOString().slice(0, 10)}`
+    const used = Number(
+      await this.redisService.eval(
+        `local n = redis.call('INCR', KEYS[1])
+         if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+         return n`,
+        [key],
+        [String(ttl)],
+      ),
+    )
+    if (used > limit) {
+      throw new NotFoundException(`今日通知次数已达上限（${limit} 次），请明日再试`)
+    }
   }
 }

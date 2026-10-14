@@ -5,11 +5,12 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
-import { isNotNull } from 'drizzle-orm'
+import { and, isNotNull, lt, sql } from 'drizzle-orm'
 import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { files } from '@/db/schema'
+import { notifications } from '@/db/schema/notifications'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { FilesService, TRASH_RETENTION_DAYS } from '@/modules/files/files.service'
 import { MailService } from '@/modules/mail/mail.service'
@@ -24,6 +25,8 @@ const BACKUP_LOCK_KEY = 'schedule:backup:running'
 const BACKUP_LOCK_TTL = 600
 // L6：手动备份日配额（cron 每日 1 次走 doBackup 不经此处，不受限）
 const MANUAL_BACKUP_DAILY_LIMIT = 3
+// J1：通知保留期 90 天，与 error_logs、files trash 口径对齐
+const NOTIFICATION_RETENTION_DAYS = 90
 
 @Injectable()
 export class ScheduleService {
@@ -145,6 +148,24 @@ export class ScheduleService {
       }
     } catch (err) {
       this.logger.error(`回收站清理失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  // J1：每天 0:30 清理超保留期的通知（90 天），audit_logs 不自动删仅文档声明归档责任
+  @Cron('30 0 * * *')
+  async dailyNotificationCleanup() {
+    try {
+      const cutoff = new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+      const result = await db
+        .delete(notifications)
+        .where(and(isNotNull(notifications.deletedAt), lt(notifications.deletedAt, cutoff)))
+        .returning({ count: sql<number>`count(*)` })
+      const removed = result[0]?.count ?? 0
+      if (removed > 0) {
+        this.logger.log(`通知清理：${removed} 条超 ${NOTIFICATION_RETENTION_DAYS} 天已物理删除`)
+      }
+    } catch (err) {
+      this.logger.error(`通知清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

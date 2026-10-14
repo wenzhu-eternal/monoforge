@@ -53,11 +53,15 @@ export class WebsocketController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '发送测试通知（持久化 + 在线推送）' })
   @AuditAction('发送通知')
+  // L4：通知日配额——防止登录用户以 ~1.4 万行/日可控灌满通知表
   async notify(@Body() dto: NotifyDto, @CurrentUser() user: TokenPayload) {
     // 自我校验：只能给自己发通知
     if (dto.userId !== user.sub) {
       throw new ForbiddenException('只能给自己发送通知')
     }
+    // L4：日配额检查（50 条/日）
+    const NOTIFY_DAILY_LIMIT = 50
+    await this.notificationsService.consumeNotifyQuota(user.sub, NOTIFY_DAILY_LIMIT)
     const created = await this.notificationsService.create({
       userId: dto.userId,
       type: dto.type,

@@ -65,14 +65,22 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
   if (inflightRefresh) return inflightRefresh
   const task = (async () => {
     const doRefresh = async (): Promise<string> => {
-      const doneAt = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
-      if (doneAt >= issuedAt) {
-        const shared = localStorage.getItem(REFRESH_TOKEN_KEY)
-        if (shared) {
-          // 同步本 tab store，后续请求直接用新 token
-          useAuthStore.getState().setToken(shared)
-          return shared
-        }
+      let doneAt = 0
+      try {
+        doneAt = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
+      } catch {
+        /* 存储不可访问 */
+      }
+      let shared: string | null = null
+      try {
+        shared = localStorage.getItem(REFRESH_TOKEN_KEY)
+      } catch {
+        /* 存储不可访问 */
+      }
+      if (doneAt >= issuedAt && shared) {
+        // 同步本 tab store，后续请求直接用新 token
+        useAuthStore.getState().setToken(shared)
+        return shared
       }
       const response = await axios.post(refreshUrl, buildRefreshPayload(), {
         withCredentials: true,
@@ -100,15 +108,21 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
       return await doRefresh()
     } catch (error) {
       await new Promise((resolve) => setTimeout(resolve, 500))
+      let doneAt2 = 0
+      let shared2: string | null = null
       try {
-        const doneAt = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
-        const shared = localStorage.getItem(REFRESH_TOKEN_KEY)
-        if (doneAt >= issuedAt && shared) {
-          useAuthStore.getState().setToken(shared)
-          return shared
-        }
+        doneAt2 = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
       } catch {
-        // 存储不可访问，落入下方抛原错误
+        /* 存储不可访问 */
+      }
+      try {
+        shared2 = localStorage.getItem(REFRESH_TOKEN_KEY)
+      } catch {
+        /* 存储不可访问 */
+      }
+      if (doneAt2 >= issuedAt && shared2) {
+        useAuthStore.getState().setToken(shared2)
+        return shared2
       }
       // M4：must-change 用户 refresh 必 401，直接跳改密页（与拦截器 must-change 分支互斥）
       const axiosErr = error as import('axios').AxiosError<{ message?: string } | undefined>
