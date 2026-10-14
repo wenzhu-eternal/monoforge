@@ -226,6 +226,19 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   // 改受控并与路由推导合并：新页自动展开所属组，用户手动开合的其他组保留
   const openKeys = Array.from(new Set([...getOpenKeys(), ...userOpenKeys]))
 
+  const handleOpenChange = (keys: string[]) => {
+    // onOpenChange 由 antd 在任意展开/收起时触发；直接覆写会丢失
+    // 路由推导出的 key（如子页路径要求展开所属分组），需做差集精确更新
+    setUserOpenKeys((prev) => {
+      const prevSet = new Set(prev)
+      const curSet = new Set(keys)
+      const added = keys.filter((k) => !prevSet.has(k))
+      const removed = prev.filter((k) => !curSet.has(k))
+      const next = [...prevSet, ...added].filter((k) => !removed.includes(k))
+      return next
+    })
+  }
+
   return (
     <Layout className="h-screen">
       <Sider
@@ -254,7 +267,7 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
           mode="inline"
           selectedKeys={getSelectedKeys()}
           openKeys={openKeys}
-          onOpenChange={(keys) => setUserOpenKeys(keys)}
+          onOpenChange={handleOpenChange}
           items={menuItems}
           onClick={handleMenuClick}
         />

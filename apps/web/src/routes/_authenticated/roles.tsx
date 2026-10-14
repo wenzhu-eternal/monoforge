@@ -272,6 +272,8 @@ export function RolesContent() {
 
   const handlePermissionSubmit = async () => {
     if (!selectedRoleId) return
+    // L13：allPermissions 未就绪时禁用提交，防超管误点"确定"清空全角色权限
+    if (!allPermissions) return
 
     try {
       await updateRolePermissions.mutateAsync({

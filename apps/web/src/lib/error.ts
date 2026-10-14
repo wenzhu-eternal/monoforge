@@ -22,6 +22,14 @@ export function extractErrorMessage(error: unknown, fallback = '操作失败'): 
     }
   }
 
+  // L15：axios 网络层错误无后端文案时，返回中文提示而非裸英文
+  if (axiosError.code === 'ERR_NETWORK' || axiosError.message?.includes('Network')) {
+    return '网络连接失败，请检查网络后重试'
+  }
+  if (axiosError.code === 'ERR_TIMEOUT' || axiosError.message?.includes('timeout')) {
+    return '请求超时，请稍后重试'
+  }
+
   if (error instanceof Error && error.message) return error.message
 
   return fallback
