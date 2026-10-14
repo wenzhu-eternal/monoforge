@@ -38,11 +38,7 @@ export interface TokenPair {
 const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60
 
 /** M4：日志脱敏——保留首字符与域名，隐藏本地部分（防日志面明文邮箱） */
-const maskEmail = (email: string): string => {
-  const at = email.indexOf('@')
-  if (at <= 0) return '***'
-  return `${email[0]}***${email.slice(at)}`
-}
+import { maskEmail } from '@/common/utils/mail-utils'
 
 @Injectable()
 export class AuthService {
@@ -386,7 +382,7 @@ export class AuthService {
       throw err
     }
 
-    this.logger.log(`注册验证码已发送: ${email}`)
+    this.logger.log(`注册验证码已发送: ${maskEmail(email)}`)
     return { message: '验证码已发送' }
   }
 

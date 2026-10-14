@@ -13,6 +13,7 @@ import { PermissionCodes } from '@shared/constants/permissions'
 import { AuditAction } from '@/common/decorators/audit.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { maskEmail } from '@/common/utils/mail-utils'
 import { SendVerificationCodeMailDto, SendWelcomeMailDto } from './dto/mail.dto'
 import { MailService } from './mail.service'
 
@@ -34,7 +35,7 @@ export class MailController {
       throw new BadRequestException('邮件服务未配置（缺少 MAIL_HOST/PORT/USER/PASSWORD），无法发送')
     }
     await this.mailService.sendWelcome(dto.to, dto.username)
-    return { message: `欢迎邮件已发送至 ${dto.to}` }
+    return { message: `欢迎邮件已发送至 ${maskEmail(dto.to)}` }
   }
 
   @Post('verification-code')
@@ -46,6 +47,6 @@ export class MailController {
       throw new BadRequestException('邮件服务未配置（缺少 MAIL_HOST/PORT/USER/PASSWORD），无法发送')
     }
     await this.mailService.sendVerificationCode(dto.to, dto.name)
-    return { message: `测试邮件已发送至 ${dto.to}` }
+    return { message: `测试邮件已发送至 ${maskEmail(dto.to)}` }
   }
 }

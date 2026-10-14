@@ -6,6 +6,7 @@ import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import { and, eq, isNull } from 'drizzle-orm'
 import Handlebars from 'handlebars'
 import { createTransport, type SendMailOptions, type Transporter } from 'nodemailer'
+import { maskEmail } from '@/common/utils/mail-utils'
 import { getEnv } from '@/config'
 import { db } from '@/db'
 import { users } from '@/db/schema'
@@ -244,9 +245,9 @@ export class MailService {
         attachments,
       })
       const attachInfo = attachments.length > 0 ? ` (${attachments.length} 个附件)` : ''
-      this.logger.log(`邮件已发送: ${subject} -> ${to}${attachInfo}`)
+      this.logger.log(`邮件已发送: ${subject} -> ${maskEmail(to)}${attachInfo}`)
     } catch (err) {
-      this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
+      this.logger.error(`邮件发送失败: ${subject} -> ${maskEmail(to)}`, err)
       throw new ServiceUnavailableException(ErrorMessages[ErrorCodes.MAIL_SEND_FAILED])
     }
   }
@@ -264,9 +265,9 @@ export class MailService {
         subject,
         html,
       })
-      this.logger.log(`邮件已发送: ${subject} -> ${to}`)
+      this.logger.log(`邮件已发送: ${subject} -> ${maskEmail(to)}`)
     } catch (err) {
-      this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
+      this.logger.error(`邮件发送失败: ${subject} -> ${maskEmail(to)}`, err)
       throw new ServiceUnavailableException(ErrorMessages[ErrorCodes.MAIL_SEND_FAILED])
     }
   }
@@ -284,9 +285,9 @@ export class MailService {
         subject,
         text,
       })
-      this.logger.log(`邮件已发送: ${subject} -> ${to}`)
+      this.logger.log(`邮件已发送: ${subject} -> ${maskEmail(to)}`)
     } catch (err) {
-      this.logger.error(`邮件发送失败: ${subject} -> ${to}`, err)
+      this.logger.error(`邮件发送失败: ${subject} -> ${maskEmail(to)}`, err)
       throw new ServiceUnavailableException(ErrorMessages[ErrorCodes.MAIL_SEND_FAILED])
     }
   }

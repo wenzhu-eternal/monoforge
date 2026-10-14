@@ -27,7 +27,7 @@ describe('MailController', () => {
 
       const result = await controller.sendWelcome(dto)
 
-      expect(result).toEqual({ message: '欢迎邮件已发送至 user@test.com' })
+      expect(result).toEqual({ message: '欢迎邮件已发送至 u***@test.com' })
       expect(service.sendWelcome).toHaveBeenCalledWith('user@test.com', '文竹')
     })
 
@@ -47,7 +47,7 @@ describe('MailController', () => {
 
       const result = await controller.sendVerificationCode(dto)
 
-      expect(result).toEqual({ message: '测试邮件已发送至 user@test.com' })
+      expect(result).toEqual({ message: '测试邮件已发送至 u***@test.com' })
       expect(service.sendVerificationCode).toHaveBeenCalledWith('user@test.com', '文竹')
     })
 
