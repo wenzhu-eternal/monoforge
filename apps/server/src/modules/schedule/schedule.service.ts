@@ -215,10 +215,17 @@ export class ScheduleService {
       await this.cleanOldBackups()
 
       // 发送备份成功通知（仅文字通知，不附 .sql 附件，避免整库数据经邮件外发）
-      await this.mailService.sendBackupNotification(
-        true,
-        `${filename} (${(stats.size / 1024).toFixed(2)} KB)`,
-      )
+      // L5：通知失败不归入"备份失败"——.sql 完好且保留，错误记录与原产物矛盾
+      try {
+        await this.mailService.sendBackupNotification(
+          true,
+          `${filename} (${(stats.size / 1024).toFixed(2)} KB)`,
+        )
+      } catch (mailErr) {
+        this.logger.warn(
+          `备份成功但通知邮件发送失败: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`,
+        )
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       this.logger.error(`数据库备份失败: ${errorMsg}`)

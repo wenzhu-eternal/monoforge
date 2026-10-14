@@ -23,7 +23,7 @@ import {
   validateFileSize,
   validateMimeType,
 } from '@/common/file-validator'
-import { consumeDailyQuota } from '@/common/utils/daily-quota'
+import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { db } from '@/db'
 import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, users } from '@/db/schema'
@@ -64,11 +64,8 @@ export class FilesService {
     }
 
     // 校验链任一步失败都需清理 multer 落盘的临时文件，防恶意文件残留
+    // L6：配额放在校验链最后（ext/mime/magic/内容全部通过后才扣额），失败路径接 rollback
     try {
-      // L6：上传日配额放校验链内——超限时上面已落盘的临时文件随 catch 立即清理
-      if (uploadedBy !== undefined) {
-        await consumeDailyQuota(this.redisService, 'upload', uploadedBy, UPLOAD_DAILY_LIMIT)
-      }
       validateFilename(file.originalname)
       validateFileSize(file.size)
       validateMimeType(file.mimetype)
@@ -80,7 +77,6 @@ export class FilesService {
 
       const ext = file.originalname.split('.').pop()?.toLowerCase() ?? ''
       await validateFileContent(file.path, ext)
-
       await scanForMalware(file.path)
 
       // 基于文件内容校验真实 MIME（不信任客户端 Content-Type），DB 存检测到的真实类型
@@ -88,7 +84,15 @@ export class FilesService {
       if (detectedMime) {
         file.mimetype = detectedMime
       }
+      // 全部校验通过后才扣日配额
+      if (uploadedBy !== undefined) {
+        await consumeDailyQuota(this.redisService, 'upload', uploadedBy, UPLOAD_DAILY_LIMIT)
+      }
     } catch (err) {
+      // L6：配额消费前失败即 rollback，避免注定失败的请求损耗合法配额
+      if (uploadedBy !== undefined) {
+        await rollbackDailyQuota(this.redisService, 'upload', uploadedBy)
+      }
       await unlink(file.path).catch(() => {})
       throw err
     }

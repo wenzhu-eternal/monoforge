@@ -42,6 +42,17 @@ vi.mock('node:fs/promises', () => ({
   mkdir: (...args: unknown[]) => mockMkdir(...args),
   rename: (...args: unknown[]) => mockRename(...args),
   unlink: (...args: unknown[]) => mockUnlink(...args),
+  open: vi.fn().mockResolvedValue({
+    read: vi.fn().mockImplementation((buffer: Buffer) => {
+      buffer.set([0x89, 0x50, 0x4e, 0x47])
+      return Promise.resolve([4, {}])
+    }),
+    close: vi.fn().mockResolvedValue(undefined),
+    stat: vi.fn().mockResolvedValue({ size: 1 }),
+  }),
+  readFile: vi
+    .fn()
+    .mockResolvedValue(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0x00, 0x00])),
 }))
 
 const { FilesService } = await import('./files.service')
@@ -286,6 +297,18 @@ describe('FilesService', () => {
     }
 
     it('超配额 → 409 且清理 multer 临时文件', async () => {
+      // 配额检查在验证之后，需 mock fs 操作让验证通过
+      mockUnlink.mockResolvedValue(undefined)
+      const mockOpen = vi.fn().mockResolvedValue({
+        read: vi.fn().mockImplementation((buffer: Buffer) => {
+          buffer.set([0x89, 0x50, 0x4e, 0x47])
+          return Promise.resolve([4, {}])
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+        stat: vi.fn().mockResolvedValue({ size: 1, isFile: () => true }),
+      })
+      vi.spyOn(require('node:fs/promises'), 'open').mockImplementation(mockOpen)
+
       mockRedisQuota.eval.mockResolvedValue(101)
 
       await expect(service.upload(file as never, 7)).rejects.toThrow('今日上传次数已达上限')

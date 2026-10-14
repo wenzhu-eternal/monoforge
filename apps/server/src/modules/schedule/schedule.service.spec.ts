@@ -304,7 +304,8 @@ describe('ScheduleService', () => {
       await service.manualBackup()
 
       expect(mockUnlink).not.toHaveBeenCalled()
-      expect(errorLogsService.record).toHaveBeenCalledWith(
+      // L5：通知失败归入 warn，不再落入 error_logs（备份产物完好）
+      expect(errorLogsService.record).not.toHaveBeenCalledWith(
         expect.objectContaining({ message: expect.stringContaining('smtp down') }),
       )
     })
