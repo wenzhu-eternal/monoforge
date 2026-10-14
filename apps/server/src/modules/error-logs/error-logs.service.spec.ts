@@ -184,6 +184,44 @@ describe('ErrorLogsService', () => {
       expect(valuesCall.statusCode).toBe(401)
       expect(valuesCall.url).toBe('/api/v1/users')
     })
+
+    it('M2：401/403/429 跳过白名单检查（安全事件不可被白名单消音）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 7 }]),
+        }),
+      } as never)
+
+      // 白名单缓存返回命中值，但 403 状态码应跳过 checkWhitelist
+      redisServiceMock.get.mockResolvedValue(
+        JSON.stringify([{ pattern: '权限不足', matchType: 'message', isActive: true }]),
+      )
+
+      await service.record({
+        message: '权限不足: user:update',
+        statusCode: 403,
+        url: '/api/v1/users/1',
+      })
+
+      // 白名单不应被调用（403 直接入库）
+      expect(mockDb.insert).toHaveBeenCalled()
+    })
+
+    it('M2：500 仍走白名单检查（业务错误可降噪）', async () => {
+      redisServiceMock.get.mockResolvedValue(
+        JSON.stringify([{ pattern: 'ECONNRESET', matchType: 'message', isActive: true }]),
+      )
+      vi.mocked(mockDb.insert).mockClear()
+
+      await service.record({
+        message: 'ECONNRESET timeout',
+        statusCode: 500,
+        url: '/api/v1/files/upload',
+      })
+
+      expect(mockDb.insert).not.toHaveBeenCalled()
+    })
   })
 
   describe('resolve', () => {

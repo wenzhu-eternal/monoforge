@@ -68,9 +68,15 @@ export class ErrorLogsService {
     ip?: string
     userAgent?: string
   }): Promise<void> {
-    // url 一并传入白名单：url 类规则对后端路径生效，可按端点降噪
-    const isWhitelisted = await this.checkWhitelist(params.message, params.url)
-    if (isWhitelisted) return
+    // M2：401/403/429 属于安全事件（认证/授权/限流），白名单只能降噪 5xx 与业务报错；
+    // 否则持 error_log:manage 的委托管理员可用 pattern="权限不足" 整批吞掉越权探测日志
+    const skipWhitelist =
+      params.statusCode === 401 || params.statusCode === 403 || params.statusCode === 429
+    if (!skipWhitelist) {
+      // url 一并传入白名单：url 类规则对后端路径生效，可按端点降噪
+      const isWhitelisted = await this.checkWhitelist(params.message, params.url)
+      if (isWhitelisted) return
+    }
 
     if (params.statusCode && params.statusCode < 500) {
       const allowed = await this.enforceRecordMinuteCap(params.statusCode, params.url)
