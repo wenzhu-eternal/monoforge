@@ -95,6 +95,7 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
     // L11：无 Web Locks（Safari<16.4 等）跨 tab 并发刷新无互斥——他 tab 先消费单次
     // cookie 后本方必 401，被无差别登出。失败后等 500ms 二次检查共享 AT 键：他 tab
     // 已刷新则直接采用其结果；存储不可用时无共享可言，照常抛原错误
+    // M4：mustChangePassword 用户的 refresh 必 401，此时应跳 /change-password 而非清态登出
     try {
       return await doRefresh()
     } catch (error) {
@@ -108,6 +109,15 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
         }
       } catch {
         // 存储不可访问，落入下方抛原错误
+      }
+      // M4：must-change 用户 refresh 必 401，直接跳改密页（与拦截器 must-change 分支互斥）
+      const axiosErr = error as import('axios').AxiosError<{ message?: string } | undefined>
+      if (
+        axiosErr?.response?.status === 401 &&
+        axiosErr.response.data?.message === ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD]
+      ) {
+        window.location.href = '/change-password'
+        throw error
       }
       throw error
     }

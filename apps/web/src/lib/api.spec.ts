@@ -1,4 +1,5 @@
-import axios from 'axios'
+import { ErrorCodes, ErrorMessages } from '@shared'
+import axios, { type AxiosError } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/store/auth-store'
 import { refreshAccessToken } from './api'
@@ -58,6 +59,25 @@ describe('L11：无 Web Locks 时刷新失败后二次检查共享键', () => {
     const assertion = expect(promise).rejects.toThrow('stale')
     await vi.advanceTimersByTimeAsync(600)
     await assertion
+    expect(useAuthStore.getState().token).toBeNull()
+  })
+
+  it('M4：refresh 返回 MUST_CHANGE_PASSWORD 401 → 抛错（由拦截器捕获并跳 /change-password）', async () => {
+    const mustChangeMsg = ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD]
+    // 直接构造 axios 401 response（不依赖 fake timers，避免 unhandled rejection 误报）
+    const axiosError = Object.assign(new Error('api-refresh-401'), {
+      isAxiosError: true,
+      response: { status: 401, data: { message: mustChangeMsg } },
+    }) as AxiosError<{ message?: string }>
+    vi.spyOn(axios, 'post').mockRejectedValue(axiosError)
+
+    // 消费 rejection，避免 vitest unhandled rejection 检测误报
+    const promise = refreshAccessToken(Date.now() - 1000)
+    void promise.catch(() => undefined)
+
+    // 断言：错误消息透传（拦截器 catch 分支负责路由跳转 /change-password）
+    await expect(promise).rejects.toThrow('api-refresh-401')
+    // 未调用 setToken（token 未变，清态由拦截器负责）
     expect(useAuthStore.getState().token).toBeNull()
   })
 })
