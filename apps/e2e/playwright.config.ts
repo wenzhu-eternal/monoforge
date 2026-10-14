@@ -59,6 +59,8 @@ export default defineConfig({
           process.env.DATABASE_URL ??
           'postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db',
         THROTTLE_LIMIT: '1000',
+        // M6：登录/注册匿名端点独立桶，e2e 内大量登录请求不撞 5/min 红线
+        THROTTLE_LOGIN_LIMIT: '1000',
         // M7：webServer 内会重跑 db:seed，默认密码强制首登改密会踢飞 e2e 会话——显式豁免
         SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false',
       },

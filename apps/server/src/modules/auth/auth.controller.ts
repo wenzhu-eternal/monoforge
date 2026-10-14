@@ -39,7 +39,8 @@ export class AuthController {
   @Post('login')
   @Public()
   @AuditAction('登录')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  // M6：使用 login named throttler（THROTTLE_LOGIN_LIMIT），不与全局 THROTTLE_LIMIT 争桶
+  @Throttle({ login: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登录' })
   @ZodSerializerDto(AuthResponseSchema)
@@ -66,7 +67,8 @@ export class AuthController {
   @Post('send-register-code')
   @Public()
   @AuditAction('发送验证码')
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  // M6：使用 login named throttler
+  @Throttle({ login: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '发送注册验证码' })
   async sendRegisterCode(@Body() dto: SendRegisterCodeDto) {
@@ -80,7 +82,8 @@ export class AuthController {
   @Post('register')
   @Public()
   @AuditAction('注册')
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  // M6：使用 login named throttler
+  @Throttle({ login: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户注册' })
   @ZodSerializerDto(AuthResponseSchema)

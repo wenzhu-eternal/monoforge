@@ -114,6 +114,8 @@ const envSchema = z
     // Throttle: 登录接口建议单独更严格限流
     THROTTLE_TTL: z.coerce.number().min(1).default(60),
     THROTTLE_LIMIT: z.coerce.number().min(1).default(10),
+    // M6：登录/注册类匿名端点独立限流桶，e2e/CI 可调高避免全套件限流撞墙
+    THROTTLE_LOGIN_LIMIT: z.coerce.number().min(1).default(5),
 
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
