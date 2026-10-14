@@ -393,6 +393,13 @@ export class UsersService {
     }
 
     // 改密后吊销所有 token，强制重新登录
+    // L9：先写 logout:at 时间戳作为兜底——若后续 Redis 抖动导致 revokeAccessTokens 失败，
+    // 用户重试时 refresh 早退仍可检测到此时间戳，防止旧 token 续命
+    await this.redisService.set(
+      `logout:at:${userId}`,
+      String(Date.now()),
+      8 * 24 * 60 * 60, // 8天，盖过 refresh TTL（7d）留余量
+    )
     await this.redisService.deleteByPattern(`refresh:${userId}:*`)
     await this.revokeAccessTokens(userId)
 
