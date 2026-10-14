@@ -134,6 +134,10 @@ export class PermissionsService {
     }
 
     if (data.code && data.code !== existing.code) {
+      // L3：改 code 限超管（非超管改名会造成全线权限语义漂移、seed 契约错位）
+      if (!caller.isAdmin) {
+        throw new ForbiddenException('权限码改名仅限超管')
+      }
       const dup = await db.query.permissions.findFirst({
         where: and(eq(permissions.code, data.code), notDeleted(permissions.deletedAt)),
       })

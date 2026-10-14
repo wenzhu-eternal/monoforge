@@ -305,7 +305,7 @@ export class WechatService {
       return existing
     }
 
-    const username = `wx_${openId}`
+    const username = `wx_${openId}`.slice(0, 50)
     const email = `${username}@wechat.placeholder`
 
     // 查找默认 user 角色（seed 和 setup 均会创建）

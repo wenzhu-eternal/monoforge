@@ -14,6 +14,7 @@ import { Throttle } from '@nestjs/throttler'
 import { WechatLoginResponseSchema, WechatQrCodeSchema } from '@shared/schemas/wechat'
 import type { Response } from 'express'
 import { ZodSerializerDto } from 'nestjs-zod'
+import { AuditAction } from '@/common/decorators/audit.decorator'
 import { Public } from '@/common/decorators/public.decorator'
 import { getRefreshTokenCookieOptions } from '@/common/utils/cookie-options'
 import { WechatLoginDto } from './dto/wechat-login.dto'
@@ -42,6 +43,7 @@ export class WechatController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @AuditAction('登录')
   @ApiOperation({ summary: '微信登录（扫码 code 或小程序 code）' })
   @ZodSerializerDto(WechatLoginResponseSchema)
   async login(@Body() dto: WechatLoginDto, @Res({ passthrough: true }) response: Response) {

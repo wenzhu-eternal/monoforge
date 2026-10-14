@@ -8,6 +8,7 @@ const redisServiceMock = {
   del: vi.fn(),
   incr: vi.fn().mockResolvedValue(1),
   expire: vi.fn().mockResolvedValue(true),
+  eval: vi.fn().mockResolvedValue(1),
 }
 
 vi.mock('@/modules/redis/redis.service', () => ({
@@ -152,7 +153,7 @@ describe('ErrorLogsService', () => {
 
     it('4xx 超分钟封顶（21 次）时丢弃不入库（N1）', async () => {
       redisServiceMock.get.mockResolvedValue(null)
-      redisServiceMock.incr.mockResolvedValue(21)
+      redisServiceMock.eval.mockResolvedValue(21)
       vi.mocked(mockDb.insert).mockClear()
 
       await service.record({
@@ -166,7 +167,7 @@ describe('ErrorLogsService', () => {
 
     it('4xx 未超封顶时正常入库并透传 statusCode/url', async () => {
       redisServiceMock.get.mockResolvedValue(null)
-      redisServiceMock.incr.mockResolvedValue(3)
+      redisServiceMock.eval.mockResolvedValue(3)
       vi.mocked(mockDb.insert).mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockResolvedValue([{ id: 6 }]),

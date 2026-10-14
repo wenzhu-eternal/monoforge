@@ -14,6 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { NotificationSchema } from '@shared/schemas/notification'
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
+import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { NotificationsService } from './notifications.service'
@@ -58,6 +59,7 @@ export class NotificationsController {
 
   @Post(':id/read')
   @HttpCode(HttpStatus.OK)
+  @AuditAction('标记已读')
   @ApiOperation({ summary: '标记单条已读' })
   @ZodSerializerDto(NotificationSchema)
   markAsRead(@CurrentUser() user: TokenPayload, @Param('id', ParseIntPipe) id: number) {
@@ -66,6 +68,7 @@ export class NotificationsController {
 
   @Post('read-all')
   @HttpCode(HttpStatus.OK)
+  @AuditAction('全部标记已读')
   @ApiOperation({ summary: '标记全部已读' })
   markAllRead(@CurrentUser() user: TokenPayload) {
     return this.notificationsService.markAllRead(user.sub)

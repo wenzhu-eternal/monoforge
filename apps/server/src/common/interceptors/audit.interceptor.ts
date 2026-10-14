@@ -57,6 +57,8 @@ const RESOURCE_MAP: Record<string, string> = {
   SetupController: '系统设置',
   WebSocketController: 'WebSocket',
   RoutesController: '路由',
+  MailController: '邮件',
+  ScheduleController: '定时备份',
 }
 
 // Controller 类名到数据库表和ID字段的映射（用于查询旧值）

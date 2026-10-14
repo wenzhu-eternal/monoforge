@@ -96,6 +96,7 @@ services:
       - ADMIN_ROLE_ID=${ADMIN_ROLE_ID:-1}
       - TRUST_PROXY=${TRUST_PROXY:-false}
       - APP_NAME=${APP_NAME:-MonoForge}
+      - DB_POOL_MAX=${DB_POOL_MAX:-10}
       - MAIL_HOST=${MAIL_HOST:-}
       - MAIL_PORT=${MAIL_PORT:-}
       - MAIL_USER=${MAIL_USER:-}

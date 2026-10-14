@@ -96,14 +96,18 @@ export class ErrorLogsService {
    */
   private async enforceRecordMinuteCap(statusCode: number, url?: string): Promise<boolean> {
     try {
+      // L7：单 Lua 脚本原子 INCR+EXPIRE，避免两步之间进程崩溃导致 key 永驻
       // P2-6：数字段折叠为 :id，避免 /users/1…/99999 打爆 key 空间
       const path = ((url ?? 'unknown').split('?')[0] ?? 'unknown').replace(/\d+/g, ':id')
       const minute = new Date().toISOString().slice(0, 16)
       const key = `err:record:${statusCode}:${path}:${minute}`
-      const n = await this.redisService.incr(key)
-      if (n === 1) {
-        await this.redisService.expire(key, 120)
-      }
+      const n = (await this.redisService.eval(
+        `local n = redis.call('INCR', KEYS[1])
+         if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+         return n`,
+        [key],
+        ['120'],
+      )) as number
       return n <= 20
     } catch {
       return true
