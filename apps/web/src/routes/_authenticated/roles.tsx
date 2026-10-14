@@ -367,7 +367,7 @@ export function RolesContent() {
               { max: 50, message: '角色名最多 50 个字符' },
             ]}
           >
-            <Input disabled={!!editingRole} />
+            <Input />
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={3} />
