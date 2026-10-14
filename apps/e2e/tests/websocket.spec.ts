@@ -7,9 +7,9 @@ import { expect, test } from '@playwright/test'
  * WebSocket 通知 e2e
  *
  * 覆盖：
- *   - 给自己发通知 → 成功 + 实时收到
- *   - 给他人发通知 → 403（越权防护）
- *   - 离线用户通知 → 持久化（通过 API 查询验证）
+ *   - admin 给自己发通知 → 成功 + 实时收到
+ *   - 普通用户访问 /websocket → 403（无 NOTIFICATION_VIEW，J2=A）
+ *   - 离线用户通知 → 持久化（通过 API 验证）
  */
 
 let adminUserId: number
@@ -55,26 +55,11 @@ test.describe('WebSocket 通知', () => {
     await expect(page.getByText('e2e 自测通知')).toBeVisible({ timeout: 5000 })
   })
 
-  test('普通用户给他人发通知 → 403 提示', async ({ page }) => {
+  // M5/J2=A：普通用户无 NOTIFICATION_VIEW，布局层门控 → /403，无 WebSocket 连接
+  test('普通用户访问 /websocket → 跳转 /403（无 NOTIFICATION_VIEW）', async ({ page }) => {
     await loginAsNormalUser(page)
     await page.goto('/websocket')
-    await expect(page.getByRole('heading', { name: 'WebSocket 演示' })).toBeVisible()
-
-    // 等待连接
-    await expect(page.locator('.ant-badge-status-success').first()).toBeVisible({
-      timeout: 10_000,
-    })
-
-    // 给 admin（他人）发通知
-    const userIdInput = page.getByPlaceholder('输入用户 ID')
-    await userIdInput.clear()
-    await userIdInput.fill(String(adminUserId))
-
-    await page.getByPlaceholder('如：系统测试通知').fill('e2e 越权通知')
-    await page.getByRole('button', { name: '发送通知' }).click()
-
-    // 应该看到错误提示（403 越权防护）
-    await expect(page.locator('.ant-message-error')).toBeVisible({ timeout: 5000 })
+    await expect(page).toHaveURL(/\/403$/)
   })
 
   test('离线用户通知 → 持久化（通过 API 验证）', async () => {

@@ -1,4 +1,4 @@
-import { adminUser, targetUser, tempUserPrefix } from '@e2e/fixtures/users'
+import { adminUser, normalUser, targetUser, tempUserPrefix } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
 import { loginAsAdmin, loginAsNormalUser } from '@e2e/helpers/auth'
 import { findRoleId } from '@e2e/helpers/cleanup'
@@ -11,8 +11,9 @@ import { expect, test } from '@playwright/test'
  *   - admin 查看用户列表
  *   - admin 改用户资料（nickname）
  *   - admin 改用户角色（需要 USER_ROLE_MANAGE）
- *   - 普通用户尝试改用户资料 → 403
- *   - 普通用户尝试改用户角色 → 403
+ *   - 普通用户访问 /users → 403（无 user:view，J2=A 测试口径与 routes.spec 统一）
+ *   - 普通用户尝试改用户资料 → API 层 403（越权断言走 API，页面级只验路由守卫）
+ *   - 普通用户角色 Select → API 层 GET /roles 403（无 role:view）
  *   - admin 删除临时用户
  *   - admin 删除 admin → 409（初始管理员不可删除）
  */
@@ -117,57 +118,36 @@ test.describe('用户管理（admin 视角）', () => {
   })
 })
 
-test.describe('提权防护（普通用户视角）', () => {
+test.describe('提权防护（普通用户视角，J2=A：零权限预期 403 路由）', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsNormalUser(page)
   })
 
-  test('普通用户访问 /users → 正常显示（有 user:view 权限）', async ({ page }) => {
+  // M5/J2=A：普通用户无 USER_VIEW，布局层 ROUTE_PERMISSION_MAP 门控 → /403
+  test('普通用户访问 /users → 跳转 /403（无 user:view 权限）', async ({ page }) => {
     await page.goto('/users')
-    await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
+    await expect(page).toHaveURL(/\/403$/)
   })
 
-  test('普通用户尝试改用户资料 → 403 提示', async ({ page }) => {
-    await page.goto('/users')
-    await expect(
-      page.locator('.ant-table-row').filter({ hasText: targetUser.username }),
-    ).toBeVisible({ timeout: 10_000 })
+  // 越权操作断言走 API 层（页面级只验路由守卫）
+  test('普通用户尝试改用户资料 → API 层 403（无 user:update）', async () => {
+    await apiClient.login(normalUser.username, normalUser.password)
+    const { data } = await apiClient.get<{ list: Array<{ id: number; username: string }> }>(
+      '/users?pageSize=100',
+    )
+    const targetId = data.list.find((u) => u.username === targetUser.username)?.id
+    expect(targetId).toBeTruthy()
 
-    const targetRow = page.locator('.ant-table-row').filter({ hasText: targetUser.username })
-    await targetRow.getByRole('button', { name: '编辑' }).click()
-    await expect(page.getByRole('dialog', { name: '编辑用户' })).toBeVisible()
-
-    // 改 nickname
-    const nicknameInput = page.locator('.ant-modal').getByLabel('昵称')
-    await nicknameInput.clear()
-    await nicknameInput.fill('普通用户改的昵称')
-
-    await page.locator('.ant-modal-footer').getByRole('button', { name: '确 定' }).click()
-
-    // 应该看到错误提示（403 由 PermissionsGuard 拦截，普通用户无 user:update）
-    await expect(page.locator('.ant-message-error')).toBeVisible({ timeout: 5000 })
+    const res = await apiClient.patch(`/users/${targetId}`, {
+      nickname: '越权改的昵称',
+    })
+    expect(res.status).toBe(403)
   })
 
-  test('普通用户角色 Select 无选项（GET /roles 被 403 拦截）', async ({ page }) => {
-    await page.goto('/users')
-    await expect(
-      page.locator('.ant-table-row').filter({ hasText: targetUser.username }),
-    ).toBeVisible({ timeout: 10_000 })
-
-    const targetRow = page.locator('.ant-table-row').filter({ hasText: targetUser.username })
-    await targetRow.getByRole('button', { name: '编辑' }).click()
-    await expect(page.getByRole('dialog', { name: '编辑用户' })).toBeVisible()
-
-    // 普通用户无 role:view 权限，GET /roles 返回 403，rolesData.list 为空
-    // 打开角色 Select 下拉，验证无选项（前端越权防护的体现）
-    await page.locator('.ant-modal').getByRole('combobox').click()
-    const dropdown = page.locator('.ant-select-dropdown').last()
-    await expect(dropdown).toBeVisible({ timeout: 3000 })
-    // 等 antd 渲染完，再断言无选项
-    await page.waitForTimeout(500)
-    await expect(dropdown.locator('.ant-select-item')).toHaveCount(0)
-
-    // 关闭弹窗
-    await page.keyboard.press('Escape')
+  // 越权操作断言走 API 层
+  test('普通用户 GET /roles → 403（无 role:view，角色 Select 无数据来源）', async () => {
+    await apiClient.login(normalUser.username, normalUser.password)
+    const res = await apiClient.get('/roles')
+    expect(res.status).toBe(403)
   })
 })
