@@ -4,6 +4,7 @@ import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { auditLogs, users } from '@/db/schema'
+import { RedisService } from '@/modules/redis/redis.service'
 
 export interface RecordAuditLogParams {
   userId: number
@@ -23,9 +24,19 @@ export interface AuditFilter {
   keyword?: string
 }
 
+// M1：审计日志分钟级封顶——匿名端（userId=0）用更低上限防灌水稀释
+const AUDIT_RECORD_LIMIT_AUTH = 40
+const AUDIT_RECORD_LIMIT_ANON = 10
+
 @Injectable()
 export class AuditService {
+  constructor(private readonly redisService: RedisService) {}
+
   async record(params: RecordAuditLogParams): Promise<void> {
+    // M1：按来源（用户/IP）分钟级封顶，超限丢弃避免 audit_logs 被灌成百万级行
+    const allowed = await this.enforceRecordMinuteCap(params.userId, params.ip)
+    if (!allowed) return
+
     await db.insert(auditLogs).values({
       userId: params.userId,
       action: params.action,
@@ -36,6 +47,33 @@ export class AuditService {
       ip: params.ip,
       userAgent: params.userAgent,
     })
+  }
+
+  /**
+   * M1：审计记录分钟级封顶——单 Lua 脚本原子 INCR+EXPIRE，Redis 故障降级放行。
+   * 键设计：已认证按 userId、匿名按 IP 归一（折叠数字段防 key 爆炸）
+   */
+  private async enforceRecordMinuteCap(userId: number, ip?: string): Promise<boolean> {
+    try {
+      const minute = new Date().toISOString().slice(0, 16)
+      const isAuth = userId > 0
+      const key = isAuth
+        ? `audit:record:user:${userId}:${minute}`
+        : `audit:record:ip:${(ip ?? 'unknown').replace(/\d+/g, ':id')}:${minute}`
+      const limit = isAuth ? AUDIT_RECORD_LIMIT_AUTH : AUDIT_RECORD_LIMIT_ANON
+      // Lua：INCR + 首次 SET EXPIRE 原子，避免进程崩溃后 key 永驻
+      const n = (await this.redisService.eval(
+        `local n = redis.call('INCR', KEYS[1])
+         if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+         return n`,
+        [key],
+        [String(120)],
+      )) as number
+      return n <= limit
+    } catch {
+      // Redis 故障降级放行（宁多记不漏记）
+      return true
+    }
   }
 
   async findAll(

@@ -14,6 +14,21 @@ vi.mock('@/db/helpers', () => ({
 
 const { db: mockDb } = await import('@/db')
 
+// M1：Redis mock
+const redisServiceMock = {
+  eval: vi.fn(),
+  incr: vi.fn(),
+  expire: vi.fn(),
+  get: vi.fn(),
+  set: vi.fn(),
+  del: vi.fn(),
+  scanKeys: vi.fn(),
+}
+
+vi.mock('@/modules/redis/redis.service', () => ({
+  RedisService: vi.fn(() => redisServiceMock),
+}))
+
 import { AuditService } from './audit.service'
 
 describe('AuditService', () => {
@@ -21,7 +36,8 @@ describe('AuditService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    service = new AuditService()
+    redisServiceMock.eval.mockResolvedValue(1) // 默认放行
+    service = new AuditService(redisServiceMock as never)
   })
 
   describe('record', () => {
@@ -48,6 +64,58 @@ describe('AuditService', () => {
       expect(valuesCall.resource).toBe('user')
       expect(valuesCall.resourceId).toBe(2)
       expect(valuesCall.ip).toBe('127.0.0.1')
+    })
+
+    it('M1：匿名登录失败 userId=0 走 IP 键，超限丢弃', async () => {
+      vi.mocked(mockDb.insert).mockClear()
+      // 第 11 次匿名记录 → 超 10/min 上限
+      redisServiceMock.eval.mockResolvedValue(11)
+
+      await service.record({
+        userId: 0,
+        action: '登录',
+        resource: 'AuthController',
+        ip: '1.2.3.4',
+      })
+
+      expect(mockDb.insert).not.toHaveBeenCalled()
+    })
+
+    it('M1：已认证用户 userId>0 走 user 键，未超限时入库', async () => {
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockResolvedValue(undefined),
+      } as never)
+      redisServiceMock.eval.mockResolvedValue(5) // 5 <= 40，放行
+
+      await service.record({
+        userId: 42,
+        action: 'update',
+        resource: 'UsersController',
+        resourceId: 7,
+        ip: '10.0.0.1',
+      })
+
+      expect(mockDb.insert).toHaveBeenCalled()
+      // 验证 key 格式含 userId（eval 第一参数是脚本，第二参数是 keys 数组）
+      const callKeys = vi.mocked(redisServiceMock.eval).mock.calls[0][1] as string[]
+      expect(callKeys[0]).toContain('audit:record:user:42:')
+    })
+
+    it('M1：Redis 故障降级放行（宁多记不漏记）', async () => {
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockResolvedValue(undefined),
+      } as never)
+      redisServiceMock.eval.mockRejectedValue(new Error('Redis down'))
+
+      await service.record({
+        userId: 0,
+        action: '登录',
+        resource: 'AuthController',
+        ip: '5.6.7.8',
+      })
+
+      // 降级：即使 Redis 故障也入库
+      expect(mockDb.insert).toHaveBeenCalled()
     })
   })
 
