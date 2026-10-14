@@ -5,12 +5,13 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import { isNotNull } from 'drizzle-orm'
 import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { files } from '@/db/schema'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
-import { FilesService } from '@/modules/files/files.service'
+import { FilesService, TRASH_RETENTION_DAYS } from '@/modules/files/files.service'
 import { MailService } from '@/modules/mail/mail.service'
 import { RedisService } from '@/modules/redis/redis.service'
 
@@ -98,6 +99,36 @@ export class ScheduleService {
       }
     } catch (err) {
       this.logger.warn(`孤儿文件清理失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    // L8：同步清理 uploads-trash 中无 DB 行对应的孤立文件（M3 竞态窗口留下的残留）
+    // 口径与 purgeExpiredTrash 一致：mtime 超 30 天且 DB 无对应行即视为孤儿
+    try {
+      const trashDir = join(process.cwd(), 'uploads-trash')
+      const trashEntries = await readdir(trashDir).catch(() => [] as string[])
+      if (trashEntries.length === 0) return
+      // trashPath 绝对路径集合用于快速排除已知行
+      const trashRows = await db
+        .select({ trashPath: files.trashPath })
+        .from(files)
+        .where(isNotNull(files.trashPath))
+      const knownTrash = new Set(trashRows.map((r) => r.trashPath))
+      const trashCutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000
+      let trashRemoved = 0
+      for (const name of trashEntries) {
+        const full = join(trashDir, name)
+        const st = await stat(full).catch(() => null)
+        if (!st || !st.isFile() || st.mtimeMs > trashCutoff || knownTrash.has(full)) continue
+        await unlink(full).catch(() => null)
+        trashRemoved += 1
+      }
+      if (trashRemoved > 0) {
+        this.logger.log(`清理 uploads-trash 孤儿文件 ${trashRemoved} 个`)
+      }
+    } catch (err) {
+      this.logger.warn(
+        `uploads-trash 孤儿清理失败: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 

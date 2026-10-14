@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, rename, unlink } from 'node:fs/promises'
+import { copyFile, mkdir, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   BadRequestException,
@@ -32,7 +32,7 @@ import { RedisService } from '@/modules/redis/redis.service'
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
 const TRASH_DIR = join(process.cwd(), 'uploads-trash')
 // J3：回收站保留期（拍板 30 天）——到期软删文件物理删除，与 backups 30 份口径对齐
-const TRASH_RETENTION_DAYS = 30
+export const TRASH_RETENTION_DAYS = 30
 // L6：单用户上传日配额——防持有者持续写盘（超限留下的 multer 临时文件由每小时孤儿清理回收）
 const UPLOAD_DAILY_LIMIT = 100
 
@@ -243,6 +243,16 @@ export class FilesService {
     }
 
     // 抢锁成功后搬盘到预生成的 trashPath；搬盘失败保留 trashPath 记录，后续 restore 会重试搬盘
+    // M3：搬盘前先复核行态——若 trashPath 已被并发 restore 清空，说明文件仍在原路径且已恢复，跳过搬盘
+    const postLock = await db
+      .select({ trashPath: files.trashPath })
+      .from(files)
+      .where(and(eq(files.id, id), eq(files.trashPath, preTrashPath)))
+      .limit(1)
+    if (!postLock.length) {
+      this.logger.warn(`文件 ID ${id} remove 抢锁后行态已变更（疑似并发 restore），跳过搬盘`)
+      return { message: `文件 ID ${id} 已删除` }
+    }
     try {
       await mkdir(TRASH_DIR, { recursive: true })
       await safeMove(file.path, preTrashPath)

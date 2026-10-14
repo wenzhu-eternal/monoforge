@@ -64,6 +64,19 @@ describe('FilesService', () => {
   })
 
   describe('remove', () => {
+    // M3：postLock 复核查询默认命中（trashPath 匹配），不走早退分支
+    const makeSelectChain = (rows: unknown[]) =>
+      ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue(rows),
+          }),
+        }),
+      }) as never
+
+    beforeEach(() => {
+      mockSelect.mockReturnValue(makeSelectChain([{ trashPath: '/tmp/uploads-trash/12345-a.png' }]))
+    })
     it('文件不存在 → 抛 NotFoundException', async () => {
       mockFindFirst.mockResolvedValue(undefined)
 
