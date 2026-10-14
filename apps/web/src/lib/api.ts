@@ -259,6 +259,12 @@ api.interceptors.response.use(
       }
     }
 
+    // L16：refresh 成功但重试仍 401（jti 吊销竞态/Redis 阴性缓存），视为终态登出
+    if (error.response?.status === 401) {
+      clearUserScopedState()
+      window.location.href = '/login'
+    }
+
     return Promise.reject(error)
   },
 )

@@ -402,7 +402,7 @@ export function UsersContent() {
               placeholder={canViewRoles ? '请选择角色' : '无角色查看权限'}
               // J5：编辑时允许清空以解绑角色；新建仍必填（rules 保证）
               allowClear={!canManageRole || !!editingUser}
-              disabled={!canManageRole}
+              disabled={isSelf || !canManageRole}
               options={allRoles?.map((role) => ({
                 value: role.id,
                 label: role.name,
@@ -411,7 +411,11 @@ export function UsersContent() {
           </Form.Item>
           {editingUser && (
             <Form.Item name="status" label="状态" valuePropName="checked">
-              <Switch checkedChildren="启用" unCheckedChildren="禁用" disabled={!canManageRole} />
+              <Switch
+                checkedChildren="启用"
+                unCheckedChildren="禁用"
+                disabled={isSelf || !canManageRole}
+              />
             </Form.Item>
           )}
         </Form>
