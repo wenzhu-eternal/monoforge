@@ -319,6 +319,16 @@ describe('FilesService', () => {
       await expect(service.upload(file as never)).rejects.toThrow()
       expect(mockRedisQuota.eval).not.toHaveBeenCalled()
     })
+
+    it('M4 复现：配额检查抛 409（未扣额）时不触发 rollback，杜绝"注定失败请求退额"旁路', async () => {
+      // consumeDailyQuota 抛 409 时 quotaConsumed 仍为 false → catch 不得 DECR。
+      // 修复前无条件 rollback：一次必然 409 的请求也退一格，与成功上传交替即绕过 100/日上限
+      mockRedisQuota.eval.mockResolvedValue(101)
+      await expect(service.upload(file as never, 7)).rejects.toThrow(ConflictException)
+      // eval 只被调用一次（consume INCR），绝不出现第二次 rollback DECR
+      expect(mockRedisQuota.eval).toHaveBeenCalledTimes(1)
+      expect(mockUnlink).toHaveBeenCalledWith('/uploads/a.png')
+    })
   })
 
   describe('purgeExpiredTrash', () => {

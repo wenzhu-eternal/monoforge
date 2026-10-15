@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common'
+import { ConflictException, ForbiddenException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TokenPayload } from '@/modules/auth/auth.service'
 import type { NotificationsService } from '@/modules/notifications/notifications.service'
@@ -9,6 +9,7 @@ describe('WebsocketController', () => {
   let controller: WebsocketController
   let eventsService: EventsService
   let notificationsService: NotificationsService
+  let redisService: { eval: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
     eventsService = {
@@ -18,10 +19,14 @@ describe('WebsocketController', () => {
 
     notificationsService = {
       create: vi.fn(),
-      consumeNotifyQuota: vi.fn().mockResolvedValue(undefined),
     } as unknown as NotificationsService
 
-    controller = new WebsocketController(eventsService, notificationsService)
+    // M13：配额改走 consumeDailyQuota（共享工具），controller 直接注入 RedisService
+    redisService = {
+      eval: vi.fn().mockResolvedValue(1),
+    }
+
+    controller = new WebsocketController(eventsService, notificationsService, redisService as never)
   })
 
   it('should be defined', () => {
@@ -106,6 +111,25 @@ describe('WebsocketController', () => {
 
       expect(result.delivered).toBe(false)
       expect(notificationsService.create).toHaveBeenCalledOnce()
+    })
+
+    it('M13：超日配额（eval 返回 51）→ 抛 409，不落库', async () => {
+      const dto = { userId: 5, type: 'test', title: 'hello', content: 'world' }
+      // consumeDailyQuota 的 Lua INCR 返回 51（> 上限 50）→ 抛 ConflictException
+      redisService.eval.mockResolvedValue(51)
+
+      await expect(controller.notify(dto, user)).rejects.toThrow(ConflictException)
+      expect(notificationsService.create).not.toHaveBeenCalled()
+    })
+
+    it('M13：create 失败 → 退额（第二次 eval 为守卫 DECR）后重抛', async () => {
+      const dto = { userId: 5, type: 'test', title: 'hello', content: 'world' }
+      // 第一次 eval = consumeDailyQuota INCR（返回 1 未超限），第二次 = rollbackDailyQuota DECR
+      redisService.eval.mockResolvedValueOnce(1).mockResolvedValueOnce(0)
+      vi.mocked(notificationsService.create).mockRejectedValue(new Error('db down'))
+
+      await expect(controller.notify(dto, user)).rejects.toThrow('db down')
+      expect(redisService.eval).toHaveBeenCalledTimes(2)
     })
   })
 })

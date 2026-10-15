@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import type { ThrottlerStorage } from '@nestjs/throttler'
+import { appendErrorLog } from '@/common/logger'
 import { RedisService } from '@/modules/redis/redis.service'
 
 /**
@@ -44,25 +45,42 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
     const ttlSeconds = Math.ceil(ttl / 1000)
     const blockSeconds = Math.ceil(blockDuration / 1000)
 
-    const result = (await this.redisService.eval(
-      RedisThrottlerStorage.SCRIPT,
-      [redisKey],
-      [ttlSeconds, limit, blockSeconds],
-    )) as [number, number]
+    // M8：Redis 抖动 fail-open——原 eval 抛错直穿 ThrottlerGuard（@nestjs/throttler 无兜底），
+    // 故障期每个请求（含 /health）都 500；与登录锁定/审计封顶的"故障放行"降级口径对齐。
+    // 放行而非阻断：限流是防滥用的可用性优化，Redis 短暂不可用不应放大成全站 500。
+    try {
+      const result = (await this.redisService.eval(
+        RedisThrottlerStorage.SCRIPT,
+        [redisKey],
+        [ttlSeconds, limit, blockSeconds],
+      )) as [number, number]
 
-    const totalHits = result[0]
-    const isBlocked = result[1] === 1
+      const totalHits = result[0]
+      const isBlocked = result[1] === 1
 
-    // 用 TTL 命令取真实剩余时间（毫秒），让 429 的 Retry-After 头反映实际等待秒数；
-    // 异常值（-1 永久/-2 不存在）回退到入参 ttl。blocked 时脚本已把 key TTL 改为 blockDuration，剩余即 block 剩余
-    const realTtl = await this.redisService.ttl(redisKey)
-    const timeToExpire = realTtl > 0 ? realTtl * 1000 : ttl
+      // 用 TTL 命令取真实剩余时间（毫秒），让 429 的 Retry-After 头反映实际等待秒数；
+      // 异常值（-1 永久/-2 不存在）回退到入参 ttl。blocked 时脚本已把 key TTL 改为 blockDuration，剩余即 block 剩余
+      const realTtl = await this.redisService.ttl(redisKey)
+      const timeToExpire = realTtl > 0 ? realTtl * 1000 : ttl
 
-    return {
-      totalHits,
-      timeToExpire,
-      isBlocked,
-      timeToBlockExpire: isBlocked && blockSeconds > 0 ? Math.max(realTtl, 0) * 1000 : 0,
+      return {
+        totalHits,
+        timeToExpire,
+        isBlocked,
+        timeToBlockExpire: isBlocked && blockSeconds > 0 ? Math.max(realTtl, 0) * 1000 : 0,
+      }
+    } catch (err) {
+      // fail-open 放行：限流是防滥用的可用性优化，Redis 短暂不可用不应放大成全站 500。
+      // 写文件日志告警——放行动作本身需要可观测，否则限流静默失效无从发现
+      appendErrorLog(
+        `[Throttler] Redis 限流存储异常，本次请求 fail-open 放行: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return {
+        totalHits: 1,
+        timeToExpire: ttl,
+        isBlocked: false,
+        timeToBlockExpire: 0,
+      }
     }
   }
 }

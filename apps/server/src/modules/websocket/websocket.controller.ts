@@ -15,10 +15,15 @@ import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { NotificationsService } from '@/modules/notifications/notifications.service'
+import { RedisService } from '@/modules/redis/redis.service'
 import { NotifyDto } from './dto/notify.dto'
 import { EventsService } from './events.service'
+
+// M13：通知日配额上限提为模块常量——原内联在 handler，运维无法从代码外快速定位
+const NOTIFY_DAILY_LIMIT = 50
 
 @ApiTags('WebSocket')
 @ApiBearerAuth()
@@ -28,6 +33,7 @@ export class WebsocketController {
   constructor(
     private readonly eventsService: EventsService,
     private readonly notificationsService: NotificationsService,
+    private readonly redisService: RedisService,
   ) {}
 
   @SkipThrottle()
@@ -59,15 +65,22 @@ export class WebsocketController {
     if (dto.userId !== user.sub) {
       throw new ForbiddenException('只能给自己发送通知')
     }
-    // L4：日配额检查（50 条/日）
-    const NOTIFY_DAILY_LIMIT = 50
-    await this.notificationsService.consumeNotifyQuota(user.sub, NOTIFY_DAILY_LIMIT)
-    const created = await this.notificationsService.create({
-      userId: dto.userId,
-      type: dto.type,
-      title: dto.title,
-      content: dto.content,
-    })
+    // M13：日配额统一走 consumeDailyQuota——键口径 quota:notify:<uid>:<yyyymmdd> 与
+    // SECURITY.md 承诺一致，超限抛 409（与 backup/upload 同族）；原手写实现键用连字符
+    // 日期且抛 404，运维按文档查不到、配额触顶零观测
+    await consumeDailyQuota(this.redisService, 'notify', user.sub, NOTIFY_DAILY_LIMIT)
+    const created = await this.notificationsService
+      .create({
+        userId: dto.userId,
+        type: dto.type,
+        title: dto.title,
+        content: dto.content,
+      })
+      .catch(async (err: unknown) => {
+        // M13：create 失败退额——DB 抖动期重试否则可烧穿 50/日（对齐 manualBackup rollback）
+        await rollbackDailyQuota(this.redisService, 'notify', user.sub).catch(() => {})
+        throw err
+      })
     return {
       message: '通知已发送',
       notification: created,
