@@ -26,16 +26,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let message = '服务器内部错误'
     let shouldRecordToDb = false
 
-    if (exception instanceof HttpException) {
+    // L11/M3：Multer 超限（如文件过大）返回 413，避免以 500 入库污染错误日志。
+    // M3：MulterError extends Error 而非 HttpException（实读 multer 源码），判定必须在
+    // HttpException 分支之外——原嵌套在其内为永不可达死代码，超限上传仍 500 入库
+    if (exception instanceof multer.MulterError) {
+      status = HttpStatus.PAYLOAD_TOO_LARGE // 413
+      message = '文件过大，请上传 10MB 以内的文件'
+      shouldRecordToDb = false
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus()
       const exceptionResponse = exception.getResponse()
-
-      // L11：Multer 超限（如文件过大）返回 413，避免以 500 入库污染错误日志
-      if (exception instanceof multer.MulterError) {
-        status = HttpStatus.PAYLOAD_TOO_LARGE // 413
-        message = '文件过大，请上传 10MB 以内的文件'
-        shouldRecordToDb = false
-      }
 
       // nestjs-zod 的 ZodSerializationException/ZodValidationException 会把 ZodError 挂在 error 上
       // 完整 issues 仅写入日志便于排障，不回传客户端以避免暴露字段约束

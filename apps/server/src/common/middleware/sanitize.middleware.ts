@@ -1,7 +1,10 @@
 import { Injectable, NestMiddleware } from '@nestjs/common'
 import type { Request, Response } from 'express'
 
-// 需要脱敏的字段名（小写匹配）
+// 需要脱敏的字段名（小写子串匹配）
+// M7：原表用完整词 'phonenumber'——真实键常是 'phone'，'phone'.includes('phonenumber')
+// 为 false 恒不命中；email/code 完全缺席。任何过滤镜入库的请求体（401/403/429/5xx 的
+// error_logs.context）中 email/phone/验证码明文落库，与 L2 掩码口径相悖
 const SENSITIVE_FIELDS = [
   'password',
   'passwd',
@@ -12,7 +15,9 @@ const SENSITIVE_FIELDS = [
   'authorization',
   'creditcard',
   'idcard',
-  'phonenumber',
+  'phone',
+  'email',
+  'code',
 ]
 
 const MASK = '***REDACTED***'
