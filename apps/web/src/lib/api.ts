@@ -1,5 +1,5 @@
 import { ErrorCodes, ErrorMessages } from '@shared'
-import axios, { type AxiosRequestConfig } from 'axios'
+import axios, { type AxiosError, type AxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/store/auth-store'
 import { clearUserScopedState } from './auth-cleanup'
 import { env } from './env'
@@ -103,7 +103,8 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
     // L11：无 Web Locks（Safari<16.4 等）跨 tab 并发刷新无互斥——他 tab 先消费单次
     // cookie 后本方必 401，被无差别登出。失败后等 500ms 二次检查共享 AT 键：他 tab
     // 已刷新则直接采用其结果；存储不可用时无共享可言，照常抛原错误
-    // M4：mustChangePassword 用户的 refresh 必 401，此时应跳 /change-password 而非清态登出
+    // M2：must-change 判定已移入拦截器 catch（此处赋值 href 会被外层 catch 的
+    // href='/login' 覆盖——同一 JS 任务内后赋值者赢，本方跳转永不生效）
     try {
       return await doRefresh()
     } catch (error) {
@@ -123,15 +124,6 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
       if (doneAt2 >= issuedAt && shared2) {
         useAuthStore.getState().setToken(shared2)
         return shared2
-      }
-      // M4：must-change 用户 refresh 必 401，直接跳改密页（与拦截器 must-change 分支互斥）
-      const axiosErr = error as import('axios').AxiosError<{ message?: string } | undefined>
-      if (
-        axiosErr?.response?.status === 401 &&
-        axiosErr.response.data?.message === ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD]
-      ) {
-        window.location.href = '/change-password'
-        throw error
       }
       throw error
     }
@@ -221,7 +213,11 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       !originalRequest.url?.includes('/api/v1/auth/refresh') &&
-      !originalRequest.url?.includes('/api/v1/auth/login')
+      !originalRequest.url?.includes('/api/v1/auth/login') &&
+      // M1：注册链路的 401（验证码错误等）与登录同理——本就是未登录态，进刷新链
+      // 必失败并触发终态登出整页重载，吞掉注册页的错误提示
+      !originalRequest.url?.includes('/api/v1/auth/register') &&
+      !originalRequest.url?.includes('/api/v1/auth/send-register-code')
     ) {
       if (isRefreshing) {
         // 排队等待 refresh 完成，加 15s 超时避免永久挂起
@@ -265,6 +261,19 @@ api.interceptors.response.use(
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
+        // M2：must-change 用户 refresh 必 401——跳改密页且不清态（清态会弹回登录页），
+        // 与下方终态登出互斥。原判定在 refreshAccessToken 无锁分支内：主路径（Web Locks）
+        // 401 直接穿透到此被清态覆盖，双重失效
+        const refreshErr = refreshError as AxiosError<{ message?: string } | undefined>
+        if (
+          refreshErr?.response?.status === 401 &&
+          refreshErr.response.data?.message === ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD]
+        ) {
+          if (!window.location.pathname.startsWith('/change-password')) {
+            window.location.href = '/change-password'
+          }
+          return Promise.reject(refreshError)
+        }
         clearUserScopedState()
         window.location.href = '/login'
         return Promise.reject(refreshError)
@@ -273,8 +282,10 @@ api.interceptors.response.use(
       }
     }
 
-    // L16：refresh 成功但重试仍 401（jti 吊销竞态/Redis 阴性缓存），视为终态登出
-    if (error.response?.status === 401) {
+    // L16/M1：refresh 成功但重试仍 401（jti 吊销竞态/Redis 阴性缓存），视为终态登出。
+    // 仅限 _retry 重试请求——收窄前无条件吞掉一切 401，登录/注册页输错密码必现整页
+    // 重载、错误提示闪现即失（上轮 L16 修复丢条件，本轮 P0 修正）
+    if (error.response?.status === 401 && originalRequest?._retry === true) {
       clearUserScopedState()
       window.location.href = '/login'
     }
