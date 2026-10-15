@@ -262,14 +262,35 @@ export class FilesService {
       this.logger.warn(`文件 ID ${id} remove 抢锁后行态已变更（疑似并发 restore），跳过搬盘`)
       return { message: `文件 ID ${id} 已删除` }
     }
+    let moved = false
     try {
       await mkdir(TRASH_DIR, { recursive: true })
       await safeMove(file.path, preTrashPath)
+      moved = true
     } catch (err) {
       // 搬盘失败不阻塞软删流程，文件留在原路径，trashPath 记录预生成路径供 restore 重试
       this.logger.warn(
         `磁盘文件移到隔离目录失败: ${err instanceof Error ? err.message : String(err)}`,
       )
+    }
+
+    // M9：搬盘后复检行态——并发 restore 在搬盘窗口内已清空 deletedAt 时，行态是"正常"但
+    // 文件刚被搬进隔离目录，磁盘与行态漂移（用户看到文件却 404），补偿搬回原路径
+    if (moved) {
+      const post = await db
+        .select({ deletedAt: files.deletedAt })
+        .from(files)
+        .where(eq(files.id, id))
+        .limit(1)
+      const row = post[0]
+      if (row && !row.deletedAt) {
+        this.logger.warn(`文件 ID ${id} remove 搬盘后行态已恢复（并发 restore），搬回原路径`)
+        await safeMove(preTrashPath, file.path).catch((err) => {
+          this.logger.warn(
+            `M9 补偿搬回原路径失败: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        })
+      }
     }
 
     return { message: `文件 ID ${id} 已删除` }
@@ -370,6 +391,30 @@ export class FilesService {
         .update(files)
         .set({ trashPath: null })
         .where(and(eq(files.id, id), isNull(files.deletedAt)))
+
+      // M9：搬盘后复检行态——并发 remove 在搬盘窗口内已重新软删时，行态指向新 trashPath 而
+      // 文件刚被搬回原路径，磁盘与行态漂移（列表显示已删除但文件在原路径），补偿搬回新隔离路径
+      const post = await db
+        .select({ deletedAt: files.deletedAt, trashPath: files.trashPath })
+        .from(files)
+        .where(eq(files.id, id))
+        .limit(1)
+      const row = post[0]
+      if (
+        row?.deletedAt &&
+        row.trashPath &&
+        row.trashPath !== file.trashPath &&
+        isPathSafe(row.trashPath, TRASH_DIR)
+      ) {
+        this.logger.warn(
+          `文件 ID ${id} restore 搬盘后行态已被并发 remove 重新软删，补偿搬回新隔离路径`,
+        )
+        await safeMove(file.path, row.trashPath).catch((err) => {
+          this.logger.warn(
+            `M9 补偿搬回隔离路径失败: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        })
+      }
     }
 
     return { message: `文件 ID ${id} 已恢复` }

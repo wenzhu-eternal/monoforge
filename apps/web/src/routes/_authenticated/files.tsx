@@ -48,7 +48,7 @@ function FilesPage() {
   return <FilesContent />
 }
 
-function FilesContent() {
+export function FilesContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -59,7 +59,10 @@ function FilesContent() {
   const previewMountedRef = useRef(true)
 
   // 预览 blob 卸载兜底：直接切路由时回收，否则驻留到页签关闭
+  // M10：StrictMode 双挂载会先跑 cleanup 再重跑 effect，ref 不回真则预览请求
+  // resolve 后被误判"已卸载"直接丢弃——effect 体内回真（与 cleanup 严格配对）
   useEffect(() => {
+    previewMountedRef.current = true
     return () => {
       previewMountedRef.current = false
       if (previewUrlRef.current) {

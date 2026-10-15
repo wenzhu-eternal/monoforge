@@ -34,6 +34,12 @@ vi.mock('@/common/file-validator', async (importOriginal) => {
   }
 })
 
+// Mock node:fs：existsSync 默认 false（M9 行态复检默认无漂移，个别用例显式开启）
+const mockExistsSync = vi.fn().mockReturnValue(false)
+vi.mock('node:fs', () => ({
+  existsSync: (...args: unknown[]) => mockExistsSync(...args),
+}))
+
 // Mock fs/promises（capture mkdir + rename 调用）
 const mockMkdir = vi.fn().mockResolvedValue(undefined)
 const mockRename = vi.fn().mockResolvedValue(undefined)
@@ -63,11 +69,22 @@ describe('FilesService', () => {
     eval: ReturnType<typeof vi.fn>
   }
 
+  // M3/M9 共用：db.select 的 from→where→limit 链 mock
+  const makeSelectChain = (rows: unknown[]) =>
+    ({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(rows),
+        }),
+      }),
+    }) as never
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockMkdir.mockResolvedValue(undefined)
     mockRename.mockResolvedValue(undefined)
     mockUnlink.mockResolvedValue(undefined)
+    mockExistsSync.mockReturnValue(false)
     mockRedisQuota = {
       eval: vi.fn().mockResolvedValue(1),
     }
@@ -75,18 +92,11 @@ describe('FilesService', () => {
   })
 
   describe('remove', () => {
-    // M3：postLock 复核查询默认命中（trashPath 匹配），不走早退分支
-    const makeSelectChain = (rows: unknown[]) =>
-      ({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue(rows),
-          }),
-        }),
-      }) as never
-
+    // M3：postLock 复核查询默认命中（trashPath 匹配）且行态未漂移（deletedAt 仍非空）
     beforeEach(() => {
-      mockSelect.mockReturnValue(makeSelectChain([{ trashPath: '/tmp/uploads-trash/12345-a.png' }]))
+      mockSelect.mockReturnValue(
+        makeSelectChain([{ trashPath: '/tmp/uploads-trash/12345-a.png', deletedAt: new Date() }]),
+      )
     })
     it('文件不存在 → 抛 NotFoundException', async () => {
       mockFindFirst.mockResolvedValue(undefined)
@@ -181,6 +191,35 @@ describe('FilesService', () => {
       expect(mockRename).toHaveBeenCalled()
     })
 
+    it('M9：搬盘后行态复检——并发 restore 已恢复行时把文件搬回原路径', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        path: '/uploads/a.png',
+        filename: 'a.png',
+        uploadedBy: 5,
+      })
+      mockUpdate.mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+          }),
+        }),
+      } as never)
+      // 第一次 select：postLock 复核命中；第二次：M9 复检发现行已被并发 restore 恢复
+      mockSelect
+        .mockReturnValueOnce(
+          makeSelectChain([{ trashPath: '/tmp/uploads-trash/12345-a.png', deletedAt: new Date() }]),
+        )
+        .mockReturnValueOnce(makeSelectChain([{ deletedAt: null, trashPath: null }]))
+
+      await service.remove(1, 5, false)
+
+      // 两次 rename：先搬进隔离目录，检测到漂移后补偿搬回原路径
+      expect(mockRename).toHaveBeenCalledTimes(2)
+      expect(mockRename.mock.calls[1]?.[0]).toContain('uploads-trash')
+      expect(mockRename.mock.calls[1]?.[1]).toBe('/uploads/a.png')
+    })
+
     it('磁盘 rename 失败 → 仅告警不阻断软删', async () => {
       mockFindFirst.mockResolvedValue({
         id: 1,
@@ -206,6 +245,11 @@ describe('FilesService', () => {
   })
 
   describe('restore', () => {
+    // M9：搬盘后行态复检默认无漂移（deletedAt 仍为 null，未被并发 remove 重新软删）
+    beforeEach(() => {
+      mockSelect.mockReturnValue(makeSelectChain([{ deletedAt: null, trashPath: null }]))
+    })
+
     it('文件不存在 → 抛 NotFoundException', async () => {
       mockFindFirst.mockResolvedValue(undefined)
 
@@ -262,6 +306,41 @@ describe('FilesService', () => {
       expect(result.message).toContain('1')
       expect(mockRename).toHaveBeenCalledWith('/uploads-trash/123-a.png', '/uploads/a.png')
       expect(mockUpdate).toHaveBeenCalledTimes(2)
+    })
+
+    it('M9：搬盘后行态复检——并发 remove 已重新软删时把文件搬回行当前 trashPath', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        deletedAt: new Date(),
+        uploadedBy: 5,
+        trashPath: '/uploads-trash/123-a.png',
+        path: '/uploads/a.png',
+      })
+      // 第一次 update: 条件抢锁，第二次: 清空 trashPath
+      mockUpdate
+        .mockReturnValueOnce({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([{ id: 1, deletedAt: null }]),
+            }),
+          }),
+        } as never)
+        .mockReturnValueOnce({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        } as never)
+      // 搬盘后复检发现行已被并发 remove 重新软删（新 trashPath）
+      mockSelect.mockReturnValue(
+        makeSelectChain([{ deletedAt: new Date(), trashPath: '/uploads-trash/999-new.png' }]),
+      )
+
+      await service.restore(1, 5, false)
+
+      // 两次 rename：先从隔离目录还原，检测到漂移后搬回行当前的新 trashPath
+      expect(mockRename).toHaveBeenCalledTimes(2)
+      expect(mockRename.mock.calls[0]).toEqual(['/uploads-trash/123-a.png', '/uploads/a.png'])
+      expect(mockRename.mock.calls[1]).toEqual(['/uploads/a.png', '/uploads-trash/999-new.png'])
     })
 
     it('trashPath 为空 → 仅恢复 DB，不还原磁盘', async () => {
