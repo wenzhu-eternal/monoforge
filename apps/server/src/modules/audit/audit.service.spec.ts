@@ -29,6 +29,11 @@ vi.mock('@/modules/redis/redis.service', () => ({
   RedisService: vi.fn(() => redisServiceMock),
 }))
 
+const mockAppendErrorLog = vi.fn()
+vi.mock('@/common/logger', () => ({
+  appendErrorLog: (...args: unknown[]) => mockAppendErrorLog(...args),
+}))
+
 import { AuditService } from './audit.service'
 
 describe('AuditService', () => {
@@ -79,6 +84,46 @@ describe('AuditService', () => {
       })
 
       expect(mockDb.insert).not.toHaveBeenCalled()
+    })
+
+    it('L5：超限丢弃时写文件日志兜底（合法连续变更 >40 才无声缺失，审计页"看起来完整"实已缺行）', async () => {
+      mockAppendErrorLog.mockClear()
+      vi.mocked(mockDb.insert).mockClear()
+      // 超封顶 → 丢弃
+      redisServiceMock.eval.mockResolvedValue(41)
+
+      await service.record({
+        userId: 7,
+        action: 'update',
+        resource: 'UsersController',
+        ip: '1.2.3.4',
+      })
+
+      expect(mockDb.insert).not.toHaveBeenCalled()
+      expect(mockAppendErrorLog).toHaveBeenCalledWith(expect.stringContaining('审计分钟封顶'))
+    })
+
+    it('M5：匿名 IP 归一保留前三段（/24），不同网段各自独立计数不共享同一预算', async () => {
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockResolvedValue(undefined),
+      } as never)
+      redisServiceMock.eval.mockClear()
+
+      // 两个不同网段的 IP，键必须不同——否则全网匿名共享 10/min，爆破者烧穿后
+      // 受害者的匿名审计记录被静默丢弃（取证完整性受损）
+      await service.record({ userId: 0, action: '登录', resource: 'AuthController', ip: '1.2.3.4' })
+      await service.record({ userId: 0, action: '登录', resource: 'AuthController', ip: '9.8.7.6' })
+      // 同网段（前三段相同）末段不同 → 归一到同一桶
+      await service.record({
+        userId: 0,
+        action: '登录',
+        resource: 'AuthController',
+        ip: '1.2.3.99',
+      })
+
+      const keys = vi.mocked(redisServiceMock.eval).mock.calls.map((c) => c[1] as string[])
+      expect(keys[0][0]).not.toBe(keys[1][0])
+      expect(keys[2][0]).toBe(keys[0][0])
     })
 
     it('M1：已认证用户 userId>0 走 user 键，未超限时入库', async () => {

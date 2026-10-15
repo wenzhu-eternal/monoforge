@@ -2,6 +2,8 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import type { ErrorLog, ErrorLogGroup, ErrorStats, ErrorWhitelist } from '@shared/schemas/error-log'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq, sql } from 'drizzle-orm'
+import { appendErrorLog } from '@/common/logger'
+import { normalizeIpForKey } from '@/common/utils/ip-normalize'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { errorLogs } from '@/db/schema'
@@ -79,8 +81,19 @@ export class ErrorLogsService {
     }
 
     if (params.statusCode && params.statusCode < 500) {
-      const allowed = await this.enforceRecordMinuteCap(params.statusCode, params.url)
-      if (!allowed) return
+      const allowed = await this.enforceRecordMinuteCap(
+        params.statusCode,
+        params.url,
+        params.userId,
+        params.ip,
+      )
+      if (!allowed) {
+        // L5：丢弃必须留痕——静默 return 后无法事后解释该端点该分钟的 4xx 缺口
+        appendErrorLog(
+          `[ErrorLogs] 4xx 分钟封顶丢弃: status=${params.statusCode} url=${params.url ?? 'unknown'}`,
+        )
+        return
+      }
     }
 
     await this.insertLog({
@@ -91,16 +104,26 @@ export class ErrorLogsService {
   }
 
   /**
-   * record() 分钟级封顶：key=状态码+端点路径+分钟，超 20 条丢弃。
+   * record() 分钟级封顶：key=状态码+端点路径+来源+分钟，超 20 条丢弃。
    * Redis 故障降级放行（宁可多记不漏记）。
    */
-  private async enforceRecordMinuteCap(statusCode: number, url?: string): Promise<boolean> {
+  private async enforceRecordMinuteCap(
+    statusCode: number,
+    url?: string,
+    userId?: number,
+    ip?: string,
+  ): Promise<boolean> {
     try {
       // L7：单 Lua 脚本原子 INCR+EXPIRE，避免两步之间进程崩溃导致 key 永驻
       // P2-6：数字段折叠为 :id，避免 /users/1…/99999 打爆 key 空间
       const path = ((url ?? 'unknown').split('?')[0] ?? 'unknown').replace(/\d+/g, ':id')
+      // M6：来源维度入键——原键按 (statusCode, path) 全局共享、无来源，已认证低权攻击者
+      // 先对目标端点刷 20 次烧干本分钟预算，随后同端点的越权探测第 21 条起静默丢弃且
+      // 4xx 无 IP 维度无法事后归因。来源入键后各用户/IP 独立计数，攻击者烧穿不影响取证。
+      // 已认证按 userId（精确），匿名按归一 IP（/24 网段，复用 M5 归一防 key 爆炸）
+      const source = userId && userId > 0 ? `u${userId}` : `ip${normalizeIpForKey(ip)}`
       const minute = new Date().toISOString().slice(0, 16)
-      const key = `err:record:${statusCode}:${path}:${minute}`
+      const key = `err:record:${statusCode}:${path}:${source}:${minute}`
       const n = (await this.redisService.eval(
         `local n = redis.call('INCR', KEYS[1])
          if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end

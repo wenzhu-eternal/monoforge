@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import type { AuditLog } from '@shared/schemas/audit'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq, sql } from 'drizzle-orm'
+import { appendErrorLog } from '@/common/logger'
+import { normalizeIpForKey } from '@/common/utils/ip-normalize'
 import { db } from '@/db'
 import { auditLogs, users } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -35,7 +37,14 @@ export class AuditService {
   async record(params: RecordAuditLogParams): Promise<void> {
     // M1：按来源（用户/IP）分钟级封顶，超限丢弃避免 audit_logs 被灌成百万级行
     const allowed = await this.enforceRecordMinuteCap(params.userId, params.ip)
-    if (!allowed) return
+    if (!allowed) {
+      // L5：丢弃必须留痕——封顶静默 return 会让审计页"看起来完整"实已缺行，
+      // 只有超限瞬间的文件告警能事后解释缺口
+      appendErrorLog(
+        `[Audit] 审计分钟封顶丢弃: user=${params.userId} action=${params.action} resource=${params.resource}`,
+      )
+      return
+    }
 
     await db.insert(auditLogs).values({
       userId: params.userId,
@@ -59,7 +68,7 @@ export class AuditService {
       const isAuth = userId > 0
       const key = isAuth
         ? `audit:record:user:${userId}:${minute}`
-        : `audit:record:ip:${(ip ?? 'unknown').replace(/\d+/g, ':id')}:${minute}`
+        : `audit:record:ip:${normalizeIpForKey(ip)}:${minute}`
       const limit = isAuth ? AUDIT_RECORD_LIMIT_AUTH : AUDIT_RECORD_LIMIT_ANON
       // Lua：INCR + 首次 SET EXPIRE 原子，避免进程崩溃后 key 永驻
       const n = (await this.redisService.eval(

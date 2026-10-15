@@ -15,6 +15,11 @@ vi.mock('@/modules/redis/redis.service', () => ({
   RedisService: vi.fn(() => redisServiceMock),
 }))
 
+const mockAppendErrorLog = vi.fn()
+vi.mock('@/common/logger', () => ({
+  appendErrorLog: (...args: unknown[]) => mockAppendErrorLog(...args),
+}))
+
 vi.mock('@/db', () => ({
   db: {
     query: {
@@ -165,6 +170,22 @@ describe('ErrorLogsService', () => {
       expect(mockDb.insert).not.toHaveBeenCalled()
     })
 
+    it('L5：4xx 封顶丢弃时写文件日志兜底（缺口可事后解释，非静默消失）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      redisServiceMock.eval.mockResolvedValue(21)
+      vi.mocked(mockDb.insert).mockClear()
+      mockAppendErrorLog.mockClear()
+
+      await service.record({
+        message: 'Forbidden',
+        statusCode: 403,
+        url: '/api/v1/users',
+      })
+
+      expect(mockDb.insert).not.toHaveBeenCalled()
+      expect(mockAppendErrorLog).toHaveBeenCalledWith(expect.stringContaining('分钟封顶丢弃'))
+    })
+
     it('4xx 未超封顶时正常入库并透传 statusCode/url', async () => {
       redisServiceMock.get.mockResolvedValue(null)
       redisServiceMock.eval.mockResolvedValue(3)
@@ -184,6 +205,33 @@ describe('ErrorLogsService', () => {
         .calls[0][0] as Record<string, unknown>
       expect(valuesCall.statusCode).toBe(401)
       expect(valuesCall.url).toBe('/api/v1/users')
+    })
+
+    it('M6：4xx 封顶键含来源维度——不同用户/IP 各自独立计数，不共享同一预算', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      redisServiceMock.eval.mockResolvedValue(3)
+      vi.mocked(mockDb.insert).mockClear()
+
+      // 同一端点同一状态码：低权攻击者先刷 20 次烧干预算，随后越权探测第 21 条起被静默丢弃
+      //（4xx 无 IP 维度无法事后归因）——来源入键后各自独立，攻击者烧穿不影响受害者
+      await service.record({
+        message: 'Forbidden',
+        statusCode: 403,
+        url: '/api/v1/users',
+        userId: 1,
+        ip: '1.2.3.4',
+      })
+      await service.record({
+        message: 'Forbidden',
+        statusCode: 403,
+        url: '/api/v1/users',
+        userId: 2,
+        ip: '5.6.7.8',
+      })
+
+      const keys = vi.mocked(redisServiceMock.eval).mock.calls.map((c) => c[1] as string[])
+      expect(keys[0][0]).not.toBe(keys[1][0])
+      expect(keys[0][0]).toContain('403')
     })
 
     it('M2：401/403/429 跳过白名单检查（安全事件不可被白名单消音）', async () => {
