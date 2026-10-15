@@ -18,16 +18,20 @@ import { expect, test } from '@playwright/test'
  *   - admin 删除 admin → 409（初始管理员不可删除）
  */
 
+let targetUserId: number
+
 test.beforeAll(async () => {
   // 用 admin 登录 apiClient，用于数据准备
   await apiClient.login(adminUser.username, adminUser.password)
 
-  // 校验目标用户已由 global-setup 创建
+  // 校验目标用户已由 global-setup 创建，并缓存其 id 供越权用例直接引用
+  //（M11：普通用户无 USER_VIEW，列表接口 403 返回 data:null，用例内再查列表必 TypeError）
   const { data } = await apiClient.get<{ list: Array<{ id: number; username: string }> }>(
     '/users?pageSize=100',
   )
   const target = data.list.find((u) => u.username === targetUser.username)
   if (!target) throw new Error(`目标用户 ${targetUser.username} 未创建，请检查 global-setup`)
+  targetUserId = target.id
 })
 
 test.describe('用户管理（admin 视角）', () => {
@@ -132,13 +136,10 @@ test.describe('提权防护（普通用户视角，J2=A：零权限预期 403 �
   // 越权操作断言走 API 层（页面级只验路由守卫）
   test('普通用户尝试改用户资料 → API 层 403（无 user:update）', async () => {
     await apiClient.login(normalUser.username, normalUser.password)
-    const { data } = await apiClient.get<{ list: Array<{ id: number; username: string }> }>(
-      '/users?pageSize=100',
-    )
-    const targetId = data.list.find((u) => u.username === targetUser.username)?.id
-    expect(targetId).toBeTruthy()
 
-    const res = await apiClient.patch(`/users/${targetId}`, {
+    // M11：targetId 由 beforeAll 段 admin 缓存——普通用户无 USER_VIEW，
+    // 列表接口 403 返回 data:null，用例内查列表必 TypeError（CI 全新库必红）
+    const res = await apiClient.patch(`/users/${targetUserId}`, {
       nickname: '越权改的昵称',
     })
     expect(res.status).toBe(403)

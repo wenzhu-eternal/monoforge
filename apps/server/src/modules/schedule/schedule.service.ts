@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
-import { and, isNotNull, lt, sql } from 'drizzle-orm'
+import { and, isNotNull, lt } from 'drizzle-orm'
 import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
@@ -156,11 +156,12 @@ export class ScheduleService {
   async dailyNotificationCleanup() {
     try {
       const cutoff = new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-      const result = await db
+      // M12：RETURNING 不允许聚合函数（PG 42883），返回行数组再取 length 统计删除量
+      const rows = await db
         .delete(notifications)
         .where(and(isNotNull(notifications.deletedAt), lt(notifications.deletedAt, cutoff)))
-        .returning({ count: sql<number>`count(*)` })
-      const removed = result[0]?.count ?? 0
+        .returning({ id: notifications.id })
+      const removed = rows.length
       if (removed > 0) {
         this.logger.log(`通知清理：${removed} 条超 ${NOTIFICATION_RETENTION_DAYS} 天已物理删除`)
       }

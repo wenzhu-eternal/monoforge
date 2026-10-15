@@ -18,6 +18,16 @@ vi.mock('node:fs', () => ({
   createWriteStream: vi.fn(() => ({ on: vi.fn() })),
 }))
 
+// M12：dailyNotificationCleanup 直接用模块级 db（不走构造注入），mock 掉避免真库依赖
+const mockReturning = vi.fn()
+const mockWhere = vi.fn()
+const mockDelete = vi.fn()
+vi.mock('@/db', () => ({
+  db: {
+    delete: (...args: unknown[]) => mockDelete(...(args as Parameters<typeof mockDelete>)),
+  },
+}))
+
 // getEnv mock：避免依赖真实 .env，单测内联控制环境变量。
 // 默认值补 DB_POOL_MAX——@/db 建池在模块加载期调 getEnv 消费它
 const mockGetEnv = vi.fn(() => ({ DB_POOL_MAX: 10 }))
@@ -81,6 +91,35 @@ describe('ScheduleService', () => {
       filesService.purgeExpiredTrash.mockRejectedValueOnce(new Error('disk error'))
 
       await expect(service.dailyTrashCleanup()).resolves.toBeUndefined()
+    })
+  })
+
+  describe('dailyNotificationCleanup（M12 通知保留期清理）', () => {
+    beforeEach(() => {
+      mockDelete.mockReset()
+      mockWhere.mockReset()
+      mockReturning.mockReset()
+      mockWhere.mockReturnValue({ returning: mockReturning })
+      mockDelete.mockReturnValue({ where: mockWhere })
+    })
+
+    it('M12 回归锁：删除量取自 returning 行数组 length（RETURNING 聚合是 PG 非法语法）', async () => {
+      mockReturning.mockResolvedValue([{ id: 1 }, { id: 2 }])
+      const logSpy = vi.spyOn(service['logger'], 'log')
+
+      await service.dailyNotificationCleanup()
+
+      expect(mockDelete).toHaveBeenCalledTimes(1)
+      // 锁死修法：count 取自 returning 行数组 length（log 断言即回归锁——若回退成
+      // `.returning({ count: sql\`count(*)\` })`，PG 每晚必抛 42883 且 rows.length 语义失效）
+      expect(mockReturning).toHaveBeenCalledWith({ id: expect.anything() })
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('2 条'))
+    })
+
+    it('清理抛错只记录不外抛（cron 不因单次失败中断）', async () => {
+      mockReturning.mockRejectedValue(new Error('db down'))
+
+      await expect(service.dailyNotificationCleanup()).resolves.toBeUndefined()
     })
   })
 
