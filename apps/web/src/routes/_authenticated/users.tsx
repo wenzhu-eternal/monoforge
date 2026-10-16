@@ -82,7 +82,7 @@ export function UsersContent() {
 
   useEffect(() => {
     if (isError) {
-      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+      messageApi.error(extractErrorMessage(error, '加载失败'))
     }
   }, [isError, error, messageApi])
 
