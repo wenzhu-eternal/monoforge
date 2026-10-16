@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
@@ -19,6 +20,8 @@ import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name)
+
   constructor(private readonly redisService: RedisService) {}
 
   async findAll(
@@ -395,11 +398,22 @@ export class UsersService {
     // 改密后吊销所有 token，强制重新登录
     // L9：先写 logout:at 时间戳作为兜底——若后续 Redis 抖动导致 revokeAccessTokens 失败，
     // 用户重试时 refresh 早退仍可检测到此时间戳，防止旧 token 续命
-    await this.redisService.set(
-      `logout:at:${userId}`,
-      String(Date.now()),
-      8 * 24 * 60 * 60, // 8天，盖过 refresh TTL（7d）留余量
-    )
+    // L6：set 失败重试一次，仍失败仅 warn 不抛——密码已改成功，接口不应 500 恐慌用户
+    try {
+      await this.redisService.set(
+        `logout:at:${userId}`,
+        String(Date.now()),
+        8 * 24 * 60 * 60, // 8天，盖过 refresh TTL（7d）留余量
+      )
+    } catch (err) {
+      try {
+        await this.redisService.set(`logout:at:${userId}`, String(Date.now()), 8 * 24 * 60 * 60)
+      } catch (retryErr) {
+        this.logger.warn(
+          `logout:at 写入失败（重试后仍失败），密码已改: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+        )
+      }
+    }
     await this.redisService.deleteByPattern(`refresh:${userId}:*`)
     await this.revokeAccessTokens(userId)
 

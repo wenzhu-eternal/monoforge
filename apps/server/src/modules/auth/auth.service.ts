@@ -363,17 +363,22 @@ export class AuthService {
       where: and(eq(users.email, email), notDeleted(users.deletedAt)),
     })
 
-    // L1：已注册邮箱也写验证码并异步发信——与未注册路径耗时一致，防掐表枚举。
-    // 邮件发送失败仅 warn（已注册邮箱复用旧码仍可登录），不影响主流程
+    // L1：已注册邮箱也写验证码、未注册邮箱也写验证码，与未注册路径耗时一致，防掐表枚举。
+    // J1：已注册邮箱跳过真实投递（60s 锁 + 统一响应先于投递，跳过不泄露新信息，防出站邮件放大器）；
+    // 邮件发送失败仅 warn，不影响主流程
     const code = randomInt(0, 999999).toString().padStart(6, '0')
     const expiresIn = 5 * 60
     await this.redisService.set(`register:code:${email}`, code, expiresIn)
-    // 异步发信——不阻塞响应，失败仅告警
-    this.mailService
-      .sendVerificationCode(email, '注册用户', code)
-      .catch((err) =>
-        this.logger.warn(`注册验证码投递失败: ${err instanceof Error ? err.message : String(err)}`),
-      )
+    if (!existingEmail) {
+      // 异步发信——不阻塞响应，失败仅告警
+      this.mailService
+        .sendVerificationCode(email, '注册用户', code)
+        .catch((err) =>
+          this.logger.warn(
+            `注册验证码投递失败: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        )
+    }
     this.logger.log(
       `注册验证码已生成: ${existingEmail ? '已注册' : '未注册'}邮箱 ${maskEmail(email)}`,
     )
@@ -410,7 +415,16 @@ export class AuthService {
     await this.redisService.getdel(`register:code:${email}`)
     await this.redisService.del(`register:code:attempts:${email}`)
 
-    await this.register(username, email, password)
+    try {
+      await this.register(username, email, password)
+    } catch (err) {
+      // L7：注册冲突（用户名/邮箱已占用）时回写验证码，TTL 延用，用户无需等 60s 发送限制即可重试
+      if (err instanceof ConflictException) {
+        // 验证码原 TTL 为 5 分钟，此处等长重设，避免用户重新获取前受 60s 发送限制
+        await this.redisService.set(`register:code:${email}`, code, 5 * 60)
+      }
+      throw err
+    }
 
     return this.login(username, password)
   }
