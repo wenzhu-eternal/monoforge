@@ -146,6 +146,7 @@ class WsClient {
   private closeSocket(): void {
     this.stopHeartbeat()
     this.clearReconnectTimer()
+    this.currentToken = null // L14：断开后清陈旧 token，防 scheduleReconnect 回退拿旧 token 重连（登出后失败退避 10 次）
     if (this.socket) {
       this.socket.removeAllListeners()
       this.socket.disconnect()
@@ -174,7 +175,9 @@ class WsClient {
     const delay = Math.min(baseDelayMs * 2 ** this.reconnectAttempts, WsClient.RECONNECT_DELAY_CAP)
     this.reconnectAttempts += 1
     this.reconnectTimer = setTimeout(() => {
-      const token = this.tokenProvider?.() ?? this.currentToken
+      // L14：provider 已配置却返回 null（登出/未鉴权）时放弃重连，不回退陈旧 currentToken；
+      // provider 未配置（null）时才回退 currentToken，保留向后兼容
+      const token = this.tokenProvider ? this.tokenProvider() : this.currentToken
       if (token) {
         this.connect(token)
       }

@@ -229,10 +229,13 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   const handleOpenChange = (keys: string[]) => {
     // onOpenChange 由 antd 在任意展开/收起时触发；直接覆写会丢失
     // 路由推导出的 key（如子页路径要求展开所属分组），需做差集精确更新
+    // L13：added 过滤掉路由推导 key（getOpenKeys()），仅把用户手动开合的非路由 key 记入偏好，
+    // 防在 /users 打开其他分组时把路由 key 误记为偏好，导致离开后永久粘滞展开
     setUserOpenKeys((prev) => {
       const prevSet = new Set(prev)
       const curSet = new Set(keys)
-      const added = keys.filter((k) => !prevSet.has(k))
+      const routeKeys = new Set(getOpenKeys())
+      const added = keys.filter((k) => !prevSet.has(k) && !routeKeys.has(k))
       const removed = prev.filter((k) => !curSet.has(k))
       const next = [...prevSet, ...added].filter((k) => !removed.includes(k))
       return next

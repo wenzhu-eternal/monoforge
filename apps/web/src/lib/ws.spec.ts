@@ -98,4 +98,17 @@ describe('wsClient 手动重连（M6 终态）', () => {
     // 初始 1 + 上限 10 次手动重连 = 11；之后放弃，io 不再增长
     expect(ioMock).toHaveBeenCalledTimes(11)
   })
+
+  it('L14: provider 返回 null（已登出）时放弃重连，不拿陈旧 currentToken 回退', () => {
+    wsClient.connect('stale-token')
+    fire(lastSocket(), 'connect')
+    expect(ioMock).toHaveBeenCalledTimes(1)
+
+    wsClient.setTokenProvider(() => null)
+    fire(lastSocket(), 'disconnect', 'io server disconnect')
+    vi.advanceTimersByTime(1_000)
+
+    // provider 返回 null 时不应再建新连接（陈旧 currentToken 不再被回退）
+    expect(ioMock).toHaveBeenCalledTimes(1)
+  })
 })
