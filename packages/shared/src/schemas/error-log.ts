@@ -112,8 +112,8 @@ export const UpdateErrorWhitelistSchema = z.object({
 })
 
 export const BatchResolveErrorSchema = z.object({
-  message: z.string().min(1),
-  source: z.string().min(1),
+  message: z.string().min(1).max(2000),
+  source: z.string().min(1).max(2000),
 })
 
 export type ErrorLog = z.infer<typeof ErrorLogSchema>
