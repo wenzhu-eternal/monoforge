@@ -51,6 +51,10 @@ describe('UsersService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([]),
+    })
     mockRedisService.deleteByPattern.mockResolvedValue(0)
     mockRedisService.scanKeys.mockResolvedValue([])
     service = new UsersService(mockRedisService as never)

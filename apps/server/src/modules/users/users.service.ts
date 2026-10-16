@@ -168,11 +168,9 @@ export class UsersService {
       throw new ForbiddenException('仅超级管理员可分配超管角色')
     }
 
-    // M1/J1：显式指定角色时按调用者权限集收敛——目标角色权限码集 ⊆ 调用者权限码集，
-    // 与 role-permissions 的"不能授予自身未持有权限"同口径（防借角色分配自我提权）
-    if (data.roleId !== undefined) {
-      await this.assertRoleWithinCallerScope(roleId, caller)
-    }
+    // L1：默认角色（未传 roleId 时抓 roles.name='user'）同样过调用者权限范围检查，
+    // 防持 user:create 而无 USER_ROLE_MANAGE 的委托借默认通道铸造间接高权账号
+    await this.assertRoleWithinCallerScope(roleId, caller)
 
     const hashedPassword = await argon2.hash(data.password)
 
