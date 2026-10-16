@@ -12,7 +12,7 @@
 | 变量 | 说明 | 默认/示例 |
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL 连接串（DEV） | `postgresql://monoforge_user:monoforge_password@localhost:5432/monoforge_database` |
-| `E2E_DATABASE_URL` | e2e 专用 PostgreSQL 连接串（独立容器，DEV DB 零污染） | `postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db` |
+| `E2E_DATABASE_URL` | e2e 专用 PostgreSQL 连接串（独立容器，DEV DB 零污染）。**两套件各自读值口径**：server vitest 冒烟脚本直接读此变量；Playwright webServer 取 `E2E_DATABASE_URL ?? process.env.DATABASE_URL ?? 5433 默认值`，非 5433 目标会打醒目警告并拒绝静默写入 DEV 库 | `postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db` |
 | `DB_POOL_MAX` | PG 连接池上限（drizzle/postgres-js `max`；zod 校验 int ≥1，非法值启动即失败而非静默回退） | `10` |
 | `E2E_POSTGRES_USER` | e2e-postgres 容器用户名 | `e2e_user` |
 | `E2E_POSTGRES_PASSWORD` | e2e-postgres 容器密码 | `e2e_password` |
@@ -35,6 +35,7 @@
 | `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，需做 shell 单引号转义防注入）。注：生产镜像已内置 `postgresql16-client`，默认 pg_dump 链路开箱即用，仅在特殊场景（如走代理导出）才需配置此项 | - |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
 | `THROTTLE_LIMIT` | 时间窗口内最大请求数（生产 10；e2e 由 `playwright.config.ts` 的 webServer.env 覆盖为 1000） | `10` |
+| `THROTTLE_LOGIN_LIMIT` | 登录/注册匿名端点独立桶，窗口内最大请求数（生产 5；e2e 覆盖为 1000 避免频繁登录触 429） | `5` |
 | `SEED_ADMIN_EMAIL` | seed 创建 admin 的邮箱（可选，默认 `admin@example.com`） | `admin@example.com` |
 | `SEED_ADMIN_PASSWORD` | seed 创建 admin 的密码（可选，默认 `888888`）。**未显式设置时首登强制改密**（`mustChangePassword=true`）；显式设置则视为运维知情，不强制 | `888888` |
 | `SEED_ADMIN_NICKNAME` | seed 创建 admin 的昵称（可选，默认 `Administrator`） | `Administrator` |

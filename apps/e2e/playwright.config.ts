@@ -1,5 +1,20 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// M15：最终生效的 e2e 数据库连接串（E2E_DATABASE_URL > DATABASE_URL > 5433 默认）。
+// 非 5433 目标（如 shell 残留的 DEV DATABASE_URL）会把 db:push+seed 打进非 e2e 库——醒目警告。
+const e2eDatabaseUrl: string =
+  process.env.E2E_DATABASE_URL ??
+  process.env.DATABASE_URL ??
+  'postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db'
+
+if (!e2eDatabaseUrl.includes(':5433/')) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '\n[M15 警告] e2e 数据库未指向本地 5433（mf-e2e-postgres）：%s\n  db:push + db:seed 将直接写入该库，可能污染非 e2e 数据！\n',
+    e2eDatabaseUrl,
+  )
+}
+
 /**
  * MonoForge Playwright 全链路 e2e 配置
  *
@@ -50,14 +65,13 @@ export default defineConfig({
       command:
         'pnpm --filter=server db:push && pnpm --filter=server db:seed && pnpm --filter=@monoforge/server dev',
       url: 'http://localhost:9000/api/v1/health',
-      // DATABASE_URL 环境感知：外部传入即用（CI e2e job 只有 5432 service，硬编码 5433 必 ECONNREFUSED），
-      // 本地无则落 5433 的 mf-e2e-postgres 默认值，与 DEV DB(5432) 完全隔离
+      // DATABASE_URL 环境感知（M15）：优先 e2e 专用 E2E_DATABASE_URL——shell 里残留的
+      // DATABASE_URL 常指向 DEV 5432，直接透传会把 db:push+seed 打到 DEV DB 造成污染；
+      // 无 E2E 变量时回退 DATABASE_URL（CI e2e job 只有 5432 service），再落 5433 默认值
       // THROTTLE_LIMIT 调高避免 e2e 频繁登录触发 429（.env 可保持生产值 10）
       env: {
         NODE_ENV: 'development',
-        DATABASE_URL:
-          process.env.DATABASE_URL ??
-          'postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db',
+        DATABASE_URL: e2eDatabaseUrl,
         THROTTLE_LIMIT: '1000',
         // M6：登录/注册匿名端点独立桶，e2e 内大量登录请求不撞 5/min 红线
         THROTTLE_LOGIN_LIMIT: '1000',
