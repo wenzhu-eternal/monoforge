@@ -160,3 +160,13 @@ export const SendVerificationCodeMailSchema = z.object({
 ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](./DEPLOYMENT.md) 的「ngrok 临时外网部署」章节。
 
 **核心要点**：隧道必须绑定 `127.0.0.1:9000`（后端 ServeStaticModule 端口），不能绑 3000（前端 vite dev server）。
+
+## 保留与归档（J1）
+
+| 表 | 自动清理 | 保留期 | 说明 |
+|---|---|---|---|
+| `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | 仅删已软删（`deletedAt` 非空且超期）的行；未删通知永不清，「只进不出」只根治一半 |
+| `error_logs` | ✅ 每天 1:30 cron（`dailyErrorLogsCleanup`） | 30 天 | 仅删已软删且超期的行 |
+| `files` trash | ✅ 每天 0:00 cron（`dailyTrashCleanup`） | 30 天 | 物理删除超期软删文件 |
+| `audit_logs` | ❌ 无自动清理 | — | 归档责任由运维承担：建议定期导出后归档/清理，不自动删除（J1=A 留档，避免误删取证痕迹） |
+

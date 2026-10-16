@@ -123,6 +123,33 @@ describe('ScheduleService', () => {
     })
   })
 
+  describe('dailyErrorLogsCleanup（L16 error_logs 保留期清理）', () => {
+    beforeEach(() => {
+      mockDelete.mockReset()
+      mockWhere.mockReset()
+      mockReturning.mockReset()
+      mockWhere.mockReturnValue({ returning: mockReturning })
+      mockDelete.mockReturnValue({ where: mockWhere })
+    })
+
+    it('L16 回归锁：删除量取自 returning 行数组 length（RETURNING 聚合是 PG 非法语法）', async () => {
+      mockReturning.mockResolvedValue([{ id: 1 }, { id: 2 }])
+      const logSpy = vi.spyOn(service['logger'], 'log')
+
+      await service.dailyErrorLogsCleanup()
+
+      expect(mockDelete).toHaveBeenCalledTimes(1)
+      expect(mockReturning).toHaveBeenCalledWith({ id: expect.anything() })
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('2 条'))
+    })
+
+    it('清理抛错只记录不外抛（cron 不因单次失败中断）', async () => {
+      mockReturning.mockRejectedValue(new Error('db down'))
+
+      await expect(service.dailyErrorLogsCleanup()).resolves.toBeUndefined()
+    })
+  })
+
   describe('dailyBackup - ENABLE_BACKUP 开关', () => {
     it('ENABLE_BACKUP=false → 跳过备份，不发邮件不入库', async () => {
       mockGetEnv.mockReturnValue({

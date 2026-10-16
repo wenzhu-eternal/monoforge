@@ -10,6 +10,7 @@ import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quot
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { files } from '@/db/schema'
+import { errorLogs } from '@/db/schema/error-logs'
 import { notifications } from '@/db/schema/notifications'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { FilesService, TRASH_RETENTION_DAYS } from '@/modules/files/files.service'
@@ -25,8 +26,9 @@ const BACKUP_LOCK_KEY = 'schedule:backup:running'
 const BACKUP_LOCK_TTL = 600
 // L6：手动备份日配额（cron 每日 1 次走 doBackup 不经此处，不受限）
 const MANUAL_BACKUP_DAILY_LIMIT = 3
-// J1：通知保留期 90 天，与 error_logs、files trash 口径对齐
+// J1：通知保留期 90 天，与 files trash（30 天）口径对齐；error_logs 另有独立保留 cron（30 天）；audit_logs 不自动清，归档责任见 CONFIGURATION.md「保留与归档」
 const NOTIFICATION_RETENTION_DAYS = 90
+const ERROR_LOGS_RETENTION_DAYS = 30
 
 @Injectable()
 export class ScheduleService {
@@ -167,6 +169,27 @@ export class ScheduleService {
       }
     } catch (err) {
       this.logger.error(`通知清理失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  // L16：error_logs 保留 cron——与通知同款，每天 1:30 执行，只删已软删且超期的行
+  @Cron('30 1 * * *')
+  async dailyErrorLogsCleanup() {
+    try {
+      const cutoff = new Date(Date.now() - ERROR_LOGS_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+      // M12：RETURNING 不允许聚合函数（PG 42883），返回行数组再取 length 统计删除量
+      const rows = await db
+        .delete(errorLogs)
+        .where(and(isNotNull(errorLogs.deletedAt), lt(errorLogs.deletedAt, cutoff)))
+        .returning({ id: errorLogs.id })
+      const removed = rows.length
+      if (removed > 0) {
+        this.logger.log(
+          `error_logs 清理：${removed} 条超 ${ERROR_LOGS_RETENTION_DAYS} 天已物理删除`,
+        )
+      }
+    } catch (err) {
+      this.logger.error(`error_logs 清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
