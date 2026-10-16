@@ -424,8 +424,9 @@ function LogsTab() {
           showSizeChanger: true,
           showTotal: (t) => `共 ${t} 条`,
           onChange: (p, s) => {
-            setPage(p)
+            // L15：pageSize 变更重置到第 1 页，避免第 N 页改条数后逐页串行回退
             setPageSize(s)
+            setPage(s === pageSize ? p : 1)
           },
         }}
       />
