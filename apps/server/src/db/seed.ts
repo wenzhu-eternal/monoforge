@@ -1,4 +1,8 @@
-import { DEFAULT_PERMISSIONS, DEFAULT_USER_ROLE_PERMISSIONS } from '@shared/constants/default-seed'
+import {
+  DEFAULT_PERMISSIONS,
+  DEFAULT_ROLES,
+  DEFAULT_USER_ROLE_PERMISSIONS,
+} from '@shared/constants/default-seed'
 import argon2 from 'argon2'
 import { config } from 'dotenv'
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
@@ -53,10 +57,7 @@ async function seed() {
 
     const [adminRole] = await tx
       .insert(roles)
-      .values({
-        name: 'admin',
-        description: '系统管理员，拥有全部权限',
-      })
+      .values(DEFAULT_ROLES[0]!)
       .onConflictDoNothing()
       .returning()
 
@@ -83,10 +84,7 @@ async function seed() {
     // 创建普通用户角色（通过注册进来的用户）
     const [userRole] = await tx
       .insert(roles)
-      .values({
-        name: 'user',
-        description: '普通用户，通过注册进入系统',
-      })
+      .values(DEFAULT_ROLES[1]!)
       .onConflictDoNothing()
       .returning()
 

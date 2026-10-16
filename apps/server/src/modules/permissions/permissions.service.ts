@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common'
+import { PermissionCodes } from '@shared/constants/permissions'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { Permission } from '@shared/schemas/permission'
 import { and, desc, eq, sql } from 'drizzle-orm'
@@ -137,6 +138,11 @@ export class PermissionsService {
       // L3：改 code 限超管（非超管改名会造成全线权限语义漂移、seed 契约错位）
       if (!caller.isAdmin) {
         throw new ForbiddenException('权限码改名仅限超管')
+      }
+      // L3：禁止改写为 PermissionCodes 常量集中的保留码，避免与代码 @Permissions 守卫常量脱钩
+      // 导致全体持该码者立即被锁出对应端点
+      if (Object.values(PermissionCodes).some((c) => c === data.code)) {
+        throw new ForbiddenException('禁止改写为系统保留权限码')
       }
       const dup = await db.query.permissions.findFirst({
         where: and(eq(permissions.code, data.code), notDeleted(permissions.deletedAt)),
