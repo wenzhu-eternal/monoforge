@@ -38,6 +38,9 @@ export class ApiClient {
   // token 复用：避免 e2e 套件内重复登录触发 ThrottlerGuard 限流（60s 内 10 次即限流）
   private lastUsername: string | null = null
   private lastUser: LoginResponse['user'] | null = null
+  // L20：登录缓存时间戳，AT TTL=15min，超 10 分钟强制重登防止死 token 导致 401 连锁
+  private lastLoginAt = 0
+  private static readonly LOGIN_CACHE_TTL_MS = 10 * 60 * 1000
 
   setToken(token: string) {
     this.token = token
@@ -55,8 +58,13 @@ export class ApiClient {
   }
 
   async login(username: string, password: string): Promise<LoginResponse> {
-    // token 复用：同一用户已登录则跳过（JWT 在 e2e 套件内不会过期）
-    if (this.token && this.lastUsername === username && this.lastUser) {
+    // token 复用：同一用户已登录且缓存未过期则跳过（L20：超 10 分钟强制重登，AT TTL=15min）
+    if (
+      this.token &&
+      this.lastUsername === username &&
+      this.lastUser &&
+      Date.now() - this.lastLoginAt < ApiClient.LOGIN_CACHE_TTL_MS
+    ) {
       return { accessToken: this.token, user: this.lastUser }
     }
 
@@ -77,6 +85,7 @@ export class ApiClient {
     this.token = json.data.accessToken
     this.lastUsername = username
     this.lastUser = json.data.user
+    this.lastLoginAt = Date.now()
     return json.data
   }
 
