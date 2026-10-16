@@ -17,6 +17,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState } from 'react'
 import { type AuditLog, useAuditLogs } from '@/hooks/use-logs'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title, Text } = Typography
 
@@ -105,7 +106,7 @@ function AuditLogsContent() {
 
   useEffect(() => {
     if (isError) {
-      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+      messageApi.error(extractErrorMessage(error, '加载失败'))
     }
   }, [isError, error, messageApi])
 

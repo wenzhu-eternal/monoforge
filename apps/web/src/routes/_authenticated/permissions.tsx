@@ -78,13 +78,13 @@ function PermissionCodesContent() {
 
   useEffect(() => {
     if (isError) {
-      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+      messageApi.error(extractErrorMessage(error, '加载失败'))
     }
   }, [isError, error, messageApi])
 
   useEffect(() => {
     if (routesError) {
-      messageApi.error(`路由加载失败: ${(routesErr as Error)?.message ?? '未知错误'}`)
+      messageApi.error(extractErrorMessage(routesErr, '路由加载失败'))
     }
   }, [routesError, routesErr, messageApi])
 

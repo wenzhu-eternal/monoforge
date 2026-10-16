@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Button, Card, Col, message, Result, Row, Spin, Typography } from 'antd'
 import { useEffect } from 'react'
 import { useDashboardStats, useHealthStatus } from '@/hooks/use-dashboard'
+import { extractErrorMessage } from '@/lib/error'
 
 const { Title } = Typography
 
@@ -30,7 +31,7 @@ function DashboardContent() {
 
   useEffect(() => {
     if (isError && !isForbidden) {
-      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+      messageApi.error(extractErrorMessage(error, '加载失败'))
     }
   }, [isError, isForbidden, error, messageApi])
 
