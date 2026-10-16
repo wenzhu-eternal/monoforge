@@ -2,6 +2,7 @@ import {
   type CanActivate,
   type ExecutionContext,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
@@ -88,7 +89,9 @@ export class AuthGuard implements CanActivate {
 
       request.user = payload
     } catch (err) {
-      if (err instanceof UnauthorizedException) throw err
+      if (err instanceof UnauthorizedException || err instanceof ServiceUnavailableException) {
+        throw err
+      }
       throw new UnauthorizedException('访问令牌无效')
     }
 
@@ -101,15 +104,21 @@ export class AuthGuard implements CanActivate {
     if ((await this.redisService.get(cacheKey)) === '1') {
       return true
     }
-    const record = await db.query.users.findFirst({
-      where: and(eq(users.id, sub), notDeleted(users.deletedAt)),
-      columns: { status: true },
-    })
-    if (record == null || record.status === false) {
-      return false
+    try {
+      const record = await db.query.users.findFirst({
+        where: and(eq(users.id, sub), notDeleted(users.deletedAt)),
+        columns: { status: true },
+      })
+      if (record == null || record.status === false) {
+        return false
+      }
+      await this.redisService.set(cacheKey, '1', 5)
+      return true
+    } catch (err) {
+      // L4：DB 抖动不吞成"访问令牌无效"——抛 ServiceUnavailableException，由 canActivate 透传
+      //（与 PermissionsGuard 的"DB 异常直接 500"口径一致，避免全站误登出）
+      throw new ServiceUnavailableException('账号存续检查失败，服务暂不可用')
     }
-    await this.redisService.set(cacheKey, '1', 5)
-    return true
   }
 
   private extractTokenFromHeader(request: Request): string | undefined {
