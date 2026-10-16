@@ -110,7 +110,7 @@ export function RolesContent() {
 
   useEffect(() => {
     if (isError) {
-      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+      messageApi.error(extractErrorMessage(error, '加载失败'))
     }
   }, [isError, error, messageApi])
 
@@ -274,7 +274,10 @@ export function RolesContent() {
   const handlePermissionSubmit = async () => {
     if (!selectedRoleId) return
     // L13：allPermissions 未就绪时禁用提交，防超管误点"确定"清空全角色权限
-    if (!allPermissions) return
+    if (!allPermissions) {
+      messageApi.warning('权限列表未加载')
+      return
+    }
 
     try {
       await updateRolePermissions.mutateAsync({
@@ -386,7 +389,7 @@ export function RolesContent() {
         }}
         onOk={handlePermissionSubmit}
         confirmLoading={updateRolePermissions.isPending || permsSyncing}
-        okButtonProps={{ disabled: permsSyncing }}
+        okButtonProps={{ disabled: permsSyncing || !allPermissions }}
         width={640}
       >
         <div className="max-h-96 overflow-y-auto">

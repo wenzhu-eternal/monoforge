@@ -87,6 +87,9 @@ function LogsTab() {
   const [sourceFilter, setSourceFilter] = useState<string | undefined>(undefined)
   const [resolvedFilter, setResolvedFilter] = useState<string | undefined>(undefined)
   const [selectedLog, setSelectedLog] = useState<ErrorLog | null>(null)
+  // L11：行级 pending 精度——标记/批量标记/删除只转正在操作的那行，避免全表同时转圈
+  const [resolvingId, setResolvingId] = useState<number | null>(null)
+  const [batchResolvingKey, setBatchResolvingKey] = useState<string | null>(null)
   const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error, isSuccess } = useErrorLogs({
@@ -108,11 +111,13 @@ function LogsTab() {
 
   useEffect(() => {
     if (isError) {
-      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+      messageApi.error(extractErrorMessage(error, '加载失败'))
     }
   }, [isError, error, messageApi])
 
   const handleBatchResolve = (item: ErrorLogGroup) => {
+    const key = `${item.message}||${item.source}`
+    setBatchResolvingKey(key)
     batchResolveMutation.mutate(
       { message: item.message, source: item.source },
       {
@@ -122,16 +127,22 @@ function LogsTab() {
         onError: (err) => {
           messageApi.error(extractErrorMessage(err, '批量处理失败'))
         },
+        onSettled: () => {
+          setBatchResolvingKey(null)
+        },
       },
     )
   }
 
   const handleResolve = async (id: number) => {
+    setResolvingId(id)
     try {
       await resolveMutation.mutateAsync(id)
       messageApi.success('已标记为已处理')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '标记失败'))
+    } finally {
+      setResolvingId(null)
     }
   }
 
@@ -219,7 +230,7 @@ function LogsTab() {
               <Button
                 type="link"
                 size="small"
-                loading={resolveMutation.isPending}
+                loading={resolveMutation.isPending && resolvingId === record.id}
                 onClick={() => handleResolve(record.id)}
               >
                 标记已处理
@@ -337,7 +348,10 @@ function LogsTab() {
                             <Button
                               type="link"
                               size="small"
-                              loading={batchResolveMutation.isPending}
+                              loading={
+                                batchResolveMutation.isPending &&
+                                batchResolvingKey === `${item.message}||${item.source}`
+                              }
                             >
                               全部已处理
                             </Button>
@@ -556,7 +570,7 @@ function WhitelistTab() {
 
   useEffect(() => {
     if (isError) {
-      messageApi.error(`加载失败: ${(error as Error)?.message ?? '未知错误'}`)
+      messageApi.error(extractErrorMessage(error, '加载失败'))
     }
   }, [isError, error, messageApi])
 
