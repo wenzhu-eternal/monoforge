@@ -149,7 +149,7 @@ describe('RolesController', () => {
       const result = await controller.update(1, dto)
 
       expect(result).toEqual(mockRole)
-      expect(service.update).toHaveBeenCalledWith(1, dto)
+      expect(service.update).toHaveBeenCalledWith(1, dto, false)
     })
   })
 

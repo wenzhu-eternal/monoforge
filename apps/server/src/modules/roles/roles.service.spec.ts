@@ -154,7 +154,7 @@ describe('RolesService', () => {
         }),
       } as never)
 
-      const result = await service.update(1, { name: 'super-admin' })
+      const result = await service.update(1, { name: 'super-admin' }, true)
       expect(result).toEqual(updated)
     })
 
@@ -169,7 +169,7 @@ describe('RolesService', () => {
         .mockResolvedValueOnce({ id: 1, name: 'admin' } as never)
         .mockResolvedValueOnce({ id: 2, name: 'editor' } as never)
 
-      await expect(service.update(1, { name: 'editor' })).rejects.toThrow(ConflictException)
+      await expect(service.update(1, { name: 'editor' }, true)).rejects.toThrow(ConflictException)
     })
   })
 

@@ -81,8 +81,13 @@ export class RolesController {
   @Permissions(PermissionCodes.ROLE_UPDATE)
   @ApiOperation({ summary: '更新角色' })
   @ZodSerializerDto(RoleSchema)
-  async update(@Param('id', ParseIntPipe) id: number, @Body() updateRoleDto: UpdateRoleDto) {
-    return this.rolesService.update(id, updateRoleDto)
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateRoleDto: UpdateRoleDto,
+    @CurrentUser() currentUser: TokenPayload,
+  ) {
+    const isAdmin = isAdminUser(currentUser)
+    return this.rolesService.update(id, updateRoleDto, isAdmin)
   }
 
   @Delete(':id')

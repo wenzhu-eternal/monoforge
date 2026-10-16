@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { Role } from '@shared/schemas/role'
@@ -69,7 +74,11 @@ export class RolesService {
     }
   }
 
-  async update(id: number, data: { name?: string; description?: string }): Promise<Role> {
+  async update(
+    id: number,
+    data: { name?: string; description?: string },
+    callerIsAdmin: boolean = false,
+  ): Promise<Role> {
     const existing = await db.query.roles.findFirst({
       where: and(eq(roles.id, id), notDeleted(roles.deletedAt)),
     })
@@ -78,6 +87,11 @@ export class RolesService {
     }
 
     if (data.name && data.name !== existing.name) {
+      // L2：seeded 'admin'/'user' 角色改名仅限超管，防公开注册/默认建户/微信建户
+      // 硬编码 roles.name='user' 失灵（四处硬依赖 user 角色名）
+      if (['admin', 'user'].includes(existing.name) && !callerIsAdmin) {
+        throw new ForbiddenException('系统内置角色名仅超级管理员可改')
+      }
       const dup = await db.query.roles.findFirst({
         where: and(eq(roles.name, data.name), notDeleted(roles.deletedAt)),
       })
