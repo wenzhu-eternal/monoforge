@@ -21,7 +21,11 @@ function readRootEnv(key: string): string | undefined {
 const devHost = process.env.VITE_DEV_HOST || readRootEnv('VITE_DEV_HOST') || 'localhost'
 
 export default defineConfig({
-  plugins: [TanStackRouterVite({ quoteStyle: 'single' }), react(), tailwindcss()],
+  plugins: [
+    TanStackRouterVite({ quoteStyle: 'single', routeFileIgnorePattern: '\\.spec\\.' }),
+    react(),
+    tailwindcss(),
+  ],
   // .env 在 monorepo 根目录，指定 envDir 让 Vite 正确加载并注入 index.html 的 %VITE_*%
   envDir: resolve(__dirname, '../..'),
   resolve: {
