@@ -58,7 +58,13 @@ export class AuthGuard implements CanActivate {
 
       // 检查 access token 是否已被吊销（logout/禁用/改角色/改密（含管理员重置）/删用户时 jti 进入 Redis 黑名单）
       if (payload.jti) {
-        const revoked = await this.redisService.get(`access:${payload.sub}:${payload.jti}`)
+        // L7：Redis 抖动降级放行（JWT 本身已验签，跳过本次黑名单复检，不吞成 401）
+        let revoked: string | null = null
+        try {
+          revoked = await this.redisService.get(`access:${payload.sub}:${payload.jti}`)
+        } catch {
+          // 继续，视为未吊销
+        }
         if (revoked === '1') {
           throw new UnauthorizedException('访问令牌已吊销')
         }
@@ -101,7 +107,14 @@ export class AuthGuard implements CanActivate {
   /** L12：账号存续复检——正向 5s Redis 缓存；未命中直查 DB（软删/禁用均判死） */
   private async isAccountAlive(sub: number): Promise<boolean> {
     const cacheKey = `user:alive:${sub}`
-    if ((await this.redisService.get(cacheKey)) === '1') {
+    // L7：Redis get 抖动降级为缓存未命中，继续查 DB，不吞成 401
+    let cached: string | null = null
+    try {
+      cached = await this.redisService.get(cacheKey)
+    } catch {
+      // 继续查 DB
+    }
+    if (cached === '1') {
       return true
     }
     try {
@@ -112,7 +125,12 @@ export class AuthGuard implements CanActivate {
       if (record == null || record.status === false) {
         return false
       }
-      await this.redisService.set(cacheKey, '1', 5)
+      // L7：Redis set 抖动不影响结果，仅记忆缓存失败
+      try {
+        await this.redisService.set(cacheKey, '1', 5)
+      } catch {
+        // 忽略
+      }
       return true
     } catch (err) {
       // L4：DB 抖动不吞成"访问令牌无效"——抛 ServiceUnavailableException，由 canActivate 透传
