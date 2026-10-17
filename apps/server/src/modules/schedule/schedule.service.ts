@@ -241,7 +241,7 @@ export class ScheduleService {
         // 此处再加超时防 cron 挂死，并告警提示审计
         this.logger.warn('使用自定义 BACKUP_CMD 执行备份，请确保该命令来源可信')
         const safeFilepath = `'${filepath.replace(/'/g, "'\\''")}'`
-        await execAsync(env.BACKUP_CMD.replace('{filepath}', safeFilepath), {
+        await execAsync(env.BACKUP_CMD.replaceAll('{filepath}', safeFilepath), {
           timeout: 300_000,
           // L2：exec 子进程同样只给最小 env（PATH/LANG），不继承全量 process.env（含 JWT/MAIL 密钥）
           env: { PATH: process.env.PATH, LANG: process.env.LANG },
