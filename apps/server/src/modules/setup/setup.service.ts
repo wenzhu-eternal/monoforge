@@ -125,6 +125,14 @@ export class SetupService {
           (await tx.query.roles.findFirst({
             where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
           }))
+        if (!userRole) {
+          throw new BadRequestException('默认用户角色创建失败')
+        }
+        if (userRole.id !== getEnv().DEFAULT_USER_ROLE_ID) {
+          throw new BadRequestException(
+            `user 角色 id ${userRole.id} 与 DEFAULT_USER_ROLE_ID ${getEnv().DEFAULT_USER_ROLE_ID} 不一致，请核对 roles 表`,
+          )
+        }
         if (userRole && DEFAULT_USER_ROLE_PERMISSIONS.length > 0) {
           await tx
             .insert(rolePermissions)

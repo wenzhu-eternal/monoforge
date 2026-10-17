@@ -53,6 +53,10 @@ export class RolesService {
   }
 
   async create(data: { name: string; description?: string }): Promise<Role> {
+    // L4：拒绝创建内置角色名（admin/user），防公开注册/默认建户/微信建户断裂
+    if (['admin', 'user'].includes(data.name)) {
+      throw new ForbiddenException('系统内置角色名不可用')
+    }
     const existing = await db.query.roles.findFirst({
       where: and(eq(roles.name, data.name), notDeleted(roles.deletedAt)),
     })

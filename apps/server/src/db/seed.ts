@@ -94,6 +94,12 @@ async function seed() {
         where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
       }))
 
+    if (userRoleRecord && userRoleRecord.id !== getEnv().DEFAULT_USER_ROLE_ID) {
+      throw new Error(
+        `user 角色 id ${userRoleRecord.id} 与 DEFAULT_USER_ROLE_ID ${getEnv().DEFAULT_USER_ROLE_ID} 不一致，请核对 roles 表`,
+      )
+    }
+
     if (userRoleRecord && DEFAULT_USER_ROLE_PERMISSIONS.length > 0) {
       // M3：user 角色默认零权限（原先 mail:send 构成 SMTP 开放中继）；空集跳过 insert（drizzle 不接受空 values）
       await tx
