@@ -88,8 +88,9 @@ function LogsTab() {
   const [resolvedFilter, setResolvedFilter] = useState<string | undefined>(undefined)
   const [selectedLog, setSelectedLog] = useState<ErrorLog | null>(null)
   // L11：行级 pending 精度——标记/批量标记/删除只转正在操作的那行，避免全表同时转圈
-  const [resolvingId, setResolvingId] = useState<number | null>(null)
-  const [batchResolvingKey, setBatchResolvingKey] = useState<string | null>(null)
+  // L2：Set 类型，完成只删自己，避免并发时互抹 loading
+  const [resolvingIds, setResolvingIds] = useState<Set<number>>(new Set())
+  const [batchResolvingKeys, setBatchResolvingKeys] = useState<Set<string>>(new Set())
   // L1：行级 pending，仅转正在操作的那行（删除/恢复/切换激活）
   const [pendingRowId, setPendingRowId] = useState<number | null>(null)
   const [messageApi, contextHolder] = message.useMessage()
@@ -119,7 +120,7 @@ function LogsTab() {
 
   const handleBatchResolve = (item: ErrorLogGroup) => {
     const key = `${item.message}||${item.source}`
-    setBatchResolvingKey(key)
+    setBatchResolvingKeys((prev) => new Set(prev).add(key))
     batchResolveMutation.mutate(
       { message: item.message, source: item.source },
       {
@@ -130,21 +131,29 @@ function LogsTab() {
           messageApi.error(extractErrorMessage(err, '批量处理失败'))
         },
         onSettled: () => {
-          setBatchResolvingKey(null)
+          setBatchResolvingKeys((prev) => {
+            const next = new Set(prev)
+            next.delete(key)
+            return next
+          })
         },
       },
     )
   }
 
   const handleResolve = async (id: number) => {
-    setResolvingId(id)
+    setResolvingIds((prev) => new Set(prev).add(id))
     try {
       await resolveMutation.mutateAsync(id)
       messageApi.success('已标记为已处理')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '标记失败'))
     } finally {
-      setResolvingId(null)
+      setResolvingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
@@ -235,7 +244,7 @@ function LogsTab() {
               <Button
                 type="link"
                 size="small"
-                loading={resolveMutation.isPending && resolvingId === record.id}
+                loading={resolveMutation.isPending && resolvingIds.has(record.id)}
                 onClick={() => handleResolve(record.id)}
               >
                 标记已处理
@@ -355,7 +364,7 @@ function LogsTab() {
                               size="small"
                               loading={
                                 batchResolveMutation.isPending &&
-                                batchResolvingKey === `${item.message}||${item.source}`
+                                batchResolvingKeys.has(`${item.message}||${item.source}`)
                               }
                             >
                               全部已处理
