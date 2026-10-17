@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { ThrottlerGuard } from '@nestjs/throttler'
 import type { Request } from 'express'
+import { normalizeIpForKey } from '@/common/utils/ip-normalize'
 
 /**
  * 自定义限流守卫：
@@ -15,7 +16,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     if (request.user?.sub) {
       return `user:${request.user.sub}`
     }
-    // 未认证用户回退到 IP
-    return request.ip || 'unknown'
+    // 未认证用户回退到 IP；归一化后入键，与 audit/4xx 封顶口径一致（L12）
+    return normalizeIpForKey(request.ip || 'unknown')
   }
 }
