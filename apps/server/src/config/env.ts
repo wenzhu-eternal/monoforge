@@ -135,6 +135,9 @@ const envSchema = z
     // admin 角色 ID（permissions.guard 根据此值判断超级管理员，默认 1）
     ADMIN_ROLE_ID: z.coerce.number().int().positive().default(1),
 
+    // user 角色 ID（public register / 默认建户 / 微信建户 默认分配此角色，seed 默认 2）
+    DEFAULT_USER_ROLE_ID: z.coerce.number().int().positive().default(2),
+
     // 数据库备份开关：默认关闭（开发环境不跑定时备份，避免容器未运行导致失败邮件）
     // 生产环境设为 true 启用每日 0 点备份
     ENABLE_BACKUP: z
