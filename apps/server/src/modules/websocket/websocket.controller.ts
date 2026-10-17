@@ -81,10 +81,17 @@ export class WebsocketController {
         await rollbackDailyQuota(this.redisService, 'notify', user.sub).catch(() => {})
         throw err
       })
+    // L6：isUserOnline 抛 Redis 错误不应让已发送的通知变 500 且不退额
+    let delivered = false
+    try {
+      delivered = await this.eventsService.isUserOnline(dto.userId)
+    } catch {
+      delivered = false
+    }
     return {
       message: '通知已发送',
       notification: created,
-      delivered: await this.eventsService.isUserOnline(dto.userId),
+      delivered,
     }
   }
 }

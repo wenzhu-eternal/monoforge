@@ -125,6 +125,10 @@ export class FilesService {
         .returning()
     } catch (e) {
       await unlink(file.path).catch(() => {})
+      // L6：DB insert 失败后退额（quotaConsumed 已在 consume 前置 true）
+      if (quotaConsumed && uploadedBy !== undefined) {
+        await rollbackDailyQuota(this.redisService, 'upload', uploadedBy)
+      }
       throw e
     }
 
