@@ -24,9 +24,12 @@ interface LoginResult {
   user: AuthUser
 }
 
-// token 缓存（整个 e2e 套件复用，JWT 30 分钟内不会过期）
+// token 缓存（整个 e2e 套件复用，JWT 15 分钟内不会过期；超 10 分钟强制重登防死 token）
 let adminToken: LoginResult | null = null
 let normalUserToken: LoginResult | null = null
+let adminLoginAt = 0
+let normalUserLoginAt = 0
+const LOGIN_CACHE_TTL_MS = 10 * 60 * 1000
 
 async function apiLogin(username: string, password: string): Promise<LoginResult> {
   const res = await fetch(`${E2E_API_BASE}/auth/login`, {
@@ -42,15 +45,17 @@ async function apiLogin(username: string, password: string): Promise<LoginResult
 }
 
 async function getAdminToken(): Promise<LoginResult> {
-  if (!adminToken) {
+  if (!adminToken || Date.now() - adminLoginAt >= LOGIN_CACHE_TTL_MS) {
     adminToken = await apiLogin(adminUser.username, adminUser.password)
+    adminLoginAt = Date.now()
   }
   return adminToken
 }
 
 async function getNormalUserToken(): Promise<LoginResult> {
-  if (!normalUserToken) {
+  if (!normalUserToken || Date.now() - normalUserLoginAt >= LOGIN_CACHE_TTL_MS) {
     normalUserToken = await apiLogin(normalUser.username, normalUser.password)
+    normalUserLoginAt = Date.now()
   }
   return normalUserToken
 }
