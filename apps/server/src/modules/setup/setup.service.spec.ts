@@ -24,7 +24,7 @@ vi.mock('@/db/helpers', () => ({
 
 // L34 同款：getEnv().ADMIN_ROLE_ID mock 固定为 1，单测不随 .env 漂移
 vi.mock('@/config/env', () => ({
-  getEnv: () => ({ ADMIN_ROLE_ID: 1 }),
+  getEnv: () => ({ ADMIN_ROLE_ID: 1, DEFAULT_USER_ROLE_ID: 2 }),
 }))
 
 const { db: mockDb } = await import('@/db')
@@ -294,7 +294,8 @@ describe('SetupService', () => {
         .mockResolvedValueOnce({ id: 1, name: 'admin' })
         .mockResolvedValueOnce(undefined)
         .mockResolvedValueOnce({ id: 2, name: 'user' })
-        .mockResolvedValue({ id: 1, name: 'admin' })
+        .mockResolvedValueOnce({ id: 1, name: 'admin' })
+        .mockResolvedValueOnce({ id: 2, name: 'user' })
       const insertMock = vi.fn().mockReturnValue({
         values: vi.fn().mockReturnValue({
           onConflictDoNothing: vi.fn().mockReturnValue({

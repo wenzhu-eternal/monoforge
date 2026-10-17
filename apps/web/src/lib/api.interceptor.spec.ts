@@ -68,7 +68,7 @@ describe('拦截器 401 处置矩阵', () => {
   })
 
   it('正常过期链：业务 401 → 刷新成功 → 重试 200，token 同步', async () => {
-    useAuthStore.setState({ token: 'expired-token' })
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
     let calls = 0
     api.defaults.adapter = async (config) => {
       calls += 1
@@ -87,7 +87,7 @@ describe('拦截器 401 处置矩阵', () => {
   })
 
   it('刷新失败（普通 401）→ 终态登出（清态）', async () => {
-    useAuthStore.setState({ token: 'expired-token' })
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
     api.defaults.adapter = async (config) => {
       throw err401(config as InternalAxiosRequestConfig)
     }
@@ -100,7 +100,7 @@ describe('拦截器 401 处置矩阵', () => {
   })
 
   it('M1：refresh 成功但重试仍 401（_retry）→ 终态登出', async () => {
-    useAuthStore.setState({ token: 'expired-token' })
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
     api.defaults.adapter = async (config) => {
       throw err401(config as InternalAxiosRequestConfig)
     }
@@ -113,7 +113,7 @@ describe('拦截器 401 处置矩阵', () => {
   })
 
   it('M2：refresh 返回 MUST_CHANGE_PASSWORD 401 → 走改密分支，不清态、错误透传', async () => {
-    useAuthStore.setState({ token: 'expired-token' })
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
     api.defaults.adapter = async (config) => {
       throw err401(config as InternalAxiosRequestConfig)
     }

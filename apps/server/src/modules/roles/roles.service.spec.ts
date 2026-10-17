@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common'
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/db', () => {
@@ -126,13 +126,13 @@ describe('RolesService', () => {
       expect(result).toEqual(mockRole)
     })
 
-    it('重名时抛 ConflictException', async () => {
+    it('创建内置角色名时抛 ForbiddenException（L4）', async () => {
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
         id: 1,
         name: 'admin',
       } as never)
 
-      await expect(service.create({ name: 'admin' })).rejects.toThrow(ConflictException)
+      await expect(service.create({ name: 'admin' })).rejects.toThrow(ForbiddenException)
     })
   })
 

@@ -63,7 +63,7 @@ export class ScheduleService {
     if (userId !== undefined) {
       await consumeDailyQuota(this.redisService, 'backup', userId, MANUAL_BACKUP_DAILY_LIMIT)
     }
-    const executed = await this.doBackup()
+    const executed = await this.doBackup(userId)
     if (!executed) {
       // L1：锁忙未实际执行 → 退还刚扣的配额，防连点把 3 次额度耗在 409 上、真需备份时被拒
       if (userId !== undefined) {
@@ -198,7 +198,7 @@ export class ScheduleService {
    * 实际执行备份的逻辑：互斥锁 → pg_dump 导出 → 清理旧备份 → 邮件通知
    * 返回 false 表示未抢到锁（已有备份进行中），true 表示已执行（含执行失败）
    */
-  private async doBackup(): Promise<boolean> {
+  private async doBackup(userId?: number): Promise<boolean> {
     // M13：SETNX 互斥锁——cron 与手动触发（或连发）并发时两个 pg_dump 交叉截断写同一文件，
     // 产物静默损坏且邮件照报成功。Redis 异常时降级无锁执行（备份可用性优先，锁仅为并发防御）
     let locked = true
@@ -298,9 +298,16 @@ export class ScheduleService {
           `备份失败通知邮件发送失败: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`,
         )
       }
-      // L11：pg_dump 执行了但失败（非零退出），返回 false 让 manualBackup 退还已扣配额，
-      // 避免"尝试即计费"与 M13 失败退额口径相悖
-      return false
+      // L11：pg_dump 已开始执行但失败，退还已扣配额，然后返回 true 保持 manualBackup 正常流程
+      // DATABASE_URL 未配置等尚未执行的错误，继续抛错
+      if (filepath && userId !== undefined) {
+        try {
+          await rollbackDailyQuota(this.redisService, 'backup', userId)
+        } catch {
+          // 退额失败仅告警，不影响错误上报链路
+        }
+      }
+      return true
     } finally {
       // 释放失败仅告警：锁有 TTL 兜底，不会永久卡死后续备份
       void this.redisService
