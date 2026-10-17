@@ -87,3 +87,20 @@ describe('reportFrontendError context 截断（M7）', () => {
     expect((body.method as string).length).toBe(10)
   })
 })
+
+describe('reportFrontendError skipAuthFlow（M10）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('api.post 第三参 carry skipAuthFlow: true，防上报自身 401 刷下线', async () => {
+    await reportFrontendError({
+      source: 'frontend',
+      errorType: 'js_error',
+      message: '测试错误',
+    } as ReportError)
+
+    const config = apiMock.post.mock.calls[0]?.[2] as Record<string, unknown> | undefined
+    expect(config?.skipAuthFlow).toBe(true)
+  })
+})
