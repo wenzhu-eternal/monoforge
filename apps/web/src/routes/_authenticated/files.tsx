@@ -60,6 +60,8 @@ export function FilesContent() {
   // L1：行级 pending，仅转正在操作的那行
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [restoringId, setRestoringId] = useState<number | null>(null)
+  // L3：预览请求在途标记，late resolve 自身 revoke 并 return，避免覆盖已展示的较新预览
+  const [previewingId, setPreviewingId] = useState<number | null>(null)
 
   // 预览 blob 卸载兜底：直接切路由时回收，否则驻留到页签关闭
   // M10：StrictMode 双挂载会先跑 cleanup 再重跑 effect，ref 不回真则预览请求
@@ -121,8 +123,14 @@ export function FilesContent() {
   }
 
   const handlePreview = async (record: FileItem) => {
+    setPreviewingId(record.id)
     try {
       const url = await previewFile(record.id)
+      // L3：若当前已是较新的预览请求，本请求已过期，revoke 自身并放弃展示
+      if (previewingId !== record.id) {
+        URL.revokeObjectURL(url)
+        return
+      }
       // L17：组件已在途请求时卸载，立即回收，防止 objectURL 泄漏至页签关闭
       if (!previewMountedRef.current) {
         URL.revokeObjectURL(url)
@@ -134,6 +142,8 @@ export function FilesContent() {
       setPreviewUrl(url)
     } catch (err) {
       messageApi.error(extractErrorMessage(err, '预览失败'))
+    } finally {
+      if (previewingId === record.id) setPreviewingId(null)
     }
   }
 
