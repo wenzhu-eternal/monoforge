@@ -16,13 +16,17 @@ import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, permissions as permissionsTable, rolePermissions, roles, users } from '@/db/schema'
+import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name)
 
-  constructor(private readonly redisService: RedisService) {}
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly errorLogsService: ErrorLogsService,
+  ) {}
 
   async findAll(
     page = 1,
@@ -412,8 +416,25 @@ export class UsersService {
         )
       }
     }
-    await this.redisService.deleteByPattern(`refresh:${userId}:*`)
-    await this.revokeAccessTokens(userId)
+    // L8：deleteByPattern/revokeAccessTokens Redis 抖动降级重试，仍失败记 error_logs 留痕
+    const revokeAndLog = async (fn: () => Promise<unknown>, what: string) => {
+      try {
+        await fn()
+      } catch (err) {
+        try {
+          await fn()
+        } catch (retryErr) {
+          await this.errorLogsService.record({
+            message: `changePassword ${what} 失败（重试后仍失败），密码已改: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+          })
+        }
+      }
+    }
+    await revokeAndLog(
+      () => this.redisService.deleteByPattern(`refresh:${userId}:*`),
+      'refresh token 吊销',
+    )
+    await revokeAndLog(() => this.revokeAccessTokens(userId), 'access token 吊销')
 
     return { message: '密码修改成功，请重新登录' }
   }

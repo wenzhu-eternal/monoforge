@@ -40,6 +40,9 @@ import { UsersService } from './users.service'
 
 describe('UsersService', () => {
   let service: UsersService
+  let mockErrorLogsService: {
+    record: ReturnType<typeof vi.fn>
+  }
 
   const mockRedisService = {
     deleteByPattern: vi.fn().mockResolvedValue(0),
@@ -57,7 +60,10 @@ describe('UsersService', () => {
     })
     mockRedisService.deleteByPattern.mockResolvedValue(0)
     mockRedisService.scanKeys.mockResolvedValue([])
-    service = new UsersService(mockRedisService as never)
+    mockErrorLogsService = {
+      record: vi.fn().mockResolvedValue(undefined),
+    }
+    service = new UsersService(mockRedisService as never, mockErrorLogsService as never)
   })
 
   describe('findById', () => {
