@@ -198,7 +198,7 @@ src/routes/
 
 - 所有 API 调用通过 `useQuery` / `useMutation` 管理
 - 统一 queryKey 约定: `['模块', '资源', { params }]`
-- 全局 QueryClient 配置: retry 3 次、staleTime 5 分钟
+- 全局 QueryClient 配置: retry 1 次、staleTime 30 秒
 
 ### 主题 (Tailwind v4 + antd6)
 
@@ -209,8 +209,8 @@ src/routes/
 
 ### RBAC 权限
 
-- 路由级: `<AuthGuard>` 组件守卫
-- 按钮级: `<HasPermission code="xxx">` 组件控制
+- 路由级: `requireAuth()` 函数守卫
+- 按钮级: 内联 `hasPermission()` 检查
 
 ---
 
@@ -270,13 +270,14 @@ type CreateUser = z.infer<typeof CreateUserSchema>;
 | postgres | 5432 | PostgreSQL 16（独立容器 mf-postgres，monoforge 占最前位） |
 | redis | 6379 | Redis 7（独立容器 mf-redis，monoforge 占最前位） |
 | app | 9000 | NestJS 后端（含前端 dist，单一入口） |
+| e2e-postgres | 5433 | e2e 专用 PostgreSQL 16（profile 隔离，DEV DB 零污染） |
 
 ### Dockerfile 策略
 
 - **单一入口**：根 `Dockerfile` 多阶段构建（prod-deps → builder → runner），同时编译 shared → server → web；runner 仅带生产依赖三层 node_modules + dist 产物
 - 容器启动先执行数据库迁移（`dist/db/migrate.js`）再启动服务（`dist/main.js`），详见 [DEPLOYMENT.md](./DEPLOYMENT.md)
 - 前端 `dist` 由后端 `ServeStaticModule` 托管，无需独立 nginx 容器
-- `uploads/` 目录也由 `ServeStaticModule` 托管（`serveRoot: /uploads`），文件上传/导出的 URL 可直接访问
+- 文件上传/导出通过带权限的 `preview`/`download` 接口访问，`uploads/` 目录不直接对外暴露
 
 ### 前端构建优化
 

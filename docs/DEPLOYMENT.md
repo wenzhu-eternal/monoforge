@@ -87,7 +87,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/
 
 # 2. 后端 API 可达
 curl -s http://localhost:9000/api/v1/health
-# 期望：{"status":"ok","database":"ok","redis":"ok"}
+# 期望：{"code":200,"message":"ok","data":{"status":"ok","database":"ok","redis":"ok"}}
 
 # 3. Swagger 文档（仅非生产环境）
 curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
@@ -149,6 +149,7 @@ docker compose down
 | postgres | 5432 | - | PostgreSQL 16 |
 | redis | 6379 | - | Redis 7 |
 | app | 9000 | postgres, redis | NestJS 后端（含前端 dist，单一入口） |
+| e2e-postgres | 5433 | - | e2e 专用 PostgreSQL 16（profile 隔离，DEV DB 零污染） |
 
 > 生产环境建议：仅启动 postgres + redis 容器，server 直接 `node apps/server/dist/main` 运行（避免多层容器网络开销）。
 

@@ -12,7 +12,7 @@
 | 变量 | 说明 | 默认/示例 |
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL 连接串（DEV） | `postgresql://monoforge_user:monoforge_password@localhost:5432/monoforge_database` |
-| `E2E_DATABASE_URL` | e2e 专用 PostgreSQL 连接串（独立容器，DEV DB 零污染）。**两套件各自读值口径**：server vitest 冒烟脚本直接读此变量；Playwright webServer 取 `E2E_DATABASE_URL ?? process.env.DATABASE_URL ?? 5433 默认值`，非 5433 目标会打醒目警告并拒绝静默写入 DEV 库 | `postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db` |
+| `E2E_DATABASE_URL` | e2e 专用 PostgreSQL 连接串（独立容器，DEV DB 零污染）。**两套件各自读值口径**：server vitest 冒烟脚本直接读此变量；Playwright webServer 取 `E2E_DATABASE_URL ?? process.env.DATABASE_URL ?? 5433 默认值`，非 5433 目标会打醒目警告（仅警告，不阻断写入） | `postgresql://e2e_user:e2e_password@localhost:5433/monoforge_e2e_db` |
 | `DB_POOL_MAX` | PG 连接池上限（drizzle/postgres-js `max`；zod 校验 int ≥1，非法值启动即失败而非静默回退） | `10` |
 | `E2E_POSTGRES_USER` | e2e-postgres 容器用户名 | `e2e_user` |
 | `E2E_POSTGRES_PASSWORD` | e2e-postgres 容器密码 | `e2e_password` |
@@ -48,7 +48,7 @@
 | 变量 | 说明 | 示例 |
 |---|---|---|
 | `MAIL_HOST` | SMTP 主机 | `smtp.example.com` |
-| `MAIL_PORT` | SMTP 端口 | `465` |
+| `MAIL_PORT` | SMTP 端口 | `587` |
 | `MAIL_USER` | SMTP 用户名 | `your-email@example.com` |
 | `MAIL_PASSWORD` | SMTP 授权码（非登录密码） | `your-smtp-auth-code` |
 | `MAIL_FROM` | 发件人地址 | `your-email@example.com` |
@@ -167,6 +167,14 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 |---|---|---|---|
 | `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | 仅删已软删（`deletedAt` 非空且超期）的行；未删通知永不清，「只进不出」只根治一半 |
 | `error_logs` | ✅ 每天 1:30 cron（`dailyErrorLogsCleanup`） | 30 天 | 仅删已软删且超期的行 |
-| `files` trash | ✅ 每天 0:00 cron（`dailyTrashCleanup`） | 30 天 | 物理删除超期软删文件 |
+| `files` trash | ✅ 每天 0:30 cron（`dailyTrashCleanup`） | 30 天 | 物理删除超期软删文件 |
 | `audit_logs` | ❌ 无自动清理 | — | 归档责任由运维承担：建议定期导出后归档/清理，不自动删除（J1=A 留档，避免误删取证痕迹） |
+
+## 定时任务时区说明
+
+- `@Cron` 未传 `timeZone` 时，按容器本地时区执行（容器默认 `UTC`）。配置文件中未单独声明 `TZ` 环境变量时，表中"每天 0:30/1:30"等表述指 **UTC 0:30/1:30**，非本地北京时间。生产部署如需按北京时间执行，需在容器内设 `TZ=Asia/Shanghai` 或在 `@Cron('...', { timeZone: 'Asia/Shanghai' })` 中显式指定。
+
+## 测试环境限流说明
+
+- `NODE_ENV=test` 时，`app.module.ts` 全局关闭限流（`skipIf` 短路），vitest 单测不受限流影响；e2e 套件通过 `playwright.config.ts` webServer.env 显式设 `THROTTLE_LIMIT=1000` / `THROTTLE_LOGIN_LIMIT=1000` 规避限流，**不代表生产限流行为已失效**。
 

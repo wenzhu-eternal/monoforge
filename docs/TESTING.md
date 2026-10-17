@@ -63,7 +63,7 @@ pnpm --filter=web test:cov
 7. **路由元数据**：GET `/routes` 返回全部 controller 路由
 8. **系统初始化**：GET `/setup/status` + POST `/setup`
 9. **WebSocket**：POST `/websocket/notify`（含越权防护）
-10. **邮件/微信**：mail/welcome + wechat login（含未启用 503）
+10. **邮件/微信**：mail/welcome + wechat login（含未配置 400）
 11. **定时任务**：POST `/schedule/backup`
 
 > 共 70 个测试用例，文件位置：`apps/server/test/e2e/smoke.e2e-spec.ts`
@@ -152,7 +152,9 @@ apps/e2e/
     ├── routes.spec.ts        # 路由守卫（requireAuth/requirePermission）
     ├── users.spec.ts         # 用户管理 + 提权防护
     ├── websocket.spec.ts     # WebSocket 通知越权
-    └── audit-logs.spec.ts    # 审计日志查看
+    ├── audit-logs.spec.ts    # 审计日志查看
+    ├── error-logs.spec.ts    # 错误日志管理
+    └── mail.spec.ts          # 邮件发送
 ```
 
 ### 端口与数据隔离
@@ -190,7 +192,7 @@ docker compose up -d e2e-postgres
 - 文件位置：`apps/e2e/tests/*.spec.ts`
 - 用 Playwright 语义化定位器（`getByRole`、`getByPlaceholder`、`getByText`），避免 CSS 选择器
 - 每个测试独立，不依赖执行顺序（虽然 workers=1 串行执行）
-- 测试账号用 `e2e-` 前缀（`e2e-normal-user`、`e2e-target-user`、`e2e-temp-*`），便于 global-teardown 清理
+- 测试账号用 `e2e_` 前缀（`e2e_normal_user`、`e2e_target_user`、`e2e_temp_*`），便于 global-teardown 清理
 - 不删除 admin 账号和 seed 默认数据
 - 数据准备走 `helpers/api.ts` 的 `apiClient`，UI 操作走 `helpers/auth.ts`
 
