@@ -17,6 +17,7 @@ const SENSITIVE_FIELDS = [
   'idcard',
   'phone',
   'email',
+  'to', // M5：mail DTO 收件人键，防 SMTP 故障 5xx 时收件人邮箱明文落入 error_logs.context
   'code',
 ]
 
