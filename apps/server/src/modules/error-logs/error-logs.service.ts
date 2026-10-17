@@ -361,8 +361,9 @@ export class ErrorLogsService {
 
   // 按 IP 限制每日错误上报最多 100 条
   // Lua 保证 INCR + 首次 EXPIRE 原子：两步分离时进程中断会导致 key 无 TTL 永驻，该 IP 永久限流
+  // L12：入键前统一 normalizeIpForKey，与 audit/4xx 封顶口径一致，避免 IPv6 /64 旋转逐地址立桶
   private async enforceDailyIpLimit(ip: string): Promise<void> {
-    const key = `error:report:day:${ip}`
+    const key = `error:report:day:${normalizeIpForKey(ip)}`
     try {
       const now = new Date()
       const secondsUntilMidnight =
