@@ -90,6 +90,8 @@ function LogsTab() {
   // L11：行级 pending 精度——标记/批量标记/删除只转正在操作的那行，避免全表同时转圈
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [batchResolvingKey, setBatchResolvingKey] = useState<string | null>(null)
+  // L1：行级 pending，仅转正在操作的那行（删除/恢复/切换激活）
+  const [pendingRowId, setPendingRowId] = useState<number | null>(null)
   const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error, isSuccess } = useErrorLogs({
@@ -147,11 +149,14 @@ function LogsTab() {
   }
 
   const handleDelete = async (id: number) => {
+    setPendingRowId(id)
     try {
       await deleteMutation.mutateAsync(id)
       messageApi.success('删除成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '删除失败'))
+    } finally {
+      setPendingRowId(null)
     }
   }
 
@@ -243,7 +248,7 @@ function LogsTab() {
             key: 'delete',
             node: (
               <Popconfirm title="确认删除该错误日志？" onConfirm={() => handleDelete(record.id)}>
-                <Button type="link" size="small" danger>
+                <Button type="link" size="small" danger loading={pendingRowId === record.id}>
                   删除
                 </Button>
               </Popconfirm>
@@ -566,6 +571,8 @@ function WhitelistTab() {
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  // L1：行级 pending，WhitelistTab 内独立状态
+  const [pendingRowId, setPendingRowId] = useState<number | null>(null)
   const [form] = Form.useForm<WhitelistFormValues>()
   const [messageApi, contextHolder] = message.useMessage()
 
@@ -618,29 +625,38 @@ function WhitelistTab() {
   }
 
   const handleToggleActive = async (record: ErrorWhitelist, checked: boolean) => {
+    setPendingRowId(record.id)
     try {
       await updateMutation.mutateAsync({ id: record.id, data: { isActive: checked } })
       messageApi.success(checked ? '已启用' : '已禁用')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '操作失败'))
+    } finally {
+      setPendingRowId(null)
     }
   }
 
   const handleDelete = async (id: number) => {
+    setPendingRowId(id)
     try {
       await deleteMutation.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
+    } finally {
+      setPendingRowId(null)
     }
   }
 
   const handleRestore = async (id: number) => {
+    setPendingRowId(id)
     try {
       await restoreMutation.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
+    } finally {
+      setPendingRowId(null)
     }
   }
 
@@ -724,7 +740,12 @@ function WhitelistTab() {
                 title="确定要恢复该白名单规则吗？"
                 onConfirm={() => handleRestore(record.id)}
               >
-                <Button type="link" size="small" disabled={!isDeleted}>
+                <Button
+                  type="link"
+                  size="small"
+                  disabled={!isDeleted}
+                  loading={pendingRowId === record.id}
+                >
                   恢复
                 </Button>
               </Popconfirm>
@@ -737,7 +758,13 @@ function WhitelistTab() {
                 title={isDeleted ? '规则已禁用' : '确定要禁用该白名单规则吗？'}
                 onConfirm={() => handleDelete(record.id)}
               >
-                <Button type="link" size="small" danger disabled={isDeleted}>
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  disabled={isDeleted}
+                  loading={pendingRowId === record.id}
+                >
                   禁用
                 </Button>
               </Popconfirm>
