@@ -298,6 +298,9 @@ export class ScheduleService {
           `备份失败通知邮件发送失败: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`,
         )
       }
+      // L11：pg_dump 执行了但失败（非零退出），返回 false 让 manualBackup 退还已扣配额，
+      // 避免"尝试即计费"与 M13 失败退额口径相悖
+      return false
     } finally {
       // 释放失败仅告警：锁有 TTL 兜底，不会永久卡死后续备份
       void this.redisService
