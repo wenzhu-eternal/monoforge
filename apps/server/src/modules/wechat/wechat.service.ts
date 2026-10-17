@@ -14,6 +14,7 @@ import * as argon2 from 'argon2'
 import type { AxiosInstance } from 'axios'
 import { and, eq } from 'drizzle-orm'
 import { stripHtml } from '@/common/utils/strip-html'
+import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import { roles, users } from '@/db/schema'
@@ -308,9 +309,9 @@ export class WechatService {
     const username = `wx_${openId}`.slice(0, 50)
     const email = `${username}@wechat.placeholder`
 
-    // 查找默认 user 角色（seed 和 setup 均会创建）
+    // 查找默认 user 角色（seed 和 setup 均会创建，按 DEFAULT_USER_ROLE_ID 解析，不依赖角色名）
     const userRole = await db.query.roles.findFirst({
-      where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
+      where: and(eq(roles.id, getEnv().DEFAULT_USER_ROLE_ID), notDeleted(roles.deletedAt)),
     })
 
     try {

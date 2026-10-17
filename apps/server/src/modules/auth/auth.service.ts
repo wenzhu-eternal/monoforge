@@ -312,7 +312,7 @@ export class AuthService {
     }
 
     const userRole = await db.query.roles.findFirst({
-      where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
+      where: and(eq(roles.id, getEnv().DEFAULT_USER_ROLE_ID), notDeleted(roles.deletedAt)),
     })
 
     if (!userRole) {

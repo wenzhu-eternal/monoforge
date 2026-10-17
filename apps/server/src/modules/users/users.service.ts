@@ -147,7 +147,7 @@ export class UsersService {
     let roleId = data.roleId
     if (!roleId) {
       const defaultRole = await db.query.roles.findFirst({
-        where: and(eq(roles.name, 'user'), notDeleted(roles.deletedAt)),
+        where: and(eq(roles.id, getEnv().DEFAULT_USER_ROLE_ID), notDeleted(roles.deletedAt)),
       })
       if (!defaultRole) {
         throw new ConflictException('默认角色不存在，请联系管理员初始化种子数据')
