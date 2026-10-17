@@ -54,6 +54,9 @@ export function UsersContent() {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  // L1：行级 pending，仅转正在操作的那行，避免全表同时转圈及重复点击
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [restoringId, setRestoringId] = useState<number | null>(null)
   const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error, isSuccess } = useUsers({
@@ -147,7 +150,7 @@ export function UsersContent() {
             key: 'restore',
             node: (
               <Popconfirm title="确定要恢复该用户吗？" onConfirm={() => handleRestore(record.id)}>
-                <Button type="link" disabled={!isDeleted}>
+                <Button type="link" disabled={!isDeleted} loading={restoringId === record.id}>
                   恢复
                 </Button>
               </Popconfirm>
@@ -167,7 +170,12 @@ export function UsersContent() {
                 disabled={isAdmin || isDeleted}
                 onConfirm={() => handleDelete(record.id)}
               >
-                <Button type="link" danger disabled={isAdmin || isDeleted}>
+                <Button
+                  type="link"
+                  danger
+                  disabled={isAdmin || isDeleted}
+                  loading={deletingId === record.id}
+                >
                   禁用
                 </Button>
               </Popconfirm>
@@ -203,20 +211,26 @@ export function UsersContent() {
   }
 
   const handleDelete = async (id: number) => {
+    setDeletingId(id)
     try {
       await deleteUser.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
+    } finally {
+      setDeletingId(null)
     }
   }
 
   const handleRestore = async (id: number) => {
+    setRestoringId(id)
     try {
       await restoreUser.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
+    } finally {
+      setRestoringId(null)
     }
   }
 
