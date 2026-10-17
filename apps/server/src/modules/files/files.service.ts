@@ -27,6 +27,7 @@ import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quot
 import { db } from '@/db'
 import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, users } from '@/db/schema'
+import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { RedisService } from '@/modules/redis/redis.service'
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads')
@@ -56,7 +57,10 @@ async function safeMove(src: string, dest: string): Promise<void> {
 export class FilesService {
   private readonly logger = new Logger(FilesService.name)
 
-  constructor(private readonly redisService: RedisService) {}
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly errorLogsService: ErrorLogsService,
+  ) {}
 
   async upload(file: Express.Multer.File, uploadedBy?: number): Promise<UploadResult> {
     if (!file) {
@@ -285,10 +289,10 @@ export class FilesService {
       const row = post[0]
       if (row && !row.deletedAt) {
         this.logger.warn(`文件 ID ${id} remove 搬盘后行态已恢复（并发 restore），搬回原路径`)
-        await safeMove(preTrashPath, file.path).catch((err) => {
-          this.logger.warn(
-            `M9 补偿搬回原路径失败: ${err instanceof Error ? err.message : String(err)}`,
-          )
+        await safeMove(preTrashPath, file.path).catch(async (err) => {
+          await this.errorLogsService.record({
+            message: `M9 补偿搬回原路径失败: ${err instanceof Error ? err.message : String(err)}`,
+          })
         })
       }
     }
@@ -409,10 +413,10 @@ export class FilesService {
         this.logger.warn(
           `文件 ID ${id} restore 搬盘后行态已被并发 remove 重新软删，补偿搬回新隔离路径`,
         )
-        await safeMove(file.path, row.trashPath).catch((err) => {
-          this.logger.warn(
-            `M9 补偿搬回隔离路径失败: ${err instanceof Error ? err.message : String(err)}`,
-          )
+        await safeMove(file.path, row.trashPath).catch(async (err) => {
+          await this.errorLogsService.record({
+            message: `M9 补偿搬回隔离路径失败: ${err instanceof Error ? err.message : String(err)}`,
+          })
         })
       }
     }

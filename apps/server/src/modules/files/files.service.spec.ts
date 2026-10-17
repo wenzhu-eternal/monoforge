@@ -68,6 +68,9 @@ describe('FilesService', () => {
   let mockRedisQuota: {
     eval: ReturnType<typeof vi.fn>
   }
+  let mockErrorLogsService: {
+    record: ReturnType<typeof vi.fn>
+  }
 
   // M3/M9 共用：db.select 的 from→where→limit 链 mock
   const makeSelectChain = (rows: unknown[]) =>
@@ -88,7 +91,10 @@ describe('FilesService', () => {
     mockRedisQuota = {
       eval: vi.fn().mockResolvedValue(1),
     }
-    service = new FilesService(mockRedisQuota as never)
+    mockErrorLogsService = {
+      record: vi.fn().mockResolvedValue(undefined),
+    }
+    service = new FilesService(mockRedisQuota as never, mockErrorLogsService as never)
   })
 
   describe('remove', () => {
