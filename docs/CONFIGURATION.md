@@ -166,7 +166,7 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 | 表 | 自动清理 | 保留期 | 说明 |
 |---|---|---|---|
 | `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | 仅删已软删（`deletedAt` 非空且超期）的行；未删通知永不清，「只进不出」只根治一半 |
-| `error_logs` | ✅ 每天 1:30 cron（`dailyErrorLogsCleanup`） | 30 天 | 仅删已软删且超期的行 |
+| `error_logs` | ✅ 每天 1:30 cron（`dailyErrorLogsCleanup`） | 30 天 | createdAt 全量截断删（J1=A，保留期=全量口径，未删数据永不堆积） |
 | `files` trash | ✅ 每天 0:30 cron（`dailyTrashCleanup`） | 30 天 | 物理删除超期软删文件 |
 | `audit_logs` | ❌ 无自动清理 | — | 归档责任由运维承担：建议定期导出后归档/清理，不自动删除（J1=A 留档，避免误删取证痕迹） |
 

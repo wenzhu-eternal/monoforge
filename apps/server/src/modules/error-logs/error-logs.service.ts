@@ -80,17 +80,19 @@ export class ErrorLogsService {
       if (isWhitelisted) return
     }
 
-    if (params.statusCode && params.statusCode < 500) {
+    if (params.statusCode) {
+      const is5xx = params.statusCode >= 500
       const allowed = await this.enforceRecordMinuteCap(
         params.statusCode,
         params.url,
         params.userId,
         params.ip,
+        is5xx ? 200 : 20,
       )
       if (!allowed) {
-        // L5：丢弃必须留痕——静默 return 后无法事后解释该端点该分钟的 4xx 缺口
+        // L5：丢弃必须留痕——静默 return 后无法事后解释该端点该分钟的缺口
         appendErrorLog(
-          `[ErrorLogs] 4xx 分钟封顶丢弃: status=${params.statusCode} url=${params.url ?? 'unknown'}`,
+          `[ErrorLogs] ${is5xx ? '5xx' : '4xx'} 分钟封顶丢弃: status=${params.statusCode} url=${params.url ?? 'unknown'}`,
         )
         return
       }
@@ -112,6 +114,7 @@ export class ErrorLogsService {
     url?: string,
     userId?: number,
     ip?: string,
+    threshold: number = 20,
   ): Promise<boolean> {
     try {
       // L7：单 Lua 脚本原子 INCR+EXPIRE，避免两步之间进程崩溃导致 key 永驻
@@ -131,7 +134,7 @@ export class ErrorLogsService {
         [key],
         ['120'],
       )) as number
-      return n <= 20
+      return n <= threshold
     } catch {
       return true
     }

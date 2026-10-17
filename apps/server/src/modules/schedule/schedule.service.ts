@@ -178,14 +178,15 @@ export class ScheduleService {
     try {
       const cutoff = new Date(Date.now() - ERROR_LOGS_RETENTION_DAYS * 24 * 60 * 60 * 1000)
       // M12：RETURNING 不允许聚合函数（PG 42883），返回行数组再取 length 统计删除量
+      // J1=A：createdAt 全量截断删（保留期=全量口径，未删数据永不堆积）
       const rows = await db
         .delete(errorLogs)
-        .where(and(isNotNull(errorLogs.deletedAt), lt(errorLogs.deletedAt, cutoff)))
+        .where(lt(errorLogs.createdAt, cutoff))
         .returning({ id: errorLogs.id })
       const removed = rows.length
       if (removed > 0) {
         this.logger.log(
-          `error_logs 清理：${removed} 条超 ${ERROR_LOGS_RETENTION_DAYS} 天已物理删除`,
+          `error_logs 清理：${removed} 条超 ${ERROR_LOGS_RETENTION_DAYS} 天已物理删除（createdAt 全量截断）`,
         )
       }
     } catch (err) {
