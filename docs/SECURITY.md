@@ -218,6 +218,7 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 - error-logs 模块的只读接口（findAll/stats/grouped/whitelist）必须 `@SkipThrottle()`，避免 429
 
 - 单条查询接口（如 `@Get(':id')`）用 `@Throttle({ default: { limit: 60, ttl: 60000 } })` 放大限流（60 次/分钟），避免高频查详情被 429
+- 登录/注册/发码共享 default 桶，limit 读 `THROTTLE_LOGIN_LIMIT`（默认 5/分钟），避免 named 桶污染全部路由（M1）
 
 ## CORS
 

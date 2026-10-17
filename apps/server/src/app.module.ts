@@ -55,12 +55,6 @@ import { WechatModule } from './modules/wechat/wechat.module'
             ttl: configService.get<number>('THROTTLE_TTL', 60) * 1000,
             limit: configService.get<number>('THROTTLE_LIMIT', 10),
           },
-          // M6：登录/注册类匿名端点独立桶，e2e 调高 THROTTLE_LOGIN_LIMIT 避免全套件 429
-          {
-            name: 'login',
-            ttl: configService.get<number>('THROTTLE_TTL', 60) * 1000,
-            limit: configService.get<number>('THROTTLE_LOGIN_LIMIT', 5),
-          },
         ],
         storage: new RedisThrottlerStorage(_redisService),
       }),
