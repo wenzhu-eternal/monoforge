@@ -388,9 +388,10 @@ export class ScheduleService {
   }
 
   /**
-   * 清理旧备份: 按文件名排序删除超出 MAX_BACKUPS 的旧文件。
+   * 清理旧备份: 按文件名字典序删除超出 MAX_BACKUPS 的旧文件。
    * 新命名 backup-YYYYMMDD-HHmmss.sql 零填充，字典序与时间序一致；
-   * 与旧格式 backup-YYYYMMDD.sql 混存时同日旧格式排前（'-' < '.'），删除顺序仍正确。
+   * 与旧格式 backup-YYYYMMDD.sql 混存时：'-'(45) < '.'(46)，新格式（含 -HHmmss）字典序更小，
+   * 会被优先删除（即新备份先被清理），删除顺序与注释先前描述相反，以此注释为准。
    */
   private async cleanOldBackups(): Promise<void> {
     try {
