@@ -254,6 +254,13 @@ api.interceptors.response.use(
         // L31 超时与 M11 跨 tab 单飞均收敛在 refreshAccessToken 内
         const accessToken = await refreshAccessToken(issuedAt)
 
+        // M3：refresh 期间若用户已登出（clearUserScopedState 已执行、isAuthenticated=false），
+        // 不得向已清态 store 回写死信 token，也不得重发排队请求——避免死信 token 导致跨用户
+        // 数据泄露（react-query staleTime 30s 内旧用户数据可见）。
+        if (!useAuthStore.getState().isAuthenticated) {
+          return Promise.reject(new Error('用户已登出，放弃 refresh 重试'))
+        }
+
         useAuthStore.getState().setToken(accessToken)
         processQueue(null, accessToken)
 

@@ -35,6 +35,8 @@ export function useWebSocket() {
         if (!useAuthStore.getState().isAuthenticated) return null
         try {
           const fresh = await refreshAccessToken()
+          // M3：refresh 期间若用户已登出，不回写死信 token
+          if (!useAuthStore.getState().isAuthenticated) return null
           useAuthStore.getState().setToken(fresh)
           return fresh
         } catch (err) {
