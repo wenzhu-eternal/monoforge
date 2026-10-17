@@ -57,6 +57,9 @@ export function FilesContent() {
   const previewUrlRef = useRef<string | null>(null)
   // L17：在途请求卸载防护——previewFile 在途时切路由，resolve 后需检测 isMounted 再写入
   const previewMountedRef = useRef(true)
+  // L1：行级 pending，仅转正在操作的那行
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [restoringId, setRestoringId] = useState<number | null>(null)
 
   // 预览 blob 卸载兜底：直接切路由时回收，否则驻留到页签关闭
   // M10：StrictMode 双挂载会先跑 cleanup 再重跑 effect，ref 不回真则预览请求
@@ -152,20 +155,26 @@ export function FilesContent() {
   }
 
   const handleDelete = async (id: number) => {
+    setDeletingId(id)
     try {
       await deleteMutation.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
+    } finally {
+      setDeletingId(null)
     }
   }
 
   const handleRestore = async (id: number) => {
+    setRestoringId(id)
     try {
       await restoreMutation.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
+    } finally {
+      setRestoringId(null)
     }
   }
 
@@ -256,7 +265,12 @@ export function FilesContent() {
             key: 'restore',
             node: (
               <Popconfirm title="确定要恢复该文件吗？" onConfirm={() => handleRestore(record.id)}>
-                <Button type="link" size="small" disabled={!isDeleted}>
+                <Button
+                  type="link"
+                  size="small"
+                  disabled={!isDeleted}
+                  loading={restoringId === record.id}
+                >
                   恢复
                 </Button>
               </Popconfirm>
@@ -269,7 +283,13 @@ export function FilesContent() {
                 title={isDeleted ? '文件已禁用' : '确定要禁用该文件吗？'}
                 onConfirm={() => handleDelete(record.id)}
               >
-                <Button type="link" size="small" danger disabled={isDeleted}>
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  disabled={isDeleted}
+                  loading={deletingId === record.id}
+                >
                   禁用
                 </Button>
               </Popconfirm>

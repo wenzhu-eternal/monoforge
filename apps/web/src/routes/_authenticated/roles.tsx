@@ -84,6 +84,9 @@ export function RolesContent() {
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null)
   const [selectedPermissionCodes, setSelectedPermissionCodes] = useState<string[]>([])
   const [messageApi, contextHolder] = message.useMessage()
+  // L1：行级 pending，仅转正在操作的那行
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [restoringId, setRestoringId] = useState<number | null>(null)
 
   const { data, isLoading, isError, error, isSuccess } = useRoles({ page, pageSize })
   usePagedFallback(data?.list.length, isSuccess, page, setPage)
@@ -190,7 +193,7 @@ export function RolesContent() {
                 title="确定要恢复该角色吗？"
                 onConfirm={() => handleRestoreRole(record.id)}
               >
-                <Button type="link" disabled={!isDeleted}>
+                <Button type="link" disabled={!isDeleted} loading={restoringId === record.id}>
                   恢复
                 </Button>
               </Popconfirm>
@@ -203,7 +206,7 @@ export function RolesContent() {
                 title={isDeleted ? '角色已禁用' : '确定要禁用该角色吗？'}
                 onConfirm={() => handleDeleteRole(record.id)}
               >
-                <Button type="link" danger disabled={isDeleted}>
+                <Button type="link" danger disabled={isDeleted} loading={deletingId === record.id}>
                   禁用
                 </Button>
               </Popconfirm>
@@ -231,20 +234,26 @@ export function RolesContent() {
   }
 
   const handleDeleteRole = async (id: number) => {
+    setDeletingId(id)
     try {
       await deleteRole.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
+    } finally {
+      setDeletingId(null)
     }
   }
 
   const handleRestoreRole = async (id: number) => {
+    setRestoringId(id)
     try {
       await restoreRole.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
+    } finally {
+      setRestoringId(null)
     }
   }
 
