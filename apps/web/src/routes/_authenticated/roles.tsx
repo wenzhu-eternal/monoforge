@@ -98,9 +98,11 @@ export function RolesContent() {
   const canViewPerms = can(PermissionCodes.PERMISSION_VIEW)
 
   const { data: allPermissions, isLoading: allPermissionsLoading } = useAllPermissions()
-  const { data: currentPermissions, isFetching: currentPermsFetching } = useRolePermissions(
-    selectedRoleId || 0,
-  )
+  const {
+    data: currentPermissions,
+    isFetching: currentPermsFetching,
+    isError: currentPermsError,
+  } = useRolePermissions(selectedRoleId || 0)
   const updateRolePermissions = useUpdateRolePermissions()
 
   const [roleForm] = Form.useForm<CreateRole & UpdateRole>()
@@ -273,9 +275,9 @@ export function RolesContent() {
 
   const handlePermissionSubmit = async () => {
     if (!selectedRoleId) return
-    // L13：allPermissions 未就绪时禁用提交，防超管误点"确定"清空全角色权限
-    if (!allPermissions) {
-      messageApi.warning('权限列表未加载')
+    // L13/M4：allPermissions 未就绪或权限回显出错/仍在加载时禁用提交，防空勾选集覆盖清空角色权限
+    if (!allPermissions || currentPermsError || currentPermsFetching) {
+      messageApi.warning('权限回显加载失败或仍在加载，请稍后再提交')
       return
     }
 
@@ -390,7 +392,9 @@ export function RolesContent() {
         }}
         onOk={handlePermissionSubmit}
         confirmLoading={updateRolePermissions.isPending || permsSyncing}
-        okButtonProps={{ disabled: permsSyncing || !allPermissions }}
+        okButtonProps={{
+          disabled: permsSyncing || !allPermissions || currentPermsError || currentPermsFetching,
+        }}
         width={640}
       >
         <div className="max-h-96 overflow-y-auto">
