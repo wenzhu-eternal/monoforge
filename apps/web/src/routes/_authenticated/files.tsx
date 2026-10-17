@@ -99,9 +99,10 @@ export function FilesContent() {
     // L27：传前客户端预检（扩展名白名单 + 大小，与服务端共用 @shared 常量）——
     // 超限文件不再白传完才收 400，浪费带宽；魔数等深度校验仍由服务端兜底
     beforeUpload: (file) => {
-      const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        messageApi.error(`不支持 .${ext || '(无扩展名)'} 类型文件`)
+      const hasDot = file.name.includes('.')
+      const ext = hasDot ? (file.name.split('.').pop()?.toLowerCase() ?? '') : ''
+      if (!hasDot || !ALLOWED_EXTENSIONS.includes(ext)) {
+        messageApi.error(hasDot ? `不支持 .${ext} 类型文件` : '不支持无扩展名文件')
         return Upload.LIST_IGNORE
       }
       if (file.size > MAX_FILE_SIZE) {
