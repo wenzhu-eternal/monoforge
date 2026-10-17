@@ -71,7 +71,8 @@ class WsClient {
       path: '/socket.io',
       // M9：auth 用回调——socket.io 内部每次重试都实时向 provider 取最新 token，
       // 静态对象会把 connect 时捕获的死信物一路用到底（重连风暴根源之一）
-      auth: (cb) => cb({ token: this.tokenProvider?.() ?? token }),
+      // L14：provider 存在但返回 null 时不回退 connect 时快照的陈旧 token
+      auth: (cb) => cb({ token: this.tokenProvider ? (this.tokenProvider() ?? null) : token }),
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: WsClient.MAX_RECONNECT,
