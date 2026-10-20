@@ -36,14 +36,13 @@ test.describe('WebSocket 通知', () => {
       timeout: 10_000,
     })
 
-    // 填表单（userId 默认填自己 id）
-    const userIdInput = page.getByPlaceholder('输入用户 ID')
-    await userIdInput.clear()
-    await userIdInput.fill(String(adminUserId))
+    // 目标用户已锁定为当前用户（disabled），直接校验默认值，不再尝试清空/填写
+    const userIdInput = page.getByRole('spinbutton')
+    await expect(userIdInput).toHaveValue(String(adminUserId))
+    await expect(userIdInput).toBeDisabled()
 
-    const titleInput = page.getByPlaceholder('如：系统测试通知')
-    await titleInput.fill('e2e 自测通知')
-
+    const title = `e2e 自测通知 ${Date.now()}`
+    await page.getByPlaceholder('如：系统测试通知').fill(title)
     await page.getByPlaceholder('通知内容').fill('e2e 测试内容')
 
     await page.getByRole('button', { name: '发送通知' }).click()
@@ -51,8 +50,8 @@ test.describe('WebSocket 通知', () => {
     // 成功提示
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
 
-    // 实时通知列表应显示
-    await expect(page.getByText('e2e 自测通知')).toBeVisible({ timeout: 5000 })
+    // 实时通知列表应显示（标题带时间戳，避免命中上一轮残留通知）
+    await expect(page.getByText(title)).toBeVisible({ timeout: 5000 })
   })
 
   // M5/J2=A：普通用户无 NOTIFICATION_VIEW，布局层门控 → /403，无 WebSocket 连接

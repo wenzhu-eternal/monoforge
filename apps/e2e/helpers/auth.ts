@@ -60,6 +60,18 @@ async function getNormalUserToken(): Promise<LoginResult> {
   return normalUserToken
 }
 
+/**
+ * 清空 token 缓存。
+ * 登出会吊销该用户全部 access token（含本 helper/apiClient 缓存的 token），
+ * 登出用例结束后必须调用，否则后续用例会带着已吊销 token 被踢回 /login。
+ */
+export function resetAuthTokenCache() {
+  adminToken = null
+  normalUserToken = null
+  adminLoginAt = 0
+  normalUserLoginAt = 0
+}
+
 async function injectAuthState(page: Page, loginRes: LoginResult) {
   await page.addInitScript(
     ([token, user]) => {

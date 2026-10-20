@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test'
  *   - admin 查看角色列表 → 包含 admin 角色
  *   - admin 新建角色 → 成功
  *   - admin 编辑角色描述 → 成功
- *   - admin 删除角色 → 成功
+ *   - admin 禁用角色（软删）→ 成功
  *   - 普通用户访问 /roles → 403（在 routes.spec.ts 已覆盖，不重复）
  */
 
@@ -89,12 +89,12 @@ test.describe('角色管理（admin 视角）', () => {
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
   })
 
-  test('删除角色 → 成功', async ({ page }) => {
+  test('禁用角色 → 成功', async ({ page }) => {
     // 先用 API 创建一个临时角色
     const roleName = `${tempRolePrefix}-del-${Date.now()}`
     const { data: created } = await apiClient.post<{ id: number }>(
       '/roles',
-      { name: roleName, description: '待删除角色' },
+      { name: roleName, description: '待禁用角色' },
       201,
     )
     expect(created?.id).toBeTruthy()
@@ -104,17 +104,16 @@ test.describe('角色管理（admin 视角）', () => {
       timeout: 10_000,
     })
 
-    // 点删除（Popconfirm）
+    // 点禁用（Popconfirm）
     const targetRow = page.locator('.ant-table-row').filter({ hasText: roleName })
-    await targetRow.getByRole('button', { name: '删除' }).click()
+    await targetRow.getByRole('button', { name: '禁用' }).click()
 
     // Popconfirm 的确认按钮（okText 未指定，用 CSS class 定位）
     await page.locator('.ant-popconfirm .ant-btn-primary').click()
 
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
-    // 列表中应不再有该角色
-    await expect(page.locator('.ant-table-row').filter({ hasText: roleName })).toHaveCount(0, {
-      timeout: 5000,
-    })
+    // 软删后行保留（管理员可见已删数据），状态变为已禁用
+    await expect(targetRow.getByText('已禁用')).toBeVisible({ timeout: 5000 })
+    await expect(targetRow.getByRole('button', { name: '禁用' })).toBeDisabled()
   })
 })

@@ -1,4 +1,6 @@
 import { adminUser } from '@e2e/fixtures/users'
+import { apiClient } from '@e2e/helpers/api'
+import { resetAuthTokenCache } from '@e2e/helpers/auth'
 import { expect, test } from '@playwright/test'
 
 /**
@@ -47,6 +49,10 @@ test.describe('认证链路', () => {
     await page.getByText('退出登录').click()
 
     await expect(page).toHaveURL(/\/login$/, { timeout: 10_000 })
+
+    // 后端登出会吊销 admin 的全部 access token（含共享缓存），清掉后让后续用例重新登录
+    apiClient.clearToken()
+    resetAuthTokenCache()
   })
 
   test('未登录访问 /dashboard → 跳转 /login', async ({ page }) => {

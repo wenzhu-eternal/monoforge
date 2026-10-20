@@ -12,7 +12,7 @@ import { expect, test } from '@playwright/test'
  *   - 新建权限 → 成功
  *   - 编辑权限描述 → 成功
  *   - 配置权限路由 → 成功
- *   - 删除权限 → 成功
+ *   - 禁用权限（软删）→ 成功
  */
 
 const tempPermPrefix = 'e2e_perm'
@@ -114,12 +114,12 @@ test.describe('权限管理（admin 视角）', () => {
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
   })
 
-  test('删除权限 → 成功', async ({ page }) => {
+  test('禁用权限 → 成功', async ({ page }) => {
     // 先用 API 创建一个临时权限
     const permCode = `${tempPermPrefix}_del_${Date.now()}`
     const { data: created } = await apiClient.post<{ id: number }>(
       '/permissions',
-      { code: permCode, name: 'e2e 删除测试', description: '待删除' },
+      { code: permCode, name: 'e2e 禁用测试', description: '待禁用' },
       201,
     )
     expect(created?.id).toBeTruthy()
@@ -130,13 +130,13 @@ test.describe('权限管理（admin 视角）', () => {
     })
 
     const row = page.locator('.ant-table-row').filter({ hasText: permCode })
-    await row.getByRole('button', { name: '删除' }).click()
+    await row.getByRole('button', { name: '禁用' }).click()
 
     await page.locator('.ant-popconfirm .ant-btn-primary').click()
 
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('.ant-table-row').filter({ hasText: permCode })).toHaveCount(0, {
-      timeout: 5000,
-    })
+    // 软删后行保留（管理员可见已删数据），状态变为已禁用
+    await expect(row.getByText('已禁用')).toBeVisible({ timeout: 5000 })
+    await expect(row.getByRole('button', { name: '禁用' })).toBeDisabled()
   })
 })

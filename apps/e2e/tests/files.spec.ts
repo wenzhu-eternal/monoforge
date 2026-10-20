@@ -9,7 +9,7 @@ import { expect, test } from '@playwright/test'
  *
  * 覆盖：
  *   - admin 上传 PNG → 列表显示
- *   - admin 删除自己上传的文件 → 成功 + 列表移除
+ *   - admin 禁用自己上传的文件 → 成功 + 状态变更
  *   - 上传者删除自己的文件（通过 API 验证 200）
  *   - 普通用户删除他人文件 → 403
  *   - admin 删除他人上传的文件 → 200
@@ -40,26 +40,30 @@ test.describe('文件上传 + 软删', () => {
     await expect(page.locator('.ant-table-row').first()).toBeVisible({ timeout: 10_000 })
   })
 
-  test('admin 删除自己上传的文件 → 成功 + 列表移除', async ({ page }) => {
-    const filePath = makePngFile(`e2e-delete-${Date.now()}.png`)
+  test('admin 禁用自己上传的文件 → 成功 + 状态变更', async ({ page }) => {
+    const filename = `e2e-delete-${Date.now()}.png`
+    const filePath = makePngFile(filename)
     const { data: uploaded } = await apiClient.uploadFile(
       '/files/upload',
       filePath,
-      `e2e-delete-${Date.now()}.png`,
+      filename,
       'image/png',
     )
     const fileId = (uploaded as { id?: number })?.id
     expect(fileId).toBeTruthy()
 
     await page.goto('/files')
-    await expect(page.locator('.ant-table-row').first()).toBeVisible({ timeout: 10_000 })
+    const row = page.locator('.ant-table-row').filter({ hasText: filename })
+    await expect(row).toBeVisible({ timeout: 10_000 })
 
-    const firstRow = page.locator('.ant-table-row').first()
-    await firstRow.getByRole('button', { name: '删除' }).click()
+    await row.getByRole('button', { name: '禁用' }).click()
     // antd Popconfirm 的确认按钮（okText 未指定，用 CSS class 定位避免文案差异）
     await page.locator('.ant-popconfirm .ant-btn-primary').click()
 
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
+    // 软删后行保留（管理员可见已删数据），状态变为已禁用
+    await expect(row.getByText('已禁用')).toBeVisible({ timeout: 5000 })
+    await expect(row.getByRole('button', { name: '禁用' })).toBeDisabled()
   })
 
   test('上传者通过 API 删除自己的文件 → 200', async () => {

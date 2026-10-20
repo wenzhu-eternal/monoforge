@@ -15,6 +15,9 @@ import { expect, test } from '@playwright/test'
  * 注意：dev 环境通常未配置 MAIL_HOST，后端会返回 400 "邮件服务未配置"
  */
 
+// 每个用例用不同收件人，避免 MailService 同一邮箱 60s 限频把后续断言变成 409
+const mailRecipient = (prefix: string) => `e2e-${prefix}-${Date.now()}@example.com`
+
 test.beforeAll(async () => {
   await apiClient.login(adminUser.username, adminUser.password)
 })
@@ -48,8 +51,11 @@ test.describe('邮件发送（admin 视角）', () => {
     await page.getByLabel('用户名').fill('testuser')
     await page.getByRole('button', { name: '发送欢迎邮件' }).click()
 
-    // 应显示表单校验错误
-    await expect(page.getByText('请输入有效邮箱')).toBeVisible({ timeout: 3000 })
+    // 应显示表单校验错误（当前复用 shared UserEmailSchema 的 zod 默认英文文案）
+    await expect(page.locator('.ant-form-item-explain-error').first()).toHaveText(
+      /Invalid email address|邮箱格式不正确/,
+      { timeout: 3000 },
+    )
   })
 
   test('欢迎邮件表单校验 - 必填项', async ({ page }) => {
@@ -59,22 +65,23 @@ test.describe('邮件发送（admin 视角）', () => {
     await page.getByRole('button', { name: '发送欢迎邮件' }).click()
 
     // 应显示必填校验错误
-    await expect(page.getByText('请输入有效邮箱')).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText('请输入邮箱')).toBeVisible({ timeout: 3000 })
     await expect(page.getByText('请输入用户名')).toBeVisible({ timeout: 3000 })
   })
 
   test('发送欢迎邮件 - 后端响应验证', async ({ page }) => {
+    const recipient = mailRecipient('welcome')
     // 先用 API 验证后端响应（避免 UI 等待 SMTP 超时）
     const { status } = await apiClient.post('/mail/welcome', {
-      to: 'e2e-test@example.com',
+      to: recipient,
       username: 'e2e-test-user',
     })
-    // 已配置 SMTP：200 成功；未配置：400；SMTP 拒绝：500
-    expect([200, 400, 500]).toContain(status)
+    // 已配置 SMTP：200；未配置：400；收件人 60s 限频：409；路由 3/min 限频：429；SMTP 拒绝：500
+    expect([200, 400, 409, 429, 500]).toContain(status)
 
     // UI 操作：填表 + 提交，验证按钮 loading 状态出现
     await page.goto('/mail')
-    await page.getByLabel('收件人邮箱').fill('e2e-test@example.com')
+    await page.getByLabel('收件人邮箱').fill(recipient)
     await page.getByLabel('用户名').fill('e2e-test-user')
     const submitBtn = page.getByRole('button', { name: '发送欢迎邮件' })
     await submitBtn.click()
@@ -89,15 +96,17 @@ test.describe('邮件发送（admin 视角）', () => {
   })
 
   test('发送验证码邮件 - 后端响应验证', async ({ page }) => {
+    const recipient = mailRecipient('verification')
     const { status } = await apiClient.post('/mail/verification-code', {
-      to: 'e2e-test@example.com',
+      to: recipient,
       name: 'e2e 测试',
     })
-    expect([200, 400, 500]).toContain(status)
+    // 同欢迎邮件：200/400/409/429/500 均为可解释响应
+    expect([200, 400, 409, 429, 500]).toContain(status)
 
     await page.goto('/mail')
     await page.getByText('验证码邮件', { exact: true }).click()
-    await page.getByLabel('收件人邮箱').fill('e2e-test@example.com')
+    await page.getByLabel('收件人邮箱').fill(recipient)
     const submitBtn = page.getByRole('button', { name: '发送验证码邮件' })
     await submitBtn.click()
     await expect(submitBtn)

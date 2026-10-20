@@ -7,10 +7,10 @@
 
 export const E2E_API_BASE = 'http://localhost:9000/api/v1'
 
+// 邮箱随 SEED_ADMIN_EMAIL 变化，勿在夹具里硬编码；需要时从登录响应/API 读取
 export const adminUser = {
   username: 'admin',
   password: '888888',
-  email: 'admin@example.com',
 } as const
 
 export const normalUser = {

@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test'
  *   - 触发前端错误上报 → 列表出现新错误
  *   - 统计面板显示（总数/未处理/前端/后端）
  *   - 标记已处理 → 状态变更
- *   - 白名单 Tab：新增/删除白名单规则
+ *   - 白名单 Tab：新增/禁用白名单规则
  */
 
 test.beforeAll(async () => {
@@ -104,7 +104,7 @@ test.describe('错误日志（admin 视角）', () => {
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
   })
 
-  test('白名单 Tab - 新增 + 删除白名单规则', async ({ page }) => {
+  test('白名单 Tab - 新增 + 禁用白名单规则', async ({ page }) => {
     await page.goto('/error-logs')
     await page.getByRole('tab', { name: '白名单规则' }).click()
 
@@ -123,14 +123,14 @@ test.describe('错误日志（admin 视角）', () => {
       timeout: 5000,
     })
 
-    // 删除刚创建的规则
+    // 禁用刚创建的规则
     const row = page.locator('.ant-table-row').filter({ hasText: pattern })
-    await row.getByRole('button', { name: '删除' }).click()
+    await row.getByRole('button', { name: '禁用' }).click()
     await page.locator('.ant-popconfirm .ant-btn-primary').click()
 
     await expect(page.locator('.ant-message-success').first()).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('.ant-table-row').filter({ hasText: pattern })).toHaveCount(0, {
-      timeout: 5000,
-    })
+    // 软删后行保留（管理员可见已删数据），状态变为已禁用
+    await expect(row.getByText('已禁用')).toBeVisible({ timeout: 5000 })
+    await expect(row.getByRole('button', { name: '禁用' })).toBeDisabled()
   })
 })

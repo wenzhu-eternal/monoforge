@@ -19,10 +19,15 @@ import { expect, test } from '@playwright/test'
  */
 
 let targetUserId: number
+let adminUserId: number
+let adminEmail: string
 
 test.beforeAll(async () => {
   // 用 admin 登录 apiClient，用于数据准备
-  await apiClient.login(adminUser.username, adminUser.password)
+  const loginRes = await apiClient.login(adminUser.username, adminUser.password)
+  // 邮箱受 SEED_ADMIN_EMAIL 影响，不能从夹具硬编码
+  adminUserId = loginRes.user.id
+  adminEmail = loginRes.user.email
 
   // 校验目标用户已由 global-setup 创建，并缓存其 id 供越权用例直接引用
   //（M11：普通用户无 USER_VIEW，列表接口 403 返回 data:null，用例内再查列表必 TypeError）
@@ -42,8 +47,8 @@ test.describe('用户管理（admin 视角）', () => {
   test('查看用户列表 → 包含 admin 用户', async ({ page }) => {
     await page.goto('/users')
     await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
-    // 用 admin 邮箱精确匹配（避免 e2e_target_user 被改成 admin 角色后也匹配 "admin"）
-    await expect(page.locator('.ant-table-row').filter({ hasText: adminUser.email })).toBeVisible({
+    // 用登录响应里的真实邮箱精确匹配（避免 e2e_target_user 被改成 admin 角色后也匹配 "admin"）
+    await expect(page.locator('.ant-table-row').filter({ hasText: adminEmail })).toBeVisible({
       timeout: 10_000,
     })
   })
@@ -116,9 +121,9 @@ test.describe('用户管理（admin 视角）', () => {
 
   test('删除 admin 用户 → 409（初始管理员不可删除）', async () => {
     // UI 上 admin 行的删除按钮是 disabled，直接走 API 验证
-    // 精确删 admin（id=1）应返回 409
-    const adminDeleteRes = await apiClient.delete<{ message?: string }>('/users/1')
-    expect([409, 404].includes(adminDeleteRes.status)).toBe(true)
+    // 用登录响应里的真实 id，避免 seed 自增 id 漂移
+    const adminDeleteRes = await apiClient.delete<{ message?: string }>(`/users/${adminUserId}`)
+    expect(adminDeleteRes.status).toBe(409)
   })
 })
 
