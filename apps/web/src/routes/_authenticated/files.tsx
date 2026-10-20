@@ -57,9 +57,9 @@ export function FilesContent() {
   const previewUrlRef = useRef<string | null>(null)
   // L17：在途请求卸载防护——previewFile 在途时切路由，resolve 后需检测 isMounted 再写入
   const previewMountedRef = useRef(true)
-  // L1：行级 pending，仅转正在操作的那行
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [restoringId, setRestoringId] = useState<number | null>(null)
+  // L1：Set 类型，完成只删自己，避免并发行操作互抹 loading
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+  const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
   // L3：预览请求在途标记（ref 而非 state，避免异步状态更新未立即生效导致误判），late resolve 自身 revoke 并 return，避免覆盖已展示的较新预览
   const previewingIdRef = useRef<number | null>(null)
 
@@ -149,6 +149,8 @@ export function FilesContent() {
   }
 
   const closePreview = () => {
+    // L19：关闭浮层即放弃在途预览，否则 B 在途时关闭 A，B resolve 后仍会自行弹开
+    previewingIdRef.current = null
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl)
       previewUrlRef.current = null
@@ -166,26 +168,34 @@ export function FilesContent() {
   }
 
   const handleDelete = async (id: number) => {
-    setDeletingId(id)
+    setDeletingIds((prev) => new Set(prev).add(id))
     try {
       await deleteMutation.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
     } finally {
-      setDeletingId(null)
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
   const handleRestore = async (id: number) => {
-    setRestoringId(id)
+    setRestoringIds((prev) => new Set(prev).add(id))
     try {
       await restoreMutation.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
     } finally {
-      setRestoringId(null)
+      setRestoringIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
@@ -280,7 +290,7 @@ export function FilesContent() {
                   type="link"
                   size="small"
                   disabled={!isDeleted}
-                  loading={restoringId === record.id}
+                  loading={restoringIds.has(record.id)}
                 >
                   恢复
                 </Button>
@@ -299,7 +309,7 @@ export function FilesContent() {
                   size="small"
                   danger
                   disabled={isDeleted}
-                  loading={deletingId === record.id}
+                  loading={deletingIds.has(record.id)}
                 >
                   禁用
                 </Button>

@@ -12,7 +12,8 @@ export async function reportFrontendError(payload: ReportError): Promise<void> {
     // context 限 20 键/10KB（与 ReportErrorSchema 同宽），超限截断而非整单丢弃
     let context = payload.context
     if (context) {
-      const keys = Object.keys(context).slice(0, 20)
+      // L4：为 __truncated 预留 1 个键位，否则 21 键 > ReportErrorSchema 20 键上限整单 400 丢失
+      const keys = Object.keys(context).slice(0, 19)
       let trimmed: Record<string, unknown> = {}
       for (const k of keys) trimmed[k] = context[k]
       if (JSON.stringify(trimmed).length > 10240) {

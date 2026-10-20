@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, rename, stat, unlink } from 'node:fs/promises'
+import { copyFile, mkdir, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   BadRequestException,
@@ -24,14 +24,17 @@ import {
   validateMimeType,
 } from '@/common/file-validator'
 import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
+import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
+import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, users } from '@/db/schema'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { RedisService } from '@/modules/redis/redis.service'
 
-const UPLOAD_DIR = join(process.cwd(), 'uploads')
-const TRASH_DIR = join(process.cwd(), 'uploads-trash')
+// L13：目录可配（默认按 cwd 推导）；pm2/Docker 变更 WORKDIR 时用绝对路径锚定，防历史文件失联
+const UPLOAD_DIR = getUploadDir()
+const TRASH_DIR = getTrashDir()
 // J3：回收站保留期（拍板 30 天）——到期软删文件物理删除，与 backups 30 份口径对齐
 export const TRASH_RETENTION_DAYS = 30
 // L6：单用户上传日配额——防持有者持续写盘（超限留下的 multer 临时文件由每小时孤儿清理回收）
@@ -240,8 +243,17 @@ export class FilesService {
     // 预生成 trashPath，在同一次条件更新中同时设置 deletedAt 和 trashPath，消除 remove/restore 竞态窗口
     // M6：trashPath 是 varchar(255)——TRASH_DIR 绝对路径 + 13 位时间戳 + filename（可近 255）
     // 会超 255 导致软删 UPDATE 直接报错；按列宽截断（时间戳与随机段在前，唯一性不受影响）
+    // L13：分量截断——时间戳前缀（base36 短编码）完整保留做唯一性，文件名头尾截断；
+    // 原整串 slice 在 TRASH_DIR 极长时会把时间戳一起截掉，同毫秒删除互相覆盖
     const maxTrashFilename = Math.max(1, 255 - TRASH_DIR.length - 1)
-    const trashFilename = `${Date.now()}-${file.filename}`.slice(0, maxTrashFilename)
+    const tsPrefix = `${Date.now().toString(36)}-`
+    const maxNameLen = Math.max(1, maxTrashFilename - tsPrefix.length)
+    const name = file.filename
+    const tailLen = Math.min(name.length, Math.max(1, Math.floor(maxNameLen / 2)))
+    const headLen = Math.max(0, maxNameLen - tailLen)
+    const compactName =
+      name.length <= maxNameLen ? name : `${name.slice(0, headLen)}${name.slice(-tailLen)}`
+    const trashFilename = `${tsPrefix}${compactName}`.slice(0, Math.max(1, maxTrashFilename))
     const preTrashPath = join(TRASH_DIR, trashFilename)
     // 目标路径同样过安全校验（filename 来自 DB，防篡改后 rename 逃逸到隔离目录之外）
     if (!isPathSafe(preTrashPath, TRASH_DIR)) {
@@ -296,6 +308,7 @@ export class FilesService {
         await safeMove(preTrashPath, file.path).catch(async (err) => {
           await this.errorLogsService.record({
             message: `M9 补偿搬回原路径失败: ${err instanceof Error ? err.message : String(err)}`,
+            internal: true,
           })
         })
       }
@@ -420,6 +433,7 @@ export class FilesService {
         await safeMove(file.path, row.trashPath).catch(async (err) => {
           await this.errorLogsService.record({
             message: `M9 补偿搬回隔离路径失败: ${err instanceof Error ? err.message : String(err)}`,
+            internal: true,
           })
         })
       }

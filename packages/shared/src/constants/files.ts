@@ -17,7 +17,6 @@ export const ALLOWED_EXTENSIONS = [
   'xls',
   'xlsx',
   'txt',
-  'html',
   'css',
   'json',
   'mp4',

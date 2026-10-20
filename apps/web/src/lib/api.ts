@@ -237,6 +237,10 @@ api.interceptors.response.use(
             },
           })
         }).then((token) => {
+          // L2：刷新成功但期间已登出，排队请求不得带死 token 重发
+          if (!useAuthStore.getState().isAuthenticated) {
+            return Promise.reject(new Error('用户已登出，放弃 refresh 重试'))
+          }
           // 排队请求重试前同样标记，避免再次 401 时重入刷新循环（H5）
           originalRequest._retry = true
           originalRequest.headers.Authorization = `Bearer ${token}`
@@ -258,7 +262,11 @@ api.interceptors.response.use(
         // 不得向已清态 store 回写死信 token，也不得重发排队请求——避免死信 token 导致跨用户
         // 数据泄露（react-query staleTime 30s 内旧用户数据可见）。
         if (!useAuthStore.getState().isAuthenticated) {
-          return Promise.reject(new Error('用户已登出，放弃 refresh 重试'))
+          // L2：先排空队列再早退，否则排队请求各自等 15s 定时器超时，且后续刷新周期
+          // 会把旧队列带去重试死 token。排队回调同样复检登出态（见上方 then 分支）
+          const logoutError = new Error('用户已登出，放弃 refresh 重试')
+          processQueue(logoutError, null)
+          return Promise.reject(logoutError)
         }
 
         useAuthStore.getState().setToken(accessToken)

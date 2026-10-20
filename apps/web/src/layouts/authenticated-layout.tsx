@@ -47,8 +47,10 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
   const logoutMutation = useLogout()
   const storeUser = useAuthStore((state) => state.user)
   const [collapsed, setCollapsed] = useState(false)
-  // L28：用户手动开合的分组（受控 openKeys 的用户侧状态，与路由推导合并见菜单处）
+  // L28/L20：用户手动展开的非路由分组 + 用户显式收起的路由分组
+  // （路由推导只做兜底，用户显式收起优先，当前页所属分组也能收起）
   const [userOpenKeys, setUserOpenKeys] = useState<string[]>([])
+  const [collapsedGroups, setCollapsedGroups] = useState<string[]>([])
 
   // 自动刷新用户信息（含 permissions/roles 字段，供权限校验使用）
   const { data: meUser, isLoading, isError, refetch } = useCurrentUser()
@@ -222,23 +224,32 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
     return []
   }
 
-  // L28：defaultOpenKeys 仅首挂载求值——直达分组子页（如 /audit-logs）时组不展开、高亮项不可见；
-  // 改受控并与路由推导合并：新页自动展开所属组，用户手动开合的其他组保留
-  const openKeys = Array.from(new Set([...getOpenKeys(), ...userOpenKeys]))
+  // L28/L20：受控 openKeys——路由推导负责首次展开所属分组，用户显式收起后不再并回；
+  // 用户手动展开的其他分组保留。这样当前页所属分组也能被用户收起且不弹回。
+  const routeOpenKeys = getOpenKeys()
+  const openKeys = Array.from(
+    new Set([...routeOpenKeys.filter((k) => !collapsedGroups.includes(k)), ...userOpenKeys]),
+  )
 
   const handleOpenChange = (keys: string[]) => {
-    // onOpenChange 由 antd 在任意展开/收起时触发；直接覆写会丢失
-    // 路由推导出的 key（如子页路径要求展开所属分组），需做差集精确更新
-    // L13：added 过滤掉路由推导 key（getOpenKeys()），仅把用户手动开合的非路由 key 记入偏好，
-    // 防在 /users 打开其他分组时把路由 key 误记为偏好，导致离开后永久粘滞展开
+    // onOpenChange 由 antd 在任意展开/收起时触发；分别维护"用户展开的非路由组"与
+    // "用户显式收起的路由组"，避免路由推导把用户的收起动作覆盖掉
+    const routeKeys = getOpenKeys()
     setUserOpenKeys((prev) => {
       const prevSet = new Set(prev)
       const curSet = new Set(keys)
-      const routeKeys = new Set(getOpenKeys())
-      const added = keys.filter((k) => !prevSet.has(k) && !routeKeys.has(k))
+      const added = keys.filter((k) => !prevSet.has(k) && !routeKeys.includes(k))
       const removed = prev.filter((k) => !curSet.has(k))
       const next = [...prevSet, ...added].filter((k) => !removed.includes(k))
       return next
+    })
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      for (const key of routeKeys) {
+        if (keys.includes(key)) next.delete(key)
+        else next.add(key)
+      }
+      return Array.from(next)
     })
   }
 

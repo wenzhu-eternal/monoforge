@@ -24,3 +24,10 @@ if (!process.env.JWT_REFRESH_SECRET) {
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'test'
 }
+// L15①：限流旁路改为显式开关，测试环境默认打开（生产误用 NODE_ENV=test 不再静默全放行）
+if (!process.env.ALLOW_THROTTLE_BYPASS) {
+  process.env.ALLOW_THROTTLE_BYPASS = 'true'
+}
+// L18：固定初始化开关为 false——smoke 的 POST /setup 负路径断言依赖默认关闭，
+// 且防开发者 .env 开启开关后测试误初始化 e2e 库
+process.env.ALLOW_SETUP = 'false'

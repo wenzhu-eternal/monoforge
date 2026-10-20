@@ -68,12 +68,13 @@ export default defineConfig({
       // DATABASE_URL 环境感知（M15）：优先 e2e 专用 E2E_DATABASE_URL——shell 里残留的
       // DATABASE_URL 常指向 DEV 5432，直接透传会把 db:push+seed 打到 DEV DB 造成污染；
       // 无 E2E 变量时回退 DATABASE_URL（CI e2e job 只有 5432 service），再落 5433 默认值
-      // THROTTLE_LIMIT 调高避免 e2e 频繁登录触发 429（.env 可保持生产值 10）
+      // THROTTLE_LIMIT 调高避免 e2e 频繁登录触发 429（.env 可保持生产值 60）
       env: {
         NODE_ENV: 'development',
         DATABASE_URL: e2eDatabaseUrl,
         THROTTLE_LIMIT: '1000',
-        // M6：登录/注册匿名端点独立桶，e2e 内大量登录请求不撞 5/min 红线
+        // M6/L18：登录/注册/发码共享 default 桶（THROTTLE_LOGIN_LIMIT），
+        // e2e 内大量登录请求调高避免撞 5/min 红线
         THROTTLE_LOGIN_LIMIT: '1000',
         // M7：webServer 内会重跑 db:seed，默认密码强制首登改密会踢飞 e2e 会话——显式豁免
         SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false',

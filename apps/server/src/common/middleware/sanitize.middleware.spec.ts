@@ -36,6 +36,24 @@ describe('SanitizeMiddleware', () => {
     expect((out.nested as Record<string, unknown>).nickname).toBe('nick')
   })
 
+  it('L8：总数字段/邀请码/邮编等含 to/code 子串的键不误打码', () => {
+    const out = run({
+      total: 10,
+      topic: 'topic-a',
+      inviteCode: 'INVITE-1',
+      postalCode: '100000',
+      verificationCode: '654321',
+      to: 'user@example.com',
+    }) as Record<string, unknown>
+
+    expect(out.total).toBe(10)
+    expect(out.topic).toBe('topic-a')
+    expect(out.inviteCode).toBe('INVITE-1')
+    expect(out.postalCode).toBe('100000')
+    expect(out.verificationCode).toBe('***REDACTED***')
+    expect(out.to).toBe('***REDACTED***')
+  })
+
   it('数组元素内的敏感键同样掩码', () => {
     const out = run([{ email: 'a@b.com' }, { name: 'x' }]) as Array<Record<string, unknown>>
     expect(out[0].email).toBe('***REDACTED***')

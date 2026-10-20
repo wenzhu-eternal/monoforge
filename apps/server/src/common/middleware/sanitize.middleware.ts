@@ -9,17 +9,16 @@ const SENSITIVE_FIELDS = [
   'password',
   'passwd',
   'token',
-  'accesstoken',
-  'refreshtoken',
   'secret',
   'authorization',
   'creditcard',
   'idcard',
   'phone',
   'email',
-  'to', // M5：mail DTO 收件人键，防 SMTP 故障 5xx 时收件人邮箱明文落入 error_logs.context
-  'code',
 ]
+// L8：'to'/'code' 改精确匹配——子串匹配会把 total/topic/inviteCode/postalCode 误打码，
+// 5xx 排障丢失关键上下文；验证码键用白名单枚举保精确覆盖
+const SENSITIVE_EXACT_FIELDS = new Set(['to', 'code', 'verificationcode', 'smscode', 'captchacode'])
 
 const MASK = '***REDACTED***'
 
@@ -45,7 +44,10 @@ export class SanitizeMiddleware implements NestMiddleware {
       const result: Record<string, unknown> = {}
       for (const [key, value] of Object.entries(obj)) {
         const lowerKey = key.toLowerCase()
-        if (SENSITIVE_FIELDS.some((field) => lowerKey.includes(field))) {
+        if (
+          SENSITIVE_EXACT_FIELDS.has(lowerKey) ||
+          SENSITIVE_FIELDS.some((field) => lowerKey.includes(field))
+        ) {
           result[key] = MASK
         } else if (value && typeof value === 'object') {
           result[key] = this.sanitize(value)

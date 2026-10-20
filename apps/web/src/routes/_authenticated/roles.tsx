@@ -2,6 +2,7 @@ import type { CreateRole, Role, UpdateRole } from '@shared'
 import { DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
+  Alert,
   Button,
   Checkbox,
   Divider,
@@ -85,8 +86,9 @@ export function RolesContent() {
   const [selectedPermissionCodes, setSelectedPermissionCodes] = useState<string[]>([])
   const [messageApi, contextHolder] = message.useMessage()
   // L1：行级 pending，仅转正在操作的那行
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [restoringId, setRestoringId] = useState<number | null>(null)
+  // L1：Set 类型，完成只删自己，避免并发行操作互抹 loading
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+  const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
 
   const { data, isLoading, isError, error, isSuccess } = useRoles({ page, pageSize })
   usePagedFallback(data?.list.length, isSuccess, page, setPage)
@@ -105,6 +107,7 @@ export function RolesContent() {
     data: currentPermissions,
     isFetching: currentPermsFetching,
     isError: currentPermsError,
+    refetch: refetchCurrentPerms,
   } = useRolePermissions(selectedRoleId || 0)
   const updateRolePermissions = useUpdateRolePermissions()
 
@@ -193,7 +196,7 @@ export function RolesContent() {
                 title="确定要恢复该角色吗？"
                 onConfirm={() => handleRestoreRole(record.id)}
               >
-                <Button type="link" disabled={!isDeleted} loading={restoringId === record.id}>
+                <Button type="link" disabled={!isDeleted} loading={restoringIds.has(record.id)}>
                   恢复
                 </Button>
               </Popconfirm>
@@ -206,7 +209,12 @@ export function RolesContent() {
                 title={isDeleted ? '角色已禁用' : '确定要禁用该角色吗？'}
                 onConfirm={() => handleDeleteRole(record.id)}
               >
-                <Button type="link" danger disabled={isDeleted} loading={deletingId === record.id}>
+                <Button
+                  type="link"
+                  danger
+                  disabled={isDeleted}
+                  loading={deletingIds.has(record.id)}
+                >
                   禁用
                 </Button>
               </Popconfirm>
@@ -234,26 +242,34 @@ export function RolesContent() {
   }
 
   const handleDeleteRole = async (id: number) => {
-    setDeletingId(id)
+    setDeletingIds((prev) => new Set(prev).add(id))
     try {
       await deleteRole.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
     } finally {
-      setDeletingId(null)
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
   const handleRestoreRole = async (id: number) => {
-    setRestoringId(id)
+    setRestoringIds((prev) => new Set(prev).add(id))
     try {
       await restoreRole.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
     } finally {
-      setRestoringId(null)
+      setRestoringIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
@@ -406,6 +422,19 @@ export function RolesContent() {
         }}
         width={640}
       >
+        {currentPermsError && (
+          <Alert
+            type="error"
+            showIcon
+            className="mb-2"
+            message="权限回显加载失败，请关闭弹窗后重试"
+            action={
+              <Button size="small" onClick={() => refetchCurrentPerms()}>
+                重试
+              </Button>
+            }
+          />
+        )}
         <div className="max-h-96 overflow-y-auto">
           {allPermissionsLoading ? (
             <div className="text-center py-4 text-gray-400">加载中...</div>

@@ -42,6 +42,24 @@ describe('reportFrontendError context 截断（M7）', () => {
     expect(context.raw).toContain('rows')
   })
 
+  it('L4：超过 19 键时预留给 __truncated，最终不超过 schema 20 键上限', async () => {
+    const context: Record<string, unknown> = {}
+    for (let i = 0; i < 25; i += 1) {
+      context[`k${i}`] = 'x'.repeat(1000)
+    }
+
+    await reportFrontendError({
+      source: 'frontend',
+      errorType: 'js_error',
+      message: '测试错误',
+      context,
+    } as ReportError)
+
+    const sent = lastPostBody().context as Record<string, unknown>
+    expect(Object.keys(sent).length).toBeLessThanOrEqual(20)
+    expect(sent.__truncated).toBe(true)
+  })
+
   it('超长字符串值截断到 500 且标记 __truncated', async () => {
     await reportFrontendError({
       source: 'frontend',

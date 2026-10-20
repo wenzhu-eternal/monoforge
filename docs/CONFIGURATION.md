@@ -22,9 +22,9 @@
 | `JWT_SECRET` | JWT access token 密钥 | 必填，长度 >= 32 |
 | `JWT_REFRESH_SECRET` | JWT refresh token 密钥 | 必填，长度 >= 32 |
 | `API_PORT` | 后端端口 | `9000` |
-| `TRUST_PROXY` | 反向代理信任（Express trust proxy）：`false` 不信任（本地直跑，防 XFF 伪造绕过 IP 限流）；`1` 信任一层代理（nginx/ngrok 前置时取真实客户端 IP）。反代下遗漏 `1` 时登录失败锁定同步退化（全员共享代理 IP，可按用户名锁死任意账号，L6/J3） | `false` |
+| `TRUST_PROXY` | 反向代理信任（Express trust proxy）：`false` 不信任（本地直跑，防 XFF 伪造绕过 IP 限流）；`1` 信任一层代理（nginx/ngrok 前置时取真实客户端 IP），也支持 `loopback`/`linklocal`/`uniquelocal`、IP 或 CIDR 列表。非法值启动即失败（M3）；生产未信任任何代理会启动告警。反代下遗漏 `1` 时登录失败锁定同步退化（全员共享代理 IP，可按用户名锁死任意账号，L6/J3） | `false` |
 | `APP_NAME` | 应用名（Swagger 标题、邮件主题、邮件模板均引用，新项目通过 .env 配置） | `MonoForge` |
-| `ALLOW_ORIGIN` | CORS 白名单 | `http://localhost:3000` |
+| `ALLOW_ORIGIN` | CORS 白名单（逗号分隔多源）。**生产环境必填，未配启动失败**（M3 前默认值 `http://localhost:3000` 会静默收缩导致前端全量被 CORS 拒）；docker compose 已移除 localhost 默认透传，避免绕过该强检 | `http://localhost:3000`（仅开发） |
 | `NODE_ENV` | 环境 | `development` / `production` |
 | `COOKIE_SECURE` | refresh token cookie 的 secure 标志（HTTP=false，HTTPS=true；compose 缺省 `true` fail-secure，HTTP 调试显式设 false 或 `ALLOW_INSECURE_COOKIE=true`） | `false`（compose 缺省 `true`） |
 | `ALLOW_INSECURE_COOKIE` | 生产环境允许非 secure cookie（ngrok/单容器 HTTP 调试场景；生产强制 COOKIE_SECURE 除非此项为 true） | `false` |
@@ -32,11 +32,14 @@
 | `ALLOW_REGISTER` | 公开注册开关（true 时允许调用 register/send-register-code；默认 false 最小开口，需要开放注册的项目显式打开；关闭时两接口直接 404，前端登录页翻译为"未开放公开注册"） | `false` |
 | `ADMIN_ROLE_ID` | admin 角色 ID（PermissionsGuard 超级管理员旁路判定用，seed 创建的 admin 默认 id=1） | `1` |
 | `DEFAULT_USER_ROLE_ID` | user 角色 ID（public register/默认建户/微信建户默认分配此角色，seed 默认 2） | `2` |
+| `UPLOAD_DIR` | 上传目录（默认 `<cwd>/uploads`，回收站为同前缀 `-trash` 目录）。变更 WORKDIR 的部署用绝对路径锚定，避免历史文件失联 | `<cwd>/uploads` |
+| `BACKUP_DIR` | 备份目录（默认 `<cwd>/backups`）。容器部署时确认已挂载持久卷 | `<cwd>/backups` |
 | `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制）。备份经 Redis SETNX 互斥锁串行执行（进行中再触发返回 409；Redis 异常时降级无锁执行），产物按 `backup-YYYYMMDD-HHmmss.sql` 秒级命名防同日覆盖。成败通知发给 `ADMIN_ROLE_ID` 角色下第一个启用用户的邮箱（即初始化管理员），查不到时回退 `MAIL_FROM` | `false` |
 | `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，需做 shell 单引号转义防注入）。注：生产镜像已内置 `postgresql16-client`，默认 pg_dump 链路开箱即用，仅在特殊场景（如走代理导出）才需配置此项 | - |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
-| `THROTTLE_LIMIT` | 时间窗口内最大请求数（生产 10；e2e 由 `playwright.config.ts` 的 webServer.env 覆盖为 1000） | `10` |
-| `THROTTLE_LOGIN_LIMIT` | 登录/注册匿名端点独立桶，窗口内最大请求数（生产 5；e2e 覆盖为 1000 避免频繁登录触 429） | `5` |
+| `THROTTLE_LIMIT` | 时间窗口内最大请求数（生产 60；e2e 由 `playwright.config.ts` 的 webServer.env 覆盖为 1000） | `60` |
+| `THROTTLE_LOGIN_LIMIT` | 登录/注册/发码共享 default 桶的请求上限（生产 5；e2e 覆盖为 1000 避免频繁登录触 429）。非独立桶——`@Throttle` 覆盖的是 default 桶，不引入 named 桶 | `5` |
+| `ALLOW_THROTTLE_BYPASS` | 显式限流旁路开关（仅 e2e/vitest 由测试 setup 设为 true；生产保持 false。原按 `NODE_ENV=test` 隐式旁路已移除，M3/L15） | `false` |
 | `SEED_ADMIN_EMAIL` | seed 创建 admin 的邮箱（可选，默认 `admin@example.com`） | `admin@example.com` |
 | `SEED_ADMIN_PASSWORD` | seed 创建 admin 的密码（可选，默认 `888888`）。**未显式设置时首登强制改密**（`mustChangePassword=true`）；显式设置则视为运维知情，不强制 | `888888` |
 | `SEED_ADMIN_NICKNAME` | seed 创建 admin 的昵称（可选，默认 `Administrator`） | `Administrator` |
@@ -166,7 +169,7 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 
 | 表 | 自动清理 | 保留期 | 说明 |
 |---|---|---|---|
-| `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | 仅删已软删（`deletedAt` 非空且超期）的行；未删通知永不清，「只进不出」只根治一半 |
+| `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | createdAt 全量截断删（J1/M1=A，保留期=全量口径，未删通知不再无限堆积；M2 按 5000/批 ctid 子查询分批，避免首夜大存量超 statement_timeout） |
 | `error_logs` | ✅ 每天 1:30 cron（`dailyErrorLogsCleanup`） | 30 天 | createdAt 全量截断删（J1=A，保留期=全量口径，未删数据永不堆积） |
 | `files` trash | ✅ 每天 0:30 cron（`dailyTrashCleanup`） | 30 天 | 物理删除超期软删文件 |
 | `audit_logs` | ❌ 无自动清理 | — | 归档责任由运维承担：建议定期导出后归档/清理，不自动删除（J1=A 留档，避免误删取证痕迹） |
@@ -177,5 +180,7 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 
 ## 测试环境限流说明
 
-- `NODE_ENV=test` 时，`app.module.ts` 全局关闭限流（`skipIf` 短路），vitest 单测不受限流影响；e2e 套件通过 `playwright.config.ts` webServer.env 显式设 `THROTTLE_LIMIT=1000` / `THROTTLE_LOGIN_LIMIT=1000` 规避限流，**不代表生产限流行为已失效**。
+- 限流旁路由显式 `ALLOW_THROTTLE_BYPASS=true` 开关控制（vitest/测试 setup 默认打开），`NODE_ENV=test` 不再隐式旁路（M3/L15）——预发误设 test 不会静默全放行。
+- e2e（Playwright）不以旁路开关跑：`playwright.config.ts` webServer.env 显式设 `THROTTLE_LIMIT=1000` / `THROTTLE_LOGIN_LIMIT=1000` 规避频繁登录 429，**不代表生产限流行为已失效**。
+- 全链路测试断言限流契约见 `apps/server/src/common/throttle-contract.spec.ts`（login=THROTTLE_LOGIN_LIMIT、error 上报 3/min、error-logs 详情 60/min、无装饰器继承 THROTTLE_LIMIT、生产不命中 bypass）。
 

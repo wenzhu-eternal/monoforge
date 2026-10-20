@@ -43,9 +43,10 @@ function scheduleFlush(): void {
 export function appendErrorLog(message: string, stack?: string): void {
   try {
     const time = new Date().toISOString()
-    // L8：message 内 CR/LF 转义，防畸形 URL 向 error-*.log 注入换行伪造日志行
+    // L8/L14：message 与 stack 内 CR/LF 一并转义，防畸形 URL/异常栈向 error-*.log 注入换行伪造日志行
     const safeMessage = message.replace(/[\r\n]/g, '\\n')
-    const line = `[${time}] [ERROR] ${safeMessage}\n${stack ? `${stack}\n` : ''}\n`
+    const safeStack = stack?.replace(/[\r\n]/g, '\\n')
+    const line = `[${time}] [ERROR] ${safeMessage}\n${safeStack ? `${safeStack}\n` : ''}\n`
     writeQueue.push(line)
     scheduleFlush()
   } catch {

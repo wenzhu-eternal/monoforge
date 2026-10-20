@@ -85,6 +85,13 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
       // 已 seed 过，应为 true
       expect(res.body.data.initialized).toBe(true)
     })
+
+    it('POST /setup 未开启 ALLOW_SETUP → 404（默认不暴露初始化面）', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/setup')
+        .send({ username: 'probe_admin', email: 'probe@example.com', password: 'Passw0rd' })
+        .expect(404)
+    })
   })
 
   // ============================================================
@@ -667,7 +674,8 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
         .get('/api/v1/notifications/unread-count')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200)
-      expect(res.body.data).toBeTruthy()
+      // seed 在 admin 已存在时不补通知，未读数可为 0；断言类型而非真值，避免二次运行误报
+      expect(typeof res.body.data).toBe('number')
     })
 
     it('POST /notifications/read-all → 200', async () => {

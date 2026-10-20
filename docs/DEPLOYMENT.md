@@ -47,7 +47,7 @@ pnpm build
 # 2. 执行数据库迁移
 pnpm db:migrate
 
-# 3. （可选）填充种子数据（幂等：已存在用户时只补齐权限/角色/绑定，不创建也不覆盖 admin）
+# 3. （可选）填充种子数据（幂等：已存在 admin 角色用户时只补齐权限/角色/绑定，不创建也不覆盖 admin）
 pnpm db:seed
 
 # 4. 启动后端（同时托管前端 + 提供 API）
@@ -94,22 +94,32 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
 # 期望：200（生产环境应为 404）
 ```
 
+## 初始化纪律（L21）
+
+- 初始化（`ALLOW_SETUP=true` + POST /setup，或 `pnpm db:seed`）必须在受控网络（本机/内网/VPN）内完成；未初始化窗口内 `/setup` 先到先得，暴露公网等于把管理员账号送给第一个访问者
+- 初始化完成后立即把 `ALLOW_SETUP` 改回 `false`（未开启时 POST /setup 返回 404），并确认配置已生效
+- 不要用 `.env.example` 的示例值上线；JWT 密钥用 `openssl rand -base64 48` 生成
+- 变更顺序：先 `pnpm db:backup` → 再 `pnpm db:migrate` → 最后启动并验证 `/api/v1/health`
+
 ## 生产环境检查清单
 
 部署前必查：
 
 - [ ] `NODE_ENV=production`
 - [ ] `JWT_SECRET` / `JWT_REFRESH_SECRET` 已设置为强随机字符串（>= 32 字符）
-- [ ] `ALLOW_ORIGIN` 已设为生产域名（非 `*`）
-- [ ] `TRUST_PROXY` 已按部署形态设置（直连 false / 一层代理 1）
+- [ ] `ALLOW_ORIGIN` 已设为生产域名（非 `*`）；**生产未配置会启动失败**（L15② 强检，杜绝静默收缩到 localhost）
+- [ ] `TRUST_PROXY` 已按部署形态设置（直连 false / 一层代理 1 / IP·CIDR 列表）；非法值启动失败，生产未信任任何代理会启动告警（M3）。**反代部署漏配 1 时，全局限流与登录失败锁定会退化为共享代理 IP 的同一桶**
+- [ ] `ALLOW_THROTTLE_BYPASS=false`（生产/预发严禁开启；该开关只允许测试环境显式打开，L15①）
 - [ ] Cookie `secure` flag 已通过环境变量开启
 - [ ] Swagger 已关闭（`NODE_ENV=production` 时自动隐藏）
-- [ ] `ALLOW_SETUP=false`（初始化入口已关闭，防止重复初始化覆盖 admin）
+- [ ] `ALLOW_SETUP=false`（初始化入口已关闭，防止重复初始化覆盖 admin；未开启时 POST /setup 返回 404）
 - [ ] `SEED_ADMIN_MUST_CHANGE_PASSWORD=true`（生产强制改密，勿用种子密码长期运行）
 - [ ] `ALLOW_INSECURE_COOKIE=false`（HTTPS 生产必须，HTTP 调试才显式放开）
-- [ ] 数据库备份已创建
+- [ ] 如自定义 `UPLOAD_DIR`/`BACKUP_DIR`：已建目录并挂载持久卷（默认 `<cwd>/uploads`、`<cwd>/backups`）
+- [ ] 数据库备份已创建（`pnpm db:backup` 或 `POST /schedule/backup`）
 - [ ] 迁移已执行（`pnpm db:migrate`；生产容器启动时自动跑 `dist/db/migrate.js`）
 - [ ] 备份链路可用：生产镜像已内置 `postgresql16-client`，默认 pg_dump 路径开箱即用；如配 `BACKUP_CMD` 走 `docker exec`，需确认后端运行位置能访问 docker 命令（仅宿主机直跑有效，app 容器内无效）
+- [ ] 邮件/微信未配置时的降级符合预期（mail 未配返回失败、微信未配 503，均不应 500）
 - [ ] `pnpm test` 通过
 - [ ] `pnpm lint` 通过
 - [ ] `pnpm security` 通过（详见 [TESTING.md](./TESTING.md)）
@@ -155,7 +165,7 @@ docker compose down
 
 ### 反向代理信任
 
-后端前置 nginx/ngrok 等 proxy 时，必须设 `TRUST_PROXY=1`（信任一层代理），否则 Express 取到的是代理 IP，XFF 伪造可绕过基于 IP 的限流；**且登录失败锁定键（`login:fail:<ip>:<username>`）会把全体来源并成同一 IP，退化为按用户名全局锁死——任意攻击者可零成本锁死 admin（L6/J3）**。本地直跑必须保持 `false`（详见 [CONFIGURATION.md](./CONFIGURATION.md)）。
+后端前置 nginx/ngrok 等 proxy 时，必须设 `TRUST_PROXY=1`（信任一层代理），否则 Express 取到的是代理 IP，XFF 伪造可绕过基于 IP 的限流；**且登录失败锁定键（`login:fail:<ip>:<username>`）会把全体来源并成同一 IP，退化为按用户名全局锁死——任意攻击者可零成本锁死 admin（L6/J3）**。本地直跑必须保持 `false`（详见 [CONFIGURATION.md](./CONFIGURATION.md)）。`TRUST_PROXY` 支持 `true`/`false`/代理层数/`loopback`·`linklocal`·`uniquelocal`/IP·CIDR 列表，非法值启动即失败（M3）；生产未信任任何代理会输出启动告警，便于 ngrok/nginx 场景早发现。
 
 ## 回滚
 

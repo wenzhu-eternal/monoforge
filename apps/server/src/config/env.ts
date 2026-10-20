@@ -1,3 +1,4 @@
+import { isIP } from 'node:net'
 import { z } from 'zod'
 
 // JWT 密钥黑名单：拒绝 .env.example 的占位符，防止部署人 cp 后不改密钥导致生产用公开密钥
@@ -15,6 +16,25 @@ const jwtSecretSchema = z
     (v) => !FORBIDDEN_JWT_SECRETS.has(v),
     'JWT 密钥不能使用 .env.example 的占位符，请用 openssl rand -base64 48 生成真实密钥',
   )
+
+// M3：Express trust proxy 合法值校验——非法字符串（如 abc）会让 proxy-addr 在首个请求才抛错，
+// 这里启动即 fail-fast；支持 true/false、代理层数、loopback/linklocal/uniquelocal、IP/CIDR 列表
+function isValidTrustProxyEntry(entry: string): boolean {
+  if (entry === 'loopback' || entry === 'linklocal' || entry === 'uniquelocal') return true
+  if (/^[1-9]\d*$/.test(entry)) return true
+  const [addr = '', prefix] = entry.split('/')
+  const family = isIP(addr)
+  if (family === 0) return false
+  if (prefix === undefined) return true
+  if (!/^\d{1,3}$/.test(prefix)) return false
+  const n = Number(prefix)
+  return n >= 0 && n <= (family === 6 ? 128 : 32)
+}
+
+export function isValidTrustProxyValue(value: string): boolean {
+  if (value === 'true' || value === 'false') return true
+  return value.split(',').every((part) => isValidTrustProxyEntry(part.trim()))
+}
 
 const envSchema = z
   .object({
@@ -74,17 +94,23 @@ const envSchema = z
     TRUST_PROXY: z
       .string()
       .default('false')
+      .refine(
+        isValidTrustProxyValue,
+        'TRUST_PROXY 必须为 true/false、代理层数、IP/CIDR 或 loopback/linklocal/uniquelocal',
+      )
       .transform((v) => {
         if (v === 'true') return true
         if (v === 'false') return false
-        const n = Number.parseInt(v, 10)
-        return Number.isNaN(n) ? v : n
+        // 多值列表（逗号分隔）保持字符串交给 Express；纯整数才转代理层数
+        if (/^[1-9]\d*$/.test(v)) return Number.parseInt(v, 10)
+        return v
       }),
 
     // 应用名（Swagger 标题、邮件主题、邮件模板均引用，新项目通过 .env 配置）
     APP_NAME: z.string().default('MonoForge'),
 
-    ALLOW_ORIGIN: z.string().default('http://localhost:3000'),
+    // L15②：生产必须显式配置，开发默认 localhost（与 COOKIE_SECURE 的生产强检口径一致）
+    ALLOW_ORIGIN: z.string().optional(),
 
     // Cookie: 字符串 "true"/"false" 正确转 boolean（z.coerce.boolean() 对非空字符串恒为 true，有 bug）
     COOKIE_SECURE: z
@@ -113,7 +139,13 @@ const envSchema = z
 
     // Throttle: 登录接口建议单独更严格限流
     THROTTLE_TTL: z.coerce.number().min(1).default(60),
-    THROTTLE_LIMIT: z.coerce.number().min(1).default(10),
+    // L15③：默认 60/min——原 10/min 对仪表盘多接口+轮询过紧，逼出逐端点 @SkipThrottle 补丁
+    THROTTLE_LIMIT: z.coerce.number().min(1).default(60),
+    // L15①：显式测试旁路开关（原按 NODE_ENV=test 隐式旁路，测试/预发误用该值即全无限流）
+    ALLOW_THROTTLE_BYPASS: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => v === true || v === 'true')
+      .default(false),
     // M6：登录/注册类匿名端点独立限流桶，e2e/CI 可调高避免全套件限流撞墙
     THROTTLE_LOGIN_LIMIT: z.coerce.number().min(1).default(5),
 
@@ -137,6 +169,17 @@ const envSchema = z
 
     // user 角色 ID（public register / 默认建户 / 微信建户 默认分配此角色，seed 默认 2）
     DEFAULT_USER_ROLE_ID: z.coerce.number().int().positive().default(2),
+
+    // L13：文件/备份存储目录可配（默认按 cwd 推导）；变更 WORKDIR 的部署用绝对路径锚定
+    // 空串（.env.example / compose 透传的空值）视为未配置，否则路径会变成 '' 导致读写根目录
+    UPLOAD_DIR: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v : undefined)),
+    BACKUP_DIR: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v : undefined)),
 
     // 数据库备份开关：默认关闭（开发环境不跑定时备份，避免容器未运行导致失败邮件）
     // 生产环境设为 true 启用每日 0 点备份
@@ -180,6 +223,14 @@ const envSchema = z
           '生产环境必须启用 COOKIE_SECURE=true，否则 refresh cookie 明文传输可被截获；' +
           '若为 ngrok/单容器 HTTP 调试场景，请显式设置 ALLOW_INSECURE_COOKIE=true',
         path: ['COOKIE_SECURE'],
+      })
+    }
+    // L15②：生产未配 ALLOW_ORIGIN 会静默收缩到 localhost，前端跨域全部被 CORS 拒；显式失败指路
+    if (data.NODE_ENV === 'production' && !data.ALLOW_ORIGIN) {
+      ctx.addIssue({
+        code: 'custom',
+        message: '生产环境必须显式设置 ALLOW_ORIGIN（前端实际访问源，逗号分隔可配多个）',
+        path: ['ALLOW_ORIGIN'],
       })
     }
   })

@@ -58,8 +58,9 @@ function PermissionCodesContent() {
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>([])
   const [messageApi, contextHolder] = message.useMessage()
   // L1：行级 pending，仅转正在操作的那行
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [restoringId, setRestoringId] = useState<number | null>(null)
+  // L1：Set 类型，完成只删自己，避免并发行操作互抹 loading
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+  const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
 
   const { data, isLoading, isError, error, isSuccess } = usePermissions({ page, pageSize })
   usePagedFallback(data?.list.length, isSuccess, page, setPage)
@@ -167,7 +168,7 @@ function PermissionCodesContent() {
             key: 'restore',
             node: (
               <Popconfirm title="确定要恢复该权限吗？" onConfirm={() => handleRestore(record.id)}>
-                <Button type="link" disabled={!isDeleted} loading={restoringId === record.id}>
+                <Button type="link" disabled={!isDeleted} loading={restoringIds.has(record.id)}>
                   恢复
                 </Button>
               </Popconfirm>
@@ -180,7 +181,12 @@ function PermissionCodesContent() {
                 title={isDeleted ? '权限已禁用' : '确定要禁用该权限吗？'}
                 onConfirm={() => handleDelete(record.id)}
               >
-                <Button type="link" danger disabled={isDeleted} loading={deletingId === record.id}>
+                <Button
+                  type="link"
+                  danger
+                  disabled={isDeleted}
+                  loading={deletingIds.has(record.id)}
+                >
                   禁用
                 </Button>
               </Popconfirm>
@@ -218,26 +224,34 @@ function PermissionCodesContent() {
   }
 
   const handleDelete = async (id: number) => {
-    setDeletingId(id)
+    setDeletingIds((prev) => new Set(prev).add(id))
     try {
       await deletePermission.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
     } finally {
-      setDeletingId(null)
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
   const handleRestore = async (id: number) => {
-    setRestoringId(id)
+    setRestoringIds((prev) => new Set(prev).add(id))
     try {
       await restorePermission.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
     } finally {
-      setRestoringId(null)
+      setRestoringIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 

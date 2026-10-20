@@ -16,9 +16,9 @@
 
 - `findGrouped` 必须 `where eq(isResolved=false)`，全处理后聚合列表自动隐藏
 
-### 限流豁免
+### 限流
 
-- error-logs 模块的只读接口（findAll/stats/grouped/whitelist）必须 `@SkipThrottle()`，避免 429
+- error-logs 查询接口（findAll/stats/grouped/whitelist）与单条详情统一 `@Throttle({ default: { limit: 60, ttl: 60000 } })`（L7：原四端点 `@SkipThrottle` 零限流，stats 每次 3 个全表 count + 2 groupBy 可被高频打库）
 - **公开错误上报（POST /error-logs/report）必须 `@SkipAudit()`**：错误本体已入 error_logs（含 IP），审计再记 userId=0 的流水只会被灌水稀释审计价值；同样原因该 DTO 已 `@SkipXss()`（报错文案需原文入库）
 
 ## 应用日志规范
@@ -66,6 +66,7 @@ export class AuthService {
 ### 白名单匹配
 
 - 白名单规则用**字符串包含匹配**（非正则）判断 `message` 或 `url` 字段，避免 ReDoS 风险
+- 401/403/429 安全事件与内部标记（`record({ internal: true })`：备份失败、补偿搬运失败、改密留痕等运维留痕）必须跳过白名单：否则持 `error_log:manage` 的委托管理员可用宽 pattern 整批吞掉越权探测或内部故障证据（M2/L12）
 - 白名单规则缓存在 Redis 中，TTL 60s；CRUD 操作后失效缓存
 - 白名单 CRUD 仅 admin 角色可操作
 - 白名单表格排序须稳定：`desc(createdAt), desc(id)` 作为 tie-breaker，避免操作后顺序变化

@@ -9,6 +9,10 @@ export function extractErrorMessage(error: unknown, fallback = '操作失败'): 
   if (!error || typeof error !== 'object') return fallback
 
   const axiosError = error as AxiosError<{ message?: unknown }>
+  // L5：responseType:'blob' 的错误体也是 Blob，读不到 message 会落英文裸文案
+  if (typeof Blob !== 'undefined' && axiosError.response?.data instanceof Blob) {
+    return fallback
+  }
   const backendMessage = axiosError.response?.data?.message
   if (backendMessage) {
     if (typeof backendMessage === 'string') return backendMessage

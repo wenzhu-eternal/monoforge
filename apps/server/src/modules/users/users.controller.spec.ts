@@ -245,7 +245,7 @@ describe('UsersController', () => {
 
   describe('remove', () => {
     it('删除用户', async () => {
-      vi.mocked(service.remove).mockResolvedValue({ message: '用户 ID 1 已删除' })
+      vi.mocked(service.remove).mockResolvedValue({ message: '用户 ID 2 已删除' })
       const currentUser = {
         sub: 1,
         username: 'admin',
@@ -253,10 +253,22 @@ describe('UsersController', () => {
         roleId: 1,
       } as TokenPayload
 
-      const result = await controller.remove(1, currentUser)
+      const result = await controller.remove(2, currentUser)
 
-      expect(result).toEqual({ message: '用户 ID 1 已删除' })
-      expect(service.remove).toHaveBeenCalledWith(1)
+      expect(result).toEqual({ message: '用户 ID 2 已删除' })
+      expect(service.remove).toHaveBeenCalledWith(2)
+    })
+
+    it('L17①：不能删除当前登录账号', async () => {
+      const currentUser = {
+        sub: 1,
+        username: 'operator',
+        email: 'operator@test.com',
+        roleId: 2,
+      } as TokenPayload
+
+      await expect(controller.remove(1, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.remove).not.toHaveBeenCalled()
     })
   })
 })

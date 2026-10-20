@@ -11,7 +11,7 @@ import { notDeleted } from './helpers'
 import { db } from './index'
 import { permissions, rolePermissions, roles, users } from './schema'
 
-// 显式加载根目录 .env，与 db/index.ts 保持一致，避免从 cwd 加载到错误文件
+// L17③：与 db/index.ts 一致，按当前 cwd 解析 ../../.env（apps/server 下运行即仓库根）
 config({ path: '../../.env' })
 
 // admin 默认密码（首次登录后请立即修改）。新项目可通过环境变量 SEED_ADMIN_PASSWORD 覆盖
@@ -123,16 +123,16 @@ async function seed() {
       .onConflictDoNothing()
     console.log('Admin permissions assigned')
 
-    // M11：已初始化检测（存在未软删用户，与 setup.getStatus 同口径）——
-    // setup 初始化过的库补跑 seed 只幂等补齐权限/角色/绑定，不再创建/覆盖 admin 用户，
-    // 否则 onConflictDoUpdate 会用默认密码 888888 静默重置已设置的管理员密码
-    const [existingUsers] = await tx
+    // M11/L17②：已初始化检测按"是否存在 admin 角色用户"——原按任意未软删用户判断，
+    // 公开注册环境先有普通用户则 admin 永不补建；同时 setup 初始化的管理员（admin 角色）
+    // 仍能拦住 seed，避免默认密码 888888 静默重置已设置的管理员密码
+    const [existingAdmins] = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(users)
-      .where(isNull(users.deletedAt))
+      .where(and(isNull(users.deletedAt), eq(users.roleId, role.id)))
 
-    if ((existingUsers?.count ?? 0) > 0) {
-      console.log('Users exist, skip admin user creation (permissions/roles backfilled only)')
+    if ((existingAdmins?.count ?? 0) > 0) {
+      console.log('Admin user exists, skip admin user creation (permissions/roles backfilled only)')
       return
     }
 

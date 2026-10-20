@@ -19,7 +19,6 @@ export const ALLOWED_MIME_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/plain',
-  'text/html',
   'text/css',
   'application/json',
   'application/zip',
@@ -59,7 +58,17 @@ const MAGIC_NUMBERS: Array<{ ext: string; bytes: number[] }> = [
   { ext: 'xlsx', bytes: [0x50, 0x4b, 0x03, 0x04] },
 ]
 
-const MALICIOUS_PATTERNS = [/<script[\s\S]*?>/i, /javascript:/i, /\son\w+\s*=/i, /data:text\/html/i]
+// J1=A：text/html 已从 mime 白名单剔除；svg 仍保留，需覆盖可内嵌脚本/外链的容器标签
+const MALICIOUS_PATTERNS = [
+  /<script[\s\S]*?>/i,
+  /javascript:/i,
+  /\son\w+\s*=/i,
+  /data:text\/html/i,
+  /<iframe/i,
+  /<embed/i,
+  /<object/i,
+  /<foreignObject/i,
+]
 
 /**
  * 校验文件名安全性: 拒绝路径穿越、空字节、危险扩展名

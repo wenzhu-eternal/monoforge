@@ -90,6 +90,12 @@ export class RolesService {
       throw new NotFoundException(`角色 ID ${id} 不存在`)
     }
 
+    // L6：目标名入向同样封禁——create 已拒内置名，update 允许改名成 admin/user
+    // 会绕过限制造出第二个同名内置角色（与 create 口径对齐）
+    if (data.name && data.name !== existing.name && ['admin', 'user'].includes(data.name)) {
+      throw new ForbiddenException('系统内置角色名不可用')
+    }
+
     if (data.name && data.name !== existing.name) {
       // L2：seeded 'admin'/'user' 角色改名仅限超管，防公开注册/默认建户/微信建户
       // 硬编码 roles.name='user' 失灵（四处硬依赖 user 角色名）
@@ -130,6 +136,11 @@ export class RolesService {
     })
     if (!existing) {
       throw new NotFoundException(`角色 ID ${id} 不存在`)
+    }
+
+    // L6：内置角色（admin/user）是超管判定与默认建户的硬依赖，禁止软删
+    if (['admin', 'user'].includes(existing.name)) {
+      throw new ForbiddenException('系统内置角色不可删除')
     }
 
     // 绑定校验: 检查是否被用户引用

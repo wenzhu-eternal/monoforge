@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
-import { and, isNotNull, lt } from 'drizzle-orm'
+import { isNotNull, lt, sql } from 'drizzle-orm'
 import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
+import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { files } from '@/db/schema'
@@ -19,7 +20,8 @@ import { RedisService } from '@/modules/redis/redis.service'
 
 const execAsync = promisify(exec)
 
-const BACKUP_DIR = join(process.cwd(), 'backups')
+// L13：目录可配（默认按 cwd 推导）；pm2/Docker 变更 WORKDIR 时用绝对路径锚定，防历史备份失联
+const BACKUP_DIR = getEnv().BACKUP_DIR ?? join(process.cwd(), 'backups')
 const MAX_BACKUPS = 30
 // M13：备份进行中锁的 key 与 TTL（10min 兜底进程崩溃后死锁，备份链路本身 5min 超时）
 const BACKUP_LOCK_KEY = 'schedule:backup:running'
@@ -29,6 +31,11 @@ const MANUAL_BACKUP_DAILY_LIMIT = 3
 // J1：通知保留期 90 天，与 files trash（30 天）口径对齐；error_logs 另有独立保留 cron（30 天）；audit_logs 不自动清，归档责任见 CONFIGURATION.md「保留与归档」
 const NOTIFICATION_RETENTION_DAYS = 90
 const ERROR_LOGS_RETENTION_DAYS = 30
+// M2：单批删除量——避免 `DELETE … RETURNING` 一次性缓冲全表（postgres.js 全行组装后才 resolve，
+// 叠加 30s statement_timeout 会首夜超时回滚并长期持锁），5000 行远低于超时阈值
+const CLEANUP_BATCH_SIZE = 5000
+// 批次间让出 100ms，避免清理把连接池/IO 打满影响在线请求
+const CLEANUP_BATCH_PAUSE_MS = 100
 
 @Injectable()
 export class ScheduleService {
@@ -85,7 +92,7 @@ export class ScheduleService {
   @Cron('0 * * * *')
   async cleanOrphanUploads() {
     try {
-      const uploadDir = join(process.cwd(), 'uploads')
+      const uploadDir = getUploadDir()
       const entries = await readdir(uploadDir).catch(() => [] as string[])
       if (entries.length === 0) return
       const known = await db.select({ path: files.path }).from(files)
@@ -109,7 +116,7 @@ export class ScheduleService {
     // L8：同步清理 uploads-trash 中无 DB 行对应的孤立文件（M3 竞态窗口留下的残留）
     // 口径与 purgeExpiredTrash 一致：mtime 超 30 天且 DB 无对应行即视为孤儿
     try {
-      const trashDir = join(process.cwd(), 'uploads-trash')
+      const trashDir = getTrashDir()
       const trashEntries = await readdir(trashDir).catch(() => [] as string[])
       if (trashEntries.length === 0) return
       // trashPath 绝对路径集合用于快速排除已知行
@@ -153,42 +160,74 @@ export class ScheduleService {
     }
   }
 
-  // J1：每天 0:30 清理超保留期的通知（90 天），audit_logs 不自动删仅文档声明归档责任
+  /**
+   * M2：分批清理公共实现——每批按 ctid 子查询限流，避免单语句全表 DELETE 的 RETURNING 缓冲。
+   * 单批不足 CLEANUP_BATCH_SIZE 即视为清空；批次间暂停，防止打满连接池。
+   */
+  private async cleanupExpiredInBatches(
+    runBatch: () => Promise<number>,
+    label: string,
+    retentionDays: number,
+  ): Promise<void> {
+    let total = 0
+    for (;;) {
+      const removed = await runBatch()
+      total += removed
+      if (removed < CLEANUP_BATCH_SIZE) break
+      await new Promise((resolve) => setTimeout(resolve, CLEANUP_BATCH_PAUSE_MS))
+    }
+    if (total > 0) {
+      this.logger.log(
+        `${label}：${total} 条超 ${retentionDays} 天已物理删除（createdAt 全量截断，分批）`,
+      )
+    }
+  }
+
+  // J1/M1：每天 0:30 清理超保留期的通知（90 天，createdAt 全量截断），audit_logs 不自动删仅文档声明归档责任
   @Cron('30 0 * * *')
   async dailyNotificationCleanup() {
     try {
       const cutoff = new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-      // M12：RETURNING 不允许聚合函数（PG 42883），返回行数组再取 length 统计删除量
-      const rows = await db
-        .delete(notifications)
-        .where(and(isNotNull(notifications.deletedAt), lt(notifications.deletedAt, cutoff)))
-        .returning({ id: notifications.id })
-      const removed = rows.length
-      if (removed > 0) {
-        this.logger.log(`通知清理：${removed} 条超 ${NOTIFICATION_RETENTION_DAYS} 天已物理删除`)
-      }
+      await this.cleanupExpiredInBatches(
+        async () => {
+          // M12：RETURNING 不允许聚合函数（PG 42883），返回行数组再取 length 统计删除量；
+          // M2：ctid 子查询只取单批，RETURNING 也仅缓冲 5000 行
+          const rows = await db
+            .delete(notifications)
+            .where(
+              sql`ctid IN (SELECT ctid FROM ${notifications} WHERE ${lt(notifications.createdAt, cutoff)} LIMIT ${CLEANUP_BATCH_SIZE})`,
+            )
+            .returning({ id: notifications.id })
+          return rows.length
+        },
+        '通知清理',
+        NOTIFICATION_RETENTION_DAYS,
+      )
     } catch (err) {
       this.logger.error(`通知清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
-  // L16：error_logs 保留 cron——与通知同款，每天 1:30 执行，只删已软删且超期的行
+  // L16：error_logs 保留 cron——与通知同款，每天 1:30 执行，createdAt 全量截断
   @Cron('30 1 * * *')
   async dailyErrorLogsCleanup() {
     try {
       const cutoff = new Date(Date.now() - ERROR_LOGS_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-      // M12：RETURNING 不允许聚合函数（PG 42883），返回行数组再取 length 统计删除量
-      // J1=A：createdAt 全量截断删（保留期=全量口径，未删数据永不堆积）
-      const rows = await db
-        .delete(errorLogs)
-        .where(lt(errorLogs.createdAt, cutoff))
-        .returning({ id: errorLogs.id })
-      const removed = rows.length
-      if (removed > 0) {
-        this.logger.log(
-          `error_logs 清理：${removed} 条超 ${ERROR_LOGS_RETENTION_DAYS} 天已物理删除（createdAt 全量截断）`,
-        )
-      }
+      await this.cleanupExpiredInBatches(
+        async () => {
+          // M12：RETURNING 不允许聚合函数（PG 42883），返回行数组再取 length 统计删除量；
+          // M2：ctid 子查询只取单批，RETURNING 也仅缓冲 5000 行
+          const rows = await db
+            .delete(errorLogs)
+            .where(
+              sql`ctid IN (SELECT ctid FROM ${errorLogs} WHERE ${lt(errorLogs.createdAt, cutoff)} LIMIT ${CLEANUP_BATCH_SIZE})`,
+            )
+            .returning({ id: errorLogs.id })
+          return rows.length
+        },
+        'error_logs 清理',
+        ERROR_LOGS_RETENTION_DAYS,
+      )
     } catch (err) {
       this.logger.error(`error_logs 清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -285,6 +324,7 @@ export class ScheduleService {
           message: `数据库备份失败: ${errorMsg}`,
           stack: err instanceof Error ? err.stack : undefined,
           context: { task: 'dailyBackup' },
+          internal: true,
         })
       } catch (recordErr) {
         this.logger.error(
@@ -298,13 +338,16 @@ export class ScheduleService {
           `备份失败通知邮件发送失败: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`,
         )
       }
-      // L11：pg_dump 已开始执行但失败，退还已扣配额，然后返回 true 保持 manualBackup 正常流程
-      // DATABASE_URL 未配置等尚未执行的错误，继续抛错
+      // L11/L9：filepath 在一切检查前赋值，走到 catch 即已经扣额（手动触发）且备份未成功，
+      // 统一退还配额并返回 true，让 manualBackup 正常走错误上报/失败邮件流程；
+      // 只有 filepath 赋值前（当前不可达）的异常才向外抛
       if (filepath && userId !== undefined) {
         try {
           await rollbackDailyQuota(this.redisService, 'backup', userId)
-        } catch {
-          // 退额失败仅告警，不影响错误上报链路
+        } catch (rollbackErr) {
+          this.logger.warn(
+            `备份配额退还失败: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+          )
         }
       }
       return true
@@ -416,8 +459,15 @@ export class ScheduleService {
       const toDelete = backups.slice(0, backups.length - MAX_BACKUPS)
 
       for (const file of toDelete) {
-        await unlink(join(BACKUP_DIR, file))
-        this.logger.log(`已清理旧备份: ${file}`)
+        // L10：单文件删除失败（与并发备份窗口交叠时 ENOENT）不中断整轮清理
+        try {
+          await unlink(join(BACKUP_DIR, file))
+          this.logger.log(`已清理旧备份: ${file}`)
+        } catch (err) {
+          this.logger.warn(
+            `旧备份删除失败，跳过: ${file} (${err instanceof Error ? err.message : String(err)})`,
+          )
+        }
       }
     } catch (err) {
       this.logger.warn('清理旧备份失败', err)

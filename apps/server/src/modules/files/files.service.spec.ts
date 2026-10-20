@@ -147,7 +147,7 @@ describe('FilesService', () => {
       })
       expect(mockRename).toHaveBeenCalledWith('/uploads/a.png', expect.stringContaining('a.png'))
       const trashPath = mockRename.mock.calls[0]?.[1] as string
-      expect(trashPath).toMatch(/uploads-trash\/\d+-a\.png$/)
+      expect(trashPath).toMatch(/uploads-trash\/[0-9a-z]+-a\.png$/)
       // 软删 DB 记录
       expect(mockUpdate).toHaveBeenCalled()
     })
@@ -172,8 +172,8 @@ describe('FilesService', () => {
       const trashPath = mockRename.mock.calls[0]?.[1] as string
       expect(trashPath).toMatch(/uploads-trash\//)
       expect(trashPath.length).toBeLessThanOrEqual(255)
-      // 时间戳前缀保留（截断只砍尾部，唯一性不受影响）
-      expect(trashPath).toMatch(/uploads-trash\/\d+/)
+      // L13：时间戳前缀完整保留（文件名分量截断），保证同毫秒删除不互相覆盖
+      expect(trashPath).toMatch(/uploads-trash\/[0-9a-z]+-/)
     })
 
     it('上传者本人删除 → 成功', async () => {

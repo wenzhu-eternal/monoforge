@@ -87,14 +87,18 @@ services:
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required, set it in .env (min 32 chars)}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required, set it in .env (min 32 chars)}
       - API_PORT=9000
-      - ALLOW_ORIGIN=${ALLOW_ORIGIN:-http://localhost:9000}
+      # L15②：不提供 localhost 默认值，否则生产强检永远不触发；生产必须在 .env 显式写实际前端源
+      - ALLOW_ORIGIN=${ALLOW_ORIGIN:-}
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
       # 生产强制 COOKIE_SECURE 的逃生舱（ngrok/单容器 HTTP 调试场景），见 docs/CONFIGURATION.md
       - ALLOW_INSECURE_COOKIE=${ALLOW_INSECURE_COOKIE:-false}
       - ALLOW_SETUP=${ALLOW_SETUP:-false}
       - ALLOW_REGISTER=${ALLOW_REGISTER:-false}
       - ADMIN_ROLE_ID=${ADMIN_ROLE_ID:-1}
+      - DEFAULT_USER_ROLE_ID=${DEFAULT_USER_ROLE_ID:-2}
       - TRUST_PROXY=${TRUST_PROXY:-false}
+      - UPLOAD_DIR=${UPLOAD_DIR:-}
+      - BACKUP_DIR=${BACKUP_DIR:-}
       - APP_NAME=${APP_NAME:-MonoForge}
       - DB_POOL_MAX=${DB_POOL_MAX:-10}
       - MAIL_HOST=${MAIL_HOST:-}
@@ -103,8 +107,9 @@ services:
       - MAIL_PASSWORD=${MAIL_PASSWORD:-}
       - MAIL_FROM=${MAIL_FROM:-}
       - THROTTLE_TTL=${THROTTLE_TTL:-60}
-      - THROTTLE_LIMIT=${THROTTLE_LIMIT:-10}
+      - THROTTLE_LIMIT=${THROTTLE_LIMIT:-60}
       - THROTTLE_LOGIN_LIMIT=${THROTTLE_LOGIN_LIMIT:-5}
+      - ALLOW_THROTTLE_BYPASS=${ALLOW_THROTTLE_BYPASS:-false}
       # 定时备份开关与自定义备份命令；不透传则容器内读不到，每日 0 点 cron 会照常执行备份
       - ENABLE_BACKUP=${ENABLE_BACKUP:-false}
       - BACKUP_CMD=${BACKUP_CMD:-}

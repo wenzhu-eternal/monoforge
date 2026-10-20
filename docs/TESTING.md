@@ -5,7 +5,7 @@
 | 层级 | 目的 | 速度 | 依赖 | 命令 |
 |---|---|---|---|---|
 | 单元测试（unit） | 验证 service/controller 单一函数逻辑 | 快（ms） | Mock DB/Redis | `pnpm test` |
-| E2E 冒烟测试（smoke） | 验证后端**全量 16 模块 63 API 端点**端到端可用 | 中（s） | 真实 DB | `pnpm --filter=server test:e2e` |
+| E2E 冒烟测试（smoke） | 验证后端**全量 16 模块 69 API 端点**端到端可用 | 中（s） | 真实 DB | `pnpm --filter=server test:e2e` |
 | 全链路 e2e（Playwright） | 验证前端 UI + 后端 API 全链路（含角色绑定/权限守卫/WebSocket） | 慢（s） | 真实 DB + 浏览器 | `pnpm test:e2e` |
 | 安全/规范检测 | 代码静态扫描 | 快（ms） | 无 | `pnpm security` |
 
@@ -52,27 +52,30 @@ pnpm --filter=web test:cov
 
 ### 定位
 
-**全量 API 冒烟**：覆盖后端 16 个模块的 63 个 API 端点，验证端到端可用。覆盖：
+**全量 API 冒烟**：覆盖后端 16 个模块的 69 个 API 端点，验证端到端可用。覆盖：
 
 1. **健康检查**：`/api/v1/health` 返回 200
 2. **认证**：login 成功返回 access_token，错误密码 401；`/auth/me` 返回当前用户；refresh/logout 全流程
 3. **CRUD 全量**：users/roles/permissions/files/audit-logs/error-logs 的 list/create/update/delete 全流程
-4. **Zod 校验**：缺字段返回 400 + issues 字段（与 main.ts 一致使用 `SanitizeBodyPipe + ZodValidationPipe + XssPipe`）
+4. **Zod 校验**：缺字段返回 400 + issues 字段（与 main.ts 一致使用 `SanitizeBodyPipe + XssPipe + ZodValidationPipe`）
 5. **权限保护**：无 token 访问受保护接口返回 401；越权访问返回 403
 6. **角色-权限绑定**：GET/PUT `/role-permissions/role/:roleId`
 7. **路由元数据**：GET `/routes` 返回全部 controller 路由
-8. **系统初始化**：GET `/setup/status` + POST `/setup`
+8. **系统初始化**：GET `/setup/status` + POST `/setup`（未开启 `ALLOW_SETUP` 时 404 负路径）
 9. **WebSocket**：POST `/websocket/notify`（含越权防护）
-10. **邮件/微信**：mail/welcome + wechat login（含未配置 400）
+10. **邮件/微信**：mail/welcome + wechat login（未配置时 503）
 11. **定时任务**：POST `/schedule/backup`
 
-> 共 70 个测试用例，文件位置：`apps/server/test/e2e/smoke.e2e-spec.ts`
+> 共 71 个测试用例，文件位置：`apps/server/test/e2e/smoke.e2e-spec.ts`
+>
+> 注意：smoke 会向 e2e 库写入 `smoke_user_*` / `smoke-role-*` 数据，重复本地运行会累积并影响 Playwright 列表分页断言（如 admin 被挤到第 2 页）。跑全链路 e2e 前按下方「重置 e2e DB」清空数据卷。
 
 ### 运行
 
 ```bash
-# 启动 e2e 专用 DB + dev redis（e2e-postgres 独立容器，不污染 DEV DB）
-docker compose up -d e2e-postgres redis
+# 启动 e2e 专用 DB + dev redis（e2e-postgres 独立容器，不污染 DEV DB；
+# --profile e2e 显式启用 profile，redis 由 docker-compose.override.yml 映射到 127.0.0.1:6379）
+docker compose --profile e2e up -d e2e-postgres redis
 
 # 运行 e2e 冒烟（自动 db:push+seed 到 e2e DB，再跑 vitest）
 pnpm --filter=server test:e2e
@@ -172,7 +175,7 @@ apps/e2e/
 
 ```bash
 # 1. 启动 e2e 专用 DB + dev redis（e2e-postgres 独立容器，不污染 DEV DB）
-docker compose up -d e2e-postgres redis
+docker compose --profile e2e up -d e2e-postgres redis
 
 # 2. 跑全链路 e2e（webServer 自动 db:push+seed 到 e2e DB，再起 server+web，需停 dev server）
 pnpm test:e2e
@@ -182,10 +185,10 @@ pnpm --filter=@monoforge/e2e test:report
 
 # 4. 重置 e2e DB（删数据卷重建，彻底清空）
 docker compose down -v e2e-postgres
-docker compose up -d e2e-postgres
+docker compose --profile e2e up -d e2e-postgres
 ```
 
-> 注：`pnpm test:e2e` 走 `pnpm --filter=@monoforge/e2e test`，不经过 turbo，避免 server 历史遗留的 vitest-e2e 配置问题阻塞。
+> 注：根 `pnpm test:e2e` 走 `pnpm --filter=@monoforge/e2e test:e2e`（Playwright），不经过 turbo，避免 server 侧 vitest-e2e 配置与其混淆。
 
 ### 编写规范
 
@@ -217,7 +220,7 @@ test('admin 查看用户列表', async ({ page }) => {
 | `typecheck` | `tsc --noEmit`（server + web + e2e） | 无 |
 | `security` | `bash scripts/security-check.sh` | 无 |
 | `unit-test` | `pnpm test`（Mock DB，180+ 用例） | 无 |
-| `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，70 用例） | postgres + redis services |
+| `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，71 用例） | postgres + redis services |
 | `e2e-test` | `pnpm test:e2e`（Playwright，65 用例） | postgres + redis services + playwright install |
 | `build` | `pnpm build` | 依赖前 6 个 job 全部通过 |
 
@@ -262,6 +265,6 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 
 **4 个测试链路全量通过门槛**：
 - `unit-test`：`pnpm test`（后端 180+ + 前端 hooks 单测）
-- `smoke-test`：`pnpm --filter=server test:e2e:ci`（70 个 API 冒烟）
+- `smoke-test`：`pnpm --filter=server test:e2e:ci`（71 个 API 冒烟）
 - `e2e-test`：`pnpm test:e2e`（65 个 Playwright 全链路）
 - `security`：`bash scripts/security-check.sh`（lint + typecheck + 软删除审计 + 依赖安全扫描）

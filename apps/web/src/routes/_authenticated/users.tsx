@@ -55,8 +55,9 @@ export function UsersContent() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   // L1：行级 pending，仅转正在操作的那行，避免全表同时转圈及重复点击
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [restoringId, setRestoringId] = useState<number | null>(null)
+  // L1：Set 类型，完成只删自己，避免并发行操作互抹 loading
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+  const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
   const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error, isSuccess } = useUsers({
@@ -150,7 +151,7 @@ export function UsersContent() {
             key: 'restore',
             node: (
               <Popconfirm title="确定要恢复该用户吗？" onConfirm={() => handleRestore(record.id)}>
-                <Button type="link" disabled={!isDeleted} loading={restoringId === record.id}>
+                <Button type="link" disabled={!isDeleted} loading={restoringIds.has(record.id)}>
                   恢复
                 </Button>
               </Popconfirm>
@@ -174,7 +175,7 @@ export function UsersContent() {
                   type="link"
                   danger
                   disabled={isAdmin || isDeleted}
-                  loading={deletingId === record.id}
+                  loading={deletingIds.has(record.id)}
                 >
                   禁用
                 </Button>
@@ -211,26 +212,34 @@ export function UsersContent() {
   }
 
   const handleDelete = async (id: number) => {
-    setDeletingId(id)
+    setDeletingIds((prev) => new Set(prev).add(id))
     try {
       await deleteUser.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
     } finally {
-      setDeletingId(null)
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
   const handleRestore = async (id: number) => {
-    setRestoringId(id)
+    setRestoringIds((prev) => new Set(prev).add(id))
     try {
       await restoreUser.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
     } finally {
-      setRestoringId(null)
+      setRestoringIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 

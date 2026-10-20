@@ -74,8 +74,8 @@
 3. **路径遍历防护** - 文件名清洗，禁止 `..`、`/`、`\` 等路径字符
 4. **扩展名黑名单** - 禁止 `.exe`/`.bat`/`.sh`/`.php` 等可执行扩展名
 5. **大小限制** - 单文件最大 10MB（限制值由 `packages/shared/src/constants/files.ts` 的 `MAX_FILE_SIZE` 统一管理，前后端共享，禁止在 controller/页面内硬编码）
-6. **MIME 白名单** - 仅允许图片/文档等安全类型
-7. **扩展名白名单** - 与 MIME 白名单联合校验
+6. **MIME 白名单** - 仅允许图片/文档等安全类型；`text/html` 已剔除（M4/J1=A：HTML 可内嵌脚本，静态托管/预览即 XSS 面，脚手架默认最小开口）。`image/svg+xml` 保留，但恶意内容扫描额外覆盖 `<iframe`/`<embed`/`<object`/`<foreignObject` 等可内嵌脚本/外链的容器标签
+7. **扩展名白名单** - 与 MIME 白名单联合校验（`html`/`htm` 已同步剔除）
 
 ### 文件存储
 
@@ -89,7 +89,7 @@
 
 - 仅管理员（`isAdminUser`）或原始上传者可删除文件
 
-- **软删时磁盘文件必须移到隔离目录**：`files.service.remove` 在 `set({ deletedAt })` 前调用 `moveToTrash(filePath, filename)`，将文件 `rename` 到 `uploads-trash/{timestamp}-{filename}`。静态托管中间件只服务 `uploads/`，不服务 `uploads-trash/`，避免"已删文件仍可凭 URL 访问"的隐私泄露。`rename` 失败仅告警不阻断软删（DB 记录仍标记删除），保证业务可用性。超 30 天的软删文件由每日 0:30 cron 物理清理（磁盘双路径 + DB 行，J3）
+- **软删时磁盘文件必须移到隔离目录**：`files.service.remove` 在 `set({ deletedAt })` 前调用 `moveToTrash(filePath, filename)`，将文件 `rename` 到 `uploads-trash/{时间戳 base36}-{文件名头尾截断}`（L13）。文件不经静态目录对外托管：预览/下载统一走 `GET /files/:id/preview|download` 的鉴权端点，`uploads-trash/` 无任何 URL 可达路径。`rename` 失败仅告警不阻断软删（DB 记录仍标记删除），保证业务可用性。超 30 天的软删文件由每日 0:30 cron 物理清理（磁盘双路径 + DB 行，J3）
 
 ## 越权防护
 
@@ -215,22 +215,27 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - **日配额（L6）**：`POST /schedule/backup` 3 次/日/用户、`POST /files/upload` 100 次/日/用户、`POST /websocket/notify` 50 次/日/用户，超限 409；`common/utils/daily-quota.ts` 按上款 Lua 原子计数（键 `quota:<action>:<uid>:<yyyymmdd>`，TTL 至当日 24:00），cron 每日备份不经此路径
 
-- error-logs 模块的只读接口（findAll/stats/grouped/whitelist）必须 `@SkipThrottle()`，避免 429
-
-- 单条查询接口（如 `@Get(':id')`）用 `@Throttle({ default: { limit: 60, ttl: 60000 } })` 放大限流（60 次/分钟），避免高频查详情被 429
+- error-logs 模块查询接口（findAll/stats/grouped/whitelist）与单条详情（`@Get(':id')`）统一 `@Throttle({ default: { limit: 60, ttl: 60000 } })`（L7：原四查询端点 `@SkipThrottle` 零限流，持 `error_log:view` 者可高频打 3 个全表 count + groupBy）
 - 登录/注册/发码共享 default 桶，limit 读 `THROTTLE_LOGIN_LIMIT`（默认 5/分钟），避免 named 桶污染全部路由（M1）
+- **限流旁路必须显式**：仅 e2e/vitest 由测试 setup 设 `ALLOW_THROTTLE_BYPASS=true`，禁止在生产/预发开启（L15：原 `NODE_ENV=test` 隐式旁路已移除）
+
+### 登录失败锁定（J2=A）
+
+- 锁定键为 `login:fail:<ip>:<username>`（取不到 IP 时退化为 `login:fail:<username>`），15 分钟内失败 10 次锁定（`auth.service`）
+- 保留 IP + 用户名双维度：单 IP 无法批量锁死全站账号，分布式攻击也无法仅凭用户名全局锁死；J2=A 拍板维持此方案，不引入全局用户名熔断
+- 该方案依赖真实客户端 IP：反代部署必须正确设置 `TRUST_PROXY`（M3 已做合法值校验 + 生产启动告警）；漏配时全体请求共享代理 IP，锁定键退化为用户名维度，任意攻击者可零成本锁死 admin。部署检查单已覆盖此项前置条件
 
 ## CORS
 
 - CORS origin 必须用白名单数组/函数校验，禁止用单一字符串 `*` 或固定 origin
 
-- 开发环境允许 `http://localhost:3000`，生产环境由 `ALLOW_ORIGIN` 控制
+- 开发环境允许 `http://localhost:3000`，生产环境由 `ALLOW_ORIGIN` 控制，且**生产未配置时启动失败**（M3/L15：原默认值会让跨域前端全量被拒，静默塌缩）
 
 - HTTP（`main.ts`）与 WebSocket（`events.gateway` 装饰器）的 CORS 必须保持一致：同一 `ALLOW_ORIGIN` 来源、同一默认值（`http://localhost:3000`）、拒绝时均用 `callback(null, false)` 不抛异常，避免复用者只配一处导致 HTTP/WS 行为分叉
 
 ## XSS 防护
 
-- 全局管道链末端为 `XssPipe`，对富文本字段做 XSS 清洗
+- 全局管道链中 `XssPipe` 位于 `ZodValidationPipe` 之前，对富文本字段做 XSS 清洗
 
 - 用户输入的字段（如 nickname、description）禁止 HTML 原样存储
 

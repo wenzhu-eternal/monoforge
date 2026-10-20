@@ -18,6 +18,19 @@ import { validateEnv } from './config'
 async function bootstrap() {
   const env = validateEnv()
 
+  // M3：生产反代部署断言——遗漏 TRUST_PROXY 会让全站请求共享代理 IP 限流桶，
+  // 登录失败锁定退化为"任意人零成本锁死已知账号"；启动即告警，避免静默塌缩
+  if (env.NODE_ENV === 'production' && env.TRUST_PROXY === false) {
+    console.warn(
+      '[TRUST_PROXY] 生产环境未信任任何代理：若前置 nginx/ngrok，请设置 TRUST_PROXY=1，' +
+        '否则 request.ip 恒为代理 IP，全局限流与登录锁定会退化为共享桶',
+    )
+  } else if (env.NODE_ENV === 'production' && env.TRUST_PROXY === true) {
+    console.warn(
+      '[TRUST_PROXY] 已信任全部代理（true）：仅适用于无法确定代理地址的场景，多级代理建议改为信任层数（如 1）',
+    )
+  }
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule)
   const configService = app.get(ConfigService)
   const isProduction = configService.get<string>('NODE_ENV') === 'production'
@@ -49,8 +62,8 @@ async function bootstrap() {
   // Cookie 解析（refreshToken 走 httpOnly cookie）
   app.use(cookieParser())
 
-  const allowedOrigins = configService
-    .get<string>('ALLOW_ORIGIN', 'http://localhost:3000')
+  // L15②：生产已在 validateEnv 强制显式配置；开发默认 localhost
+  const allowedOrigins = (env.ALLOW_ORIGIN ?? 'http://localhost:3000')
     .split(',')
     .map((origin) => origin.trim())
   app.enableCors({

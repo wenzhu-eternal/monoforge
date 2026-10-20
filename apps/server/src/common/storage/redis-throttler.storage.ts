@@ -3,6 +3,10 @@ import type { ThrottlerStorage } from '@nestjs/throttler'
 import { appendErrorLog } from '@/common/logger'
 import { RedisService } from '@/modules/redis/redis.service'
 
+// L16：fail-open 告警按分钟限频——Redis 故障 + 公开端点被刷时，日志量不随 QPS 线性放大
+const FAIL_OPEN_LOG_INTERVAL_MS = 60_000
+let lastFailOpenLogAt = 0
+
 /**
  * 基于 Redis 的限流存储：多实例部署下共享限流计数
  * 使用 Lua 脚本保证 INCR + EXPIRE 原子性，避免并发下永久限流
@@ -71,10 +75,15 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
       }
     } catch (err) {
       // fail-open 放行：限流是防滥用的可用性优化，Redis 短暂不可用不应放大成全站 500。
-      // 写文件日志告警——放行动作本身需要可观测，否则限流静默失效无从发现
-      appendErrorLog(
-        `[Throttler] Redis 限流存储异常，本次请求 fail-open 放行: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      // 写文件日志告警——放行动作本身需要可观测，否则限流静默失效无从发现；
+      // L16：每分钟至多一条，防公开端点被刷时日志量线性放大
+      const now = Date.now()
+      if (now - lastFailOpenLogAt >= FAIL_OPEN_LOG_INTERVAL_MS) {
+        lastFailOpenLogAt = now
+        appendErrorLog(
+          `[Throttler] Redis 限流存储异常，本次请求 fail-open 放行: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
       return {
         totalHits: 1,
         timeToExpire: ttl,

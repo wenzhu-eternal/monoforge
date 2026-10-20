@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { IoAdapter } from '@nestjs/platform-socket.io'
@@ -10,6 +11,7 @@ import type { Server } from 'socket.io'
  * 同步 Socket.IO 事件层（server.emit/server.to）跨实例；业务层在线状态通过 Redis Set 维护
  */
 export class RedisIoAdapter extends IoAdapter {
+  private readonly logger = new Logger(RedisIoAdapter.name)
   private pubClient: Redis
   private subClient: Redis
 
@@ -22,9 +24,14 @@ export class RedisIoAdapter extends IoAdapter {
     }
     this.pubClient = new Redis(redisUrl, { maxRetriesPerRequest: 3 })
     this.subClient = this.pubClient.duplicate()
-    // ioredis 未监听 error 事件时错误冒泡为 unhandledError
-    this.pubClient.on('error', () => undefined)
-    this.subClient.on('error', () => undefined)
+    // ioredis 未监听 error 事件时错误冒泡为 unhandledError；L16：保留监听但不再全吞——
+    // 多实例部署 WS 跨实例广播静默丢消息时至少有一行告警
+    this.pubClient.on('error', (err) =>
+      this.logger.warn(`[RedisIoAdapter] pub client error: ${err.message}`),
+    )
+    this.subClient.on('error', (err) =>
+      this.logger.warn(`[RedisIoAdapter] sub client error: ${err.message}`),
+    )
   }
 
   createIOServer(port: number, options?: Record<string, unknown>) {

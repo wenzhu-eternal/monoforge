@@ -15,10 +15,11 @@ export function normalizeIpForKey(ip: string | undefined): string {
   if (!ip) return 'unknown'
   const raw = ip.trim()
 
-  // IPv4（含 ::ffff:a.b.c.d 映射地址取内嵌 v4）
+  // IPv4（含 ::ffff:a.b.c.d 映射地址取内嵌 v4）；L17⑤：校验各段 ≤255——
+  // 999.999.999.999 之类非法串不再自成一桶，落 unknown
   const v4 = raw.startsWith('::ffff:') ? raw.slice(7) : raw
   const v4Match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v4)
-  if (v4Match) {
+  if (v4Match && v4Match.slice(1).every((part) => Number(part) <= 255)) {
     return `${v4Match[1]}.${v4Match[2]}.${v4Match[3]}.:id`
   }
 

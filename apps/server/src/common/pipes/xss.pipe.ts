@@ -3,8 +3,8 @@ import { Reflector } from '@nestjs/core'
 import { SKIP_XSS_KEY } from '@/common/decorators/skip-xss.decorator'
 import { stripHtml } from '@/common/utils/strip-html'
 
-// L4：密码类键不参与 HTML 剥除（值仅进哈希，无渲染面）
-const PASSWORD_KEYS = new Set(['password', 'oldPassword', 'newPassword'])
+// L4/L17④：密码类键不参与 HTML 剥除（值仅进哈希，无渲染面）；confirmPassword 补入
+const PASSWORD_KEYS = new Set(['password', 'oldPassword', 'newPassword', 'confirmPassword'])
 
 /**
  * XSS 清洗管道: 递归清洗对象中所有字符串字段

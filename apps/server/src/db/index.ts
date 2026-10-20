@@ -4,7 +4,8 @@ import postgres from 'postgres'
 import { getEnv } from '../config/env'
 import * as schema from './schema'
 
-// 显式加载根目录 .env，避免在 apps/server/ 下运行时找不到环境变量
+// L17③：按当前工作目录解析 ../../.env——在 apps/server/ 下运行时指向仓库根；
+// 从仓库根启动时不命中（生产由 compose 注入环境变量，不依赖此文件）
 config({ path: '../../.env' })
 
 const connectionString = process.env.DATABASE_URL!

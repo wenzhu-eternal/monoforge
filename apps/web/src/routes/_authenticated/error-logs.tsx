@@ -91,8 +91,8 @@ function LogsTab() {
   // L2：Set 类型，完成只删自己，避免并发时互抹 loading
   const [resolvingIds, setResolvingIds] = useState<Set<number>>(new Set())
   const [batchResolvingKeys, setBatchResolvingKeys] = useState<Set<string>>(new Set())
-  // L1：行级 pending，仅转正在操作的那行（删除/恢复/切换激活）
-  const [pendingRowId, setPendingRowId] = useState<number | null>(null)
+  // L1：Set 类型，完成只删自己，避免并发行删除互抹 loading
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
   const [messageApi, contextHolder] = message.useMessage()
 
   const { data, isLoading, isError, error, isSuccess } = useErrorLogs({
@@ -158,14 +158,18 @@ function LogsTab() {
   }
 
   const handleDelete = async (id: number) => {
-    setPendingRowId(id)
+    setDeletingIds((prev) => new Set(prev).add(id))
     try {
       await deleteMutation.mutateAsync(id)
       messageApi.success('删除成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '删除失败'))
     } finally {
-      setPendingRowId(null)
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
@@ -257,7 +261,7 @@ function LogsTab() {
             key: 'delete',
             node: (
               <Popconfirm title="确认删除该错误日志？" onConfirm={() => handleDelete(record.id)}>
-                <Button type="link" size="small" danger loading={pendingRowId === record.id}>
+                <Button type="link" size="small" danger loading={deletingIds.has(record.id)}>
                   删除
                 </Button>
               </Popconfirm>
@@ -580,8 +584,8 @@ function WhitelistTab() {
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
-  // L1：行级 pending，WhitelistTab 内独立状态
-  const [pendingRowId, setPendingRowId] = useState<number | null>(null)
+  // L1：Set 类型，切换/删除/恢复并发时只影响各自行
+  const [pendingRowIds, setPendingRowIds] = useState<Set<number>>(new Set())
   const [form] = Form.useForm<WhitelistFormValues>()
   const [messageApi, contextHolder] = message.useMessage()
 
@@ -634,38 +638,50 @@ function WhitelistTab() {
   }
 
   const handleToggleActive = async (record: ErrorWhitelist, checked: boolean) => {
-    setPendingRowId(record.id)
+    setPendingRowIds((prev) => new Set(prev).add(record.id))
     try {
       await updateMutation.mutateAsync({ id: record.id, data: { isActive: checked } })
       messageApi.success(checked ? '已启用' : '已禁用')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '操作失败'))
     } finally {
-      setPendingRowId(null)
+      setPendingRowIds((prev) => {
+        const next = new Set(prev)
+        next.delete(record.id)
+        return next
+      })
     }
   }
 
   const handleDelete = async (id: number) => {
-    setPendingRowId(id)
+    setPendingRowIds((prev) => new Set(prev).add(id))
     try {
       await deleteMutation.mutateAsync(id)
       messageApi.success('禁用成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '禁用失败'))
     } finally {
-      setPendingRowId(null)
+      setPendingRowIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
   const handleRestore = async (id: number) => {
-    setPendingRowId(id)
+    setPendingRowIds((prev) => new Set(prev).add(id))
     try {
       await restoreMutation.mutateAsync(id)
       messageApi.success('恢复成功')
     } catch (error) {
       messageApi.error(extractErrorMessage(error, '恢复失败'))
     } finally {
-      setPendingRowId(null)
+      setPendingRowIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
@@ -700,6 +716,7 @@ function WhitelistTab() {
           size="small"
           onChange={(checked) => handleToggleActive(record, checked)}
           disabled={!!record.deletedAt}
+          loading={pendingRowIds.has(record.id)}
         />
       ),
     },
@@ -753,7 +770,7 @@ function WhitelistTab() {
                   type="link"
                   size="small"
                   disabled={!isDeleted}
-                  loading={pendingRowId === record.id}
+                  loading={pendingRowIds.has(record.id)}
                 >
                   恢复
                 </Button>
@@ -772,7 +789,7 @@ function WhitelistTab() {
                   size="small"
                   danger
                   disabled={isDeleted}
-                  loading={pendingRowId === record.id}
+                  loading={pendingRowIds.has(record.id)}
                 >
                   禁用
                 </Button>

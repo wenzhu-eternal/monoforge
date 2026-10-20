@@ -9,7 +9,7 @@ import { CommonModule } from './common/common.module'
 import { CustomThrottlerGuard } from './common/guards/throttler.guard'
 import { AuditInterceptor } from './common/interceptors/audit.interceptor'
 import { flushErrorLog } from './common/logger'
-import { RedisThrottlerStorage } from './common/storage/redis-throttler.storage'
+import { buildThrottlerOptions } from './common/throttler-options'
 import { DatabaseModule } from './db/database.module'
 import { AuditModule } from './modules/audit/audit.module'
 import { AuthGuard } from './modules/auth/auth.guard'
@@ -46,18 +46,8 @@ import { WechatModule } from './modules/wechat/wechat.module'
     ThrottlerModule.forRootAsync({
       imports: [RedisModule],
       inject: [ConfigService, RedisService],
-      useFactory: (configService: ConfigService, _redisService: RedisService) => ({
-        // M7：e2e/vitest（NODE_ENV=test）跳过限流——smoke 单轮 login 即达 5/min 装饰器上限，
-        // 限流计数存 Redis 跨轮累积，测试必现 429 连锁 401。生产/开发不受影响
-        skipIf: () => configService.get<string>('NODE_ENV') === 'test',
-        throttlers: [
-          {
-            ttl: configService.get<number>('THROTTLE_TTL', 60) * 1000,
-            limit: configService.get<number>('THROTTLE_LIMIT', 10),
-          },
-        ],
-        storage: new RedisThrottlerStorage(_redisService),
-      }),
+      useFactory: (configService: ConfigService, redisService: RedisService) =>
+        buildThrottlerOptions(configService, redisService),
     }),
     ScheduleModule.forRoot(),
     DatabaseModule,

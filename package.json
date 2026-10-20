@@ -21,6 +21,7 @@
     "db:generate": "turbo db:generate",
     "db:migrate": "turbo db:migrate",
     "db:seed": "turbo db:seed",
+    "db:backup": "bash scripts/backup.sh",
     "db:restore": "bash scripts/restore.sh",
     "security": "bash scripts/security-check.sh"
   },

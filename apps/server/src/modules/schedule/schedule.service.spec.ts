@@ -121,6 +121,18 @@ describe('ScheduleService', () => {
 
       await expect(service.dailyNotificationCleanup()).resolves.toBeUndefined()
     })
+
+    it('M2：超 5000 条按批删除，单语句不缓冲全表', async () => {
+      mockReturning
+        .mockResolvedValueOnce(Array.from({ length: 5000 }, (_, i) => ({ id: i })))
+        .mockResolvedValueOnce([{ id: 5000 }])
+      const logSpy = vi.spyOn(service['logger'], 'log')
+
+      await service.dailyNotificationCleanup()
+
+      expect(mockDelete).toHaveBeenCalledTimes(2)
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('5001 条'))
+    })
   })
 
   describe('dailyErrorLogsCleanup（L16 error_logs 保留期清理）', () => {

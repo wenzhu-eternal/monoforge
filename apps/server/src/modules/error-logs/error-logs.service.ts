@@ -69,11 +69,16 @@ export class ErrorLogsService {
     userId?: number
     ip?: string
     userAgent?: string
+    /** L12：运维补偿/失败留痕，不经白名单（宽 pattern 不得吞掉内部故障证据） */
+    internal?: boolean
   }): Promise<void> {
     // M2：401/403/429 属于安全事件（认证/授权/限流），白名单只能降噪 5xx 与业务报错；
     // 否则持 error_log:manage 的委托管理员可用 pattern="权限不足" 整批吞掉越权探测日志
     const skipWhitelist =
-      params.statusCode === 401 || params.statusCode === 403 || params.statusCode === 429
+      params.internal === true ||
+      params.statusCode === 401 ||
+      params.statusCode === 403 ||
+      params.statusCode === 429
     if (!skipWhitelist) {
       // url 一并传入白名单：url 类规则对后端路径生效，可按端点降噪
       const isWhitelisted = await this.checkWhitelist(params.message, params.url)
@@ -98,10 +103,12 @@ export class ErrorLogsService {
       }
     }
 
+    // L12：internal 仅用于白名单豁免判断，不能透传进 DB 行
+    const { internal: _internal, ...logParams } = params
     await this.insertLog({
       source: 'backend',
       errorType: 'http_error',
-      ...params,
+      ...logParams,
     })
   }
 

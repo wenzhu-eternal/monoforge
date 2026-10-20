@@ -407,7 +407,7 @@ export class UsersService {
         String(Date.now()),
         8 * 24 * 60 * 60, // 8天，盖过 refresh TTL（7d）留余量
       )
-    } catch (err) {
+    } catch {
       try {
         await this.redisService.set(`logout:at:${userId}`, String(Date.now()), 8 * 24 * 60 * 60)
       } catch (retryErr) {
@@ -420,13 +420,21 @@ export class UsersService {
     const revokeAndLog = async (fn: () => Promise<unknown>, what: string) => {
       try {
         await fn()
-      } catch (err) {
+      } catch {
         try {
           await fn()
         } catch (retryErr) {
-          await this.errorLogsService.record({
-            message: `changePassword ${what} 失败（重试后仍失败），密码已改: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
-          })
+          // L11：留痕自身失败只能降级 logger——密码已改成功，不能因审计写失败再抛 500
+          try {
+            await this.errorLogsService.record({
+              message: `changePassword ${what} 失败（重试后仍失败），密码已改: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
+              internal: true,
+            })
+          } catch (recordErr) {
+            this.logger.warn(
+              `changePassword ${what} 失败留痕写入失败: ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`,
+            )
+          }
         }
       }
     }

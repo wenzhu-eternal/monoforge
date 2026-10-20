@@ -161,7 +161,8 @@ export class PermissionsGuard implements CanActivate {
   /**
    * 路由白名单匹配（routes 形如 'GET /users/:id'）:
    * 1. 精确匹配（尾斜杠归一化，'GET /users/' 与 'GET /users' 等价）
-   * 2. 尾部 * 通配前缀匹配（'GET /files/*'）
+   * 2. 尾部 * 通配前缀匹配（'GET /files/*' 等价 'GET /files/' 前缀，会覆盖
+   *    '/files/:id/preview' 等全部子路径；配置时需明确其前缀语义而非单段通配）
    * 3. :param 段匹配（'GET /users/:id' 匹配 'GET /users/123'，参数段匹配任意非空单段）
    */
   private matchRoute(pattern: string, route: string): boolean {

@@ -15,7 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
-import { SkipThrottle, Throttle } from '@nestjs/throttler'
+import { Throttle } from '@nestjs/throttler'
 import { PermissionCodes } from '@shared/constants/permissions'
 import {
   ErrorLogGroupSchema,
@@ -55,7 +55,9 @@ export class ErrorLogsController {
   }
 
   @Get()
-  @SkipThrottle()
+  // L7：与 :id 详情同口径 60/min——原 @SkipThrottle 使四查询端点零限流，
+  // 持 ERROR_LOG_VIEW 者可高频打库（stats 每次 3 个全表 count + 2 groupBy）
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
   @Permissions(PermissionCodes.ERROR_LOG_VIEW)
@@ -86,7 +88,7 @@ export class ErrorLogsController {
   }
 
   @Get('stats')
-  @SkipThrottle()
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
   @Permissions(PermissionCodes.ERROR_LOG_VIEW)
@@ -97,7 +99,7 @@ export class ErrorLogsController {
   }
 
   @Get('grouped')
-  @SkipThrottle()
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
   @Permissions(PermissionCodes.ERROR_LOG_VIEW)
@@ -113,7 +115,7 @@ export class ErrorLogsController {
   }
 
   @Get('whitelist')
-  @SkipThrottle()
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @UseGuards(PermissionsGuard)
   @ApiBearerAuth()
   @Permissions(PermissionCodes.ERROR_LOG_VIEW)

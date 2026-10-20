@@ -129,4 +129,36 @@ describe('拦截器 401 处置矩阵', () => {
     expect(clearUserScopedState).not.toHaveBeenCalled()
     expect(useAuthStore.getState().token).toBe('expired-token')
   })
+
+  it('L2：refresh 期间登出 → 排队请求立即失败，不重发死 token', async () => {
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
+    let resolveRefresh: ((value: AxiosResponse) => void) | undefined
+    vi.spyOn(axios, 'post').mockReturnValue(
+      new Promise<AxiosResponse>((resolve) => {
+        resolveRefresh = resolve
+      }) as never,
+    )
+    let adapterCalls = 0
+    api.defaults.adapter = async (config) => {
+      adapterCalls += 1
+      throw err401(config as InternalAxiosRequestConfig)
+    }
+
+    const first = api.get('/api/v1/users')
+    const firstAssertion = expect(first).rejects.toThrow('用户已登出，放弃 refresh 重试')
+    await vi.waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1))
+
+    const second = api.get('/api/v1/roles')
+    const secondAssertion = expect(second).rejects.toThrow('用户已登出，放弃 refresh 重试')
+    await vi.waitFor(() => expect(adapterCalls).toBe(2))
+
+    // 模拟刷新在途时用户主动登出
+    useAuthStore.setState({ token: null, isAuthenticated: false, user: null })
+    resolveRefresh?.({ data: { data: { accessToken: 'dead-token' } } } as AxiosResponse)
+
+    await firstAssertion
+    await secondAssertion
+    // 两条原始请求各打一次 401，均未带 dead-token 重试
+    expect(adapterCalls).toBe(2)
+  })
 })
