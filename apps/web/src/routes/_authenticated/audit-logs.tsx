@@ -25,7 +25,7 @@ export const Route = createFileRoute('/_authenticated/audit-logs')({
   component: AuditLogsPage,
 })
 
-function parseUserAgent(ua: string | null): { browser: string; os: string } {
+export function parseUserAgent(ua: string | null): { browser: string; os: string } {
   if (!ua) return { browser: '-', os: '-' }
 
   let browser = '-'
@@ -38,9 +38,10 @@ function parseUserAgent(ua: string | null): { browser: string; os: string } {
   let os = '-'
   if (ua.includes('Windows NT 10.0')) os = 'Windows 10/11'
   else if (ua.includes('Windows NT 6.3')) os = 'Windows 8.1'
+  // L3：iOS Safari UA 恒含 "like Mac OS X"，必须先判 iPhone/iPad，否则全部误显示 macOS
+  else if (ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod')) os = 'iOS'
   else if (ua.includes('Mac OS X')) os = 'macOS'
   else if (ua.includes('Linux')) os = 'Linux'
-  else if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS'
   else if (ua.includes('Android')) os = 'Android'
 
   return { browser, os }

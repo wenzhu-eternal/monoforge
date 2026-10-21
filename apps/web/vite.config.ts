@@ -71,6 +71,8 @@ export default defineConfig({
     exclude: ['node_modules', 'dist'],
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // antd 页面动效在并行跑全量时单例可超 5s；15s 仍能暴露真正挂死
+    testTimeout: 15_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

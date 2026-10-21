@@ -2,6 +2,7 @@ import type { Permission } from '@shared'
 import { DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
+  Alert,
   Button,
   Checkbox,
   Divider,
@@ -49,7 +50,7 @@ function PermissionCodesPage() {
  * Layout 的 mustChangePassword / 权限重定向要先于业务请求执行，
  * 否则强制改密用户会先打出白名单外请求拿到 401 被拦截器踢走
  */
-function PermissionCodesContent() {
+export function PermissionCodesContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [editingPermission, setEditingPermission] = useState<Permission | null>(null)
@@ -381,8 +382,17 @@ function PermissionCodesContent() {
         }}
         onOk={handleRouteSubmit}
         confirmLoading={updatePermission.isPending}
+        okButtonProps={{ disabled: routesLoading || routesError }}
         width={800}
       >
+        {routesError && (
+          <Alert
+            type="error"
+            showIcon
+            className="mb-2"
+            message="路由清单加载失败，完成加载前不能保存配置"
+          />
+        )}
         <div className="max-h-96 overflow-y-auto">
           {routesLoading ? (
             <div className="text-center text-gray-500 py-4">路由加载中...</div>

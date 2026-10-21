@@ -13,20 +13,32 @@ export async function reportFrontendError(payload: ReportError): Promise<void> {
     let context = payload.context
     if (context) {
       // L4：为 __truncated 预留 1 个键位，否则 21 键 > ReportErrorSchema 20 键上限整单 400 丢失
-      const keys = Object.keys(context).slice(0, 19)
+      const allKeys = Object.keys(context)
+      // L2：恰 20 键裁掉第 20 键也要置标记，否则分析侧无法区分原始 19 键与被裁 20 键
+      const truncatedByKeys = allKeys.length > 19
+      const keys = allKeys.slice(0, 19)
       let trimmed: Record<string, unknown> = {}
       for (const k of keys) trimmed[k] = context[k]
-      if (JSON.stringify(trimmed).length > 10240) {
+
+      const initial = safeStringify(trimmed)
+      if (!initial.ok) {
+        // L1：循环引用/BigInt 等 stringify 失败仍要上报，落 String(context) 兜底
+        trimmed = buildRawFallback(initial.text)
+      } else if (truncatedByKeys || initial.text.length > 10240) {
         trimmed.__truncated = true
-        for (const k of keys) {
-          trimmed[k] =
-            typeof trimmed[k] === 'string' ? (trimmed[k] as string).slice(0, 500) : trimmed[k]
-          if (JSON.stringify(trimmed).length <= 10240) break
+        if (initial.text.length > 10240) {
+          for (const k of keys) {
+            trimmed[k] =
+              typeof trimmed[k] === 'string' ? safeSlice(trimmed[k] as string, 500) : trimmed[k]
+            const current = safeStringify(trimmed)
+            if (current.ok && current.text.length <= 10240) break
+          }
         }
         // 兜底：非字符串大对象值（如嵌套请求体）字符串截断救不回来时，
         // 整体序列化截断保证错误仍可入库检索，避免静默丢失（M7 残余）
-        if (JSON.stringify(trimmed).length > 10240) {
-          trimmed = { __truncated: true, raw: JSON.stringify(trimmed).slice(0, 9000) }
+        const final = safeStringify(trimmed)
+        if (!final.ok || final.text.length > 10240) {
+          trimmed = buildRawFallback(final.ok ? final.text : String(trimmed))
         }
       }
       context = trimmed
@@ -47,6 +59,27 @@ export async function reportFrontendError(payload: ReportError): Promise<void> {
       { skipAuthFlow: true } as ApiRequestConfig,
     )
   } catch {}
+}
+
+function safeStringify(value: unknown): { text: string; ok: boolean } {
+  try {
+    return { text: JSON.stringify(value) ?? String(value), ok: true }
+  } catch {
+    try {
+      return { text: String(value), ok: false }
+    } catch {
+      return { text: '[unserializable context]', ok: false }
+    }
+  }
+}
+
+// L1：raw 作为 JSON string value 会再次转义，必须按最终 JSON 长度封顶而非转义前长度
+function buildRawFallback(text: string): Record<string, unknown> {
+  let raw = safeSlice(text, 9000)
+  while (raw.length > 0 && JSON.stringify({ __truncated: true, raw }).length > 10240) {
+    raw = safeSlice(raw, Math.max(0, raw.length - 512))
+  }
+  return { __truncated: true, raw }
 }
 
 // 末位是高代理项（D800-DBFF）说明劈开了代理对，去掉该半字符

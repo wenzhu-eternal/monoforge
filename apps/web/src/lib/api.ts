@@ -96,37 +96,51 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
       return accessToken
     }
 
-    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
-    if (locks) {
-      return locks.request(REFRESH_LOCK_NAME, async () => doRefresh())
-    }
     // L11：无 Web Locks（Safari<16.4 等）跨 tab 并发刷新无互斥——他 tab 先消费单次
     // cookie 后本方必 401，被无差别登出。失败后等 500ms 二次检查共享 AT 键：他 tab
     // 已刷新则直接采用其结果；存储不可用时无共享可言，照常抛原错误
     // M2：must-change 判定已移入拦截器 catch（此处赋值 href 会被外层 catch 的
     // href='/login' 覆盖——同一 JS 任务内后赋值者赢，本方跳转永不生效）
-    try {
-      return await doRefresh()
-    } catch (error) {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      let doneAt2 = 0
-      let shared2: string | null = null
+    const refreshWithSharedFallback = async (): Promise<string> => {
       try {
-        doneAt2 = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
-      } catch {
-        /* 存储不可访问 */
+        return await doRefresh()
+      } catch (error) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        let doneAt2 = 0
+        let shared2: string | null = null
+        try {
+          doneAt2 = Number(localStorage.getItem(REFRESH_AT_KEY) ?? 0)
+        } catch {
+          /* 存储不可访问 */
+        }
+        try {
+          shared2 = localStorage.getItem(REFRESH_TOKEN_KEY)
+        } catch {
+          /* 存储不可访问 */
+        }
+        if (doneAt2 >= issuedAt && shared2) {
+          useAuthStore.getState().setToken(shared2)
+          return shared2
+        }
+        throw error
       }
-      try {
-        shared2 = localStorage.getItem(REFRESH_TOKEN_KEY)
-      } catch {
-        /* 存储不可访问 */
-      }
-      if (doneAt2 >= issuedAt && shared2) {
-        useAuthStore.getState().setToken(shared2)
-        return shared2
-      }
-      throw error
     }
+
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+    if (locks) {
+      let callbackStarted = false
+      try {
+        return await locks.request(REFRESH_LOCK_NAME, async () => {
+          callbackStarted = true
+          return doRefresh()
+        })
+      } catch (error) {
+        // Q1：锁 API 自身异常（跨域 iframe SecurityError / tab 关闭 AbortError）不能直接
+        // 判终态；仅在回调尚未执行时回落共享键二查，回调已执行则保留其真实刷新错误
+        if (callbackStarted) throw error
+      }
+    }
+    return refreshWithSharedFallback()
   })()
   inflightRefresh = task
   try {

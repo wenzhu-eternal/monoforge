@@ -80,4 +80,25 @@ describe('L11：无 Web Locks 时刷新失败后二次检查共享键', () => {
     // 未调用 setToken（token 未变，清态由拦截器负责）
     expect(useAuthStore.getState().token).toBeNull()
   })
+
+  it('Q1：Web Locks API 自身抛错 → 回落 L11 的 500ms 共享键二查', async () => {
+    vi.useFakeTimers()
+    const request = vi.fn().mockRejectedValue(new DOMException('lock denied', 'SecurityError'))
+    Object.defineProperty(navigator, 'locks', {
+      value: { request },
+      configurable: true,
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(new Error('lock fallback refresh failed'))
+    setTimeout(() => {
+      localStorage.setItem(AT_KEY, String(Date.now()))
+      localStorage.setItem(RT_KEY, 'shared-after-lock-error')
+    }, 100)
+
+    const promise = refreshAccessToken(Date.now() - 1000)
+    await vi.advanceTimersByTimeAsync(600)
+
+    await expect(promise).resolves.toBe('shared-after-lock-error')
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().token).toBe('shared-after-lock-error')
+  })
 })

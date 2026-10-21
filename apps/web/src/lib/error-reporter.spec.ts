@@ -60,6 +60,60 @@ describe('reportFrontendError context 截断（M7）', () => {
     expect(sent.__truncated).toBe(true)
   })
 
+  it('L2：恰好 20 键时第 20 键被裁必须置 __truncated（可观察）', async () => {
+    const context: Record<string, unknown> = {}
+    for (let i = 0; i < 20; i += 1) {
+      context[`k${i}`] = 'v'
+    }
+
+    await reportFrontendError({
+      source: 'frontend',
+      errorType: 'js_error',
+      message: '测试错误',
+      context,
+    } as ReportError)
+
+    const sent = lastPostBody().context as Record<string, unknown>
+    expect(Object.keys(sent).length).toBe(20)
+    expect(sent.k18).toBe('v')
+    expect(sent.k19).toBeUndefined()
+    expect(sent.__truncated).toBe(true)
+  })
+
+  it('L1：循环引用 context 仍发起上报，raw 兜底不整单丢失', async () => {
+    const context: Record<string, unknown> = { code: 500 }
+    context.self = context
+
+    await reportFrontendError({
+      source: 'frontend',
+      errorType: 'js_error',
+      message: '测试错误',
+      context,
+    } as ReportError)
+
+    expect(apiMock.post).toHaveBeenCalledTimes(1)
+    const sent = lastPostBody().context as Record<string, unknown>
+    expect(sent.__truncated).toBe(true)
+    expect(typeof sent.raw).toBe('string')
+    expect(JSON.stringify(sent).length).toBeLessThanOrEqual(10240)
+  })
+
+  it('L1：raw 兜底按 JSON 再转义后的长度封顶，避免服务端 10KB 校验 400', async () => {
+    await reportFrontendError({
+      source: 'frontend',
+      errorType: 'js_error',
+      message: '测试错误',
+      // 反斜杠在 JSON 中会再转义为 \\，旧实现按转义前 9000 截断会膨胀到 18KB
+      context: { nested: { data: '\\'.repeat(6000) } },
+    } as ReportError)
+
+    expect(apiMock.post).toHaveBeenCalledTimes(1)
+    const sent = lastPostBody().context as Record<string, unknown>
+    expect(sent.__truncated).toBe(true)
+    expect(typeof sent.raw).toBe('string')
+    expect(JSON.stringify(sent).length).toBeLessThanOrEqual(10240)
+  })
+
   it('超长字符串值截断到 500 且标记 __truncated', async () => {
     await reportFrontendError({
       source: 'frontend',

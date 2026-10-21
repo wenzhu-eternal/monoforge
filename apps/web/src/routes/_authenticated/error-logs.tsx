@@ -54,7 +54,7 @@ export const Route = createFileRoute('/_authenticated/error-logs')({
   component: ErrorLogsPage,
 })
 
-function ErrorLogsPage() {
+export function ErrorLogsPage() {
   // J4：布局上移，此处直 render 内容
   return (
     <>
@@ -79,7 +79,7 @@ function ErrorLogsPage() {
   )
 }
 
-function LogsTab() {
+export function LogsTab() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [keyword, setKeyword] = useState<string | undefined>(undefined)
@@ -248,7 +248,7 @@ function LogsTab() {
               <Button
                 type="link"
                 size="small"
-                loading={resolveMutation.isPending && resolvingIds.has(record.id)}
+                loading={resolvingIds.has(record.id)}
                 onClick={() => handleResolve(record.id)}
               >
                 标记已处理
@@ -366,10 +366,7 @@ function LogsTab() {
                             <Button
                               type="link"
                               size="small"
-                              loading={
-                                batchResolveMutation.isPending &&
-                                batchResolvingKeys.has(`${item.message}||${item.source}`)
-                              }
+                              loading={batchResolvingKeys.has(`${item.message}||${item.source}`)}
                             >
                               全部已处理
                             </Button>
@@ -572,7 +569,7 @@ interface WhitelistFormValues {
   isActive: boolean
 }
 
-function WhitelistTab() {
+export function WhitelistTab() {
   const { data, isLoading, isError, error } = useWhitelist()
   const createMutation = useCreateWhitelist()
   const updateMutation = useUpdateWhitelist()

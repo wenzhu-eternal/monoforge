@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,7 +6,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // vi.mock hoist 约束：可变状态放 vi.hoisted；每例 preset 后 render（无外部触发重渲染需求）
 const state = vi.hoisted(() => ({
   permsQuery: { data: undefined as string[] | undefined, isFetching: true },
+  deleteCalls: [] as { id: number; resolve: () => void }[],
 }))
+
+vi.mock('antd', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('antd')>()
+  const messageApi = {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+    loading: vi.fn(),
+    open: vi.fn(),
+    destroy: vi.fn(),
+  }
+  return {
+    ...actual,
+    message: Object.assign(() => {}, actual.message, {
+      useMessage: () => [messageApi, null],
+    }),
+  }
+})
 
 vi.mock('@/hooks/use-auth', () => ({
   useCan: () => () => true,
@@ -18,7 +38,13 @@ vi.mock('@/hooks/use-paged-fallback', () => ({
 
 vi.mock('@/hooks/use-roles', () => ({
   useRoles: () => ({
-    data: { list: [{ id: 3, name: 'editor', description: null, deletedAt: null }], total: 1 },
+    data: {
+      list: [
+        { id: 3, name: 'editor', description: null, deletedAt: null },
+        { id: 4, name: 'viewer', description: null, deletedAt: null },
+      ],
+      total: 2,
+    },
     isLoading: false,
     isError: false,
     error: null,
@@ -26,7 +52,11 @@ vi.mock('@/hooks/use-roles', () => ({
   }),
   useCreateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteRole: () => ({
+    mutateAsync: (id: number) =>
+      new Promise<void>((resolve) => state.deleteCalls.push({ id, resolve })),
+    isPending: false,
+  }),
   useRestoreRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
@@ -79,5 +109,52 @@ describe('L10：配置权限弹窗回显竞态防护', () => {
     expect(screen.getByRole('button', { name: /确\s*定/ })).toBeEnabled()
     // 已回显勾选：user:view 为 checked（effect 同步后）
     await waitFor(() => expect(screen.getByRole('checkbox', { name: /user:view/ })).toBeChecked())
+  })
+})
+
+describe('L6：角色行级并发', () => {
+  beforeEach(() => {
+    state.permsQuery = { data: undefined, isFetching: true }
+    state.deleteCalls = []
+  })
+
+  it('双行删除并发，A 完成不清 B 的 loading', async () => {
+    render(
+      <ConfigProvider locale={zhCN}>
+        <RolesContent />
+      </ConfigProvider>,
+    )
+
+    const rowA = screen.getByText('editor').closest('tr') as HTMLElement
+    const rowB = screen.getByText('viewer').closest('tr') as HTMLElement
+    fireEvent.click(within(rowA).getByRole('button', { name: /禁\s*用/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: /确\s*定/ }).at(-1) as HTMLElement)
+    fireEvent.click(within(rowB).getByRole('button', { name: /禁\s*用/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: /确\s*定/ }).at(-1) as HTMLElement)
+
+    await waitFor(() => {
+      expect(within(rowA).getByRole('button', { name: /禁\s*用/ })).toHaveClass('ant-btn-loading')
+      expect(within(rowB).getByRole('button', { name: /禁\s*用/ })).toHaveClass('ant-btn-loading')
+    })
+
+    await act(async () => {
+      state.deleteCalls.find((call) => call.id === 3)?.resolve()
+    })
+
+    await waitFor(() => {
+      expect(within(rowA).getByRole('button', { name: /禁\s*用/ })).not.toHaveClass(
+        'ant-btn-loading',
+      )
+    })
+    expect(within(rowB).getByRole('button', { name: /禁\s*用/ })).toHaveClass('ant-btn-loading')
+
+    await act(async () => {
+      state.deleteCalls.find((call) => call.id === 4)?.resolve()
+    })
+    await waitFor(() => {
+      expect(within(rowB).getByRole('button', { name: /禁\s*用/ })).not.toHaveClass(
+        'ant-btn-loading',
+      )
+    })
   })
 })
