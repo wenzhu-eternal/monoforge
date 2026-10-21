@@ -9,7 +9,6 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
-import { SkipThrottle } from '@nestjs/throttler'
 import { PermissionCodes } from '@shared/constants/permissions'
 import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
@@ -36,7 +35,6 @@ export class WebsocketController {
     private readonly redisService: RedisService,
   ) {}
 
-  @SkipThrottle()
   @Get('online')
   @Permissions(PermissionCodes.NOTIFICATION_VIEW)
   @ApiOperation({ summary: '获取在线用户 ID 列表' })
@@ -45,7 +43,6 @@ export class WebsocketController {
     return { count: userIds.length, userIds }
   }
 
-  @SkipThrottle()
   @Get('me')
   @ApiOperation({ summary: '查询当前用户是否在线' })
   async me(@CurrentUser() user: TokenPayload) {

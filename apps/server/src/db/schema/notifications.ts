@@ -30,6 +30,8 @@ export const notifications = pgTable(
       table.read,
       table.createdAt,
     ),
+    // L10：保留期清理按 created_at 全量截断，复合索引首列非 createdAt 无法避免全表扫描
+    createdAtIdx: index('idx_notifications_created_at').on(table.createdAt),
   }),
 )
 

@@ -39,6 +39,8 @@ export const errorLogs = pgTable(
     index('idx_error_logs_resolved_created').on(t.isResolved, t.createdAt),
     index('idx_error_logs_user_created').on(t.userId, t.createdAt),
     index('idx_error_logs_source_created').on(t.source, t.createdAt),
+    // L10：保留期清理按 created_at 全量截断，复合索引首列非 createdAt 无法避免全表扫描
+    index('idx_error_logs_created_at').on(t.createdAt),
   ],
 )
 

@@ -13,22 +13,14 @@ import { AppModule } from './app.module'
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter'
 import { SanitizeBodyPipe } from './common/pipes/sanitize-body.pipe'
 import { XssPipe } from './common/pipes/xss.pipe'
-import { validateEnv } from './config'
+import { collectProductionWarnings, validateEnv } from './config'
 
 async function bootstrap() {
   const env = validateEnv()
 
-  // M3：生产反代部署断言——遗漏 TRUST_PROXY 会让全站请求共享代理 IP 限流桶，
-  // 登录失败锁定退化为"任意人零成本锁死已知账号"；启动即告警，避免静默塌缩
-  if (env.NODE_ENV === 'production' && env.TRUST_PROXY === false) {
-    console.warn(
-      '[TRUST_PROXY] 生产环境未信任任何代理：若前置 nginx/ngrok，请设置 TRUST_PROXY=1，' +
-        '否则 request.ip 恒为代理 IP，全局限流与登录锁定会退化为共享桶',
-    )
-  } else if (env.NODE_ENV === 'production' && env.TRUST_PROXY === true) {
-    console.warn(
-      '[TRUST_PROXY] 已信任全部代理（true）：仅适用于无法确定代理地址的场景，多级代理建议改为信任层数（如 1）',
-    )
+  // M3/L16：生产反代与限流旁路配置错误不阻断启动，但必须启动即告警，避免静默塌缩
+  for (const warning of collectProductionWarnings(env)) {
+    console.warn(warning)
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule)

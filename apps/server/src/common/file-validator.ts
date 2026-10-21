@@ -179,16 +179,34 @@ export async function validateFileContent(filePath: string, declaredExt: string)
   }
 }
 
+function decodeCodePoint(codePoint: number): string {
+  if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) return ''
+  return String.fromCodePoint(codePoint)
+}
+
+// L13：XML 数值实体解码——`jav&#x0A;ascript:`/`&#106;avascript:`/`data&#58;text/html`
+// 在属性值中会被解析回协议文本，字面正则会漏检
+function decodeNumericEntities(content: string): string {
+  return content
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => decodeCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_, dec: string) => decodeCodePoint(Number.parseInt(dec, 10)))
+}
+
 export async function scanForMalware(filePath: string): Promise<void> {
   try {
     // 读取全文件扫描，防止恶意内容藏在文件后半部分绕过头部扫描
     // latin1 编码按字节读取，保留原始字节不替换，避免 utf8 解码非法字节为 U+FFFD 绕过模式匹配
     const content = await readFile(filePath, 'latin1')
-    for (const pattern of MALICIOUS_PATTERNS) {
-      if (pattern.test(content)) {
-        throw new BadRequestException(
-          `${ErrorMessages[ErrorCodes.FILE_QUARANTINED]}: ${ErrorMessages[ErrorCodes.INVALID_FILE_TYPE]}`,
-        )
+    const decoded = decodeNumericEntities(content)
+    // 浏览器解析 URL 时会忽略 \r\n\t，实体解码后仍可能拼回 javascript:/data:text/html
+    const normalized = decoded.replace(/[\r\n\t]/g, '')
+    for (const candidate of [content, decoded, normalized]) {
+      for (const pattern of MALICIOUS_PATTERNS) {
+        if (pattern.test(candidate)) {
+          throw new BadRequestException(
+            `${ErrorMessages[ErrorCodes.FILE_QUARANTINED]}: ${ErrorMessages[ErrorCodes.INVALID_FILE_TYPE]}`,
+          )
+        }
       }
     }
   } catch (err) {

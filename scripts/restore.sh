@@ -1,26 +1,20 @@
 #!/bin/bash
 # 数据库备份恢复脚本
 # 用法:
-#   pnpm db:restore                  # 恢复最新备份
+#   pnpm db:restore                  # 恢复 $BACKUP_DIR 下最新备份
 #   pnpm db:restore apps/server/backups/backup-20260711.sql  # 恢复指定文件
 #
 # 注意: 恢复会 DROP 并重建数据库，请确认备份文件正确后再执行。
 # 备份文件是 pg_dump 的 psql 原生格式（含 \restrict / COPY FROM stdin），
 # 必须用 psql 恢复，不能用 Navicat 执行 SQL。
+# BACKUP_DIR 优先级：环境变量 > 根目录 .env > apps/server/backups；相对路径按后端 cwd 解析。
 
 set -e
 
-# L15：连接信息优先级 环境变量 > 根目录 .env（与 docker-compose 同源）> 默认值。
+# L11：连接信息与备份目录优先级 环境变量 > 根目录 .env（与 docker-compose 同源）> 默认值。
 # 原先全部硬编码，改过 .env 的人跑恢复会连到错误的老库（恢复错库=数据事故）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
-
-env_value() {
-  if [ -f "$ENV_FILE" ]; then
-    grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'"
-  fi
-  return 0
-}
+source "$SCRIPT_DIR/lib/db-env.sh"
 
 CONTAINER="${POSTGRES_CONTAINER:-$(env_value POSTGRES_CONTAINER)}"
 DB_USER="${POSTGRES_USER:-$(env_value POSTGRES_USER)}"
@@ -30,7 +24,7 @@ DB_NAME="${POSTGRES_DB:-$(env_value POSTGRES_DB)}"
 : "${DB_NAME:=monoforge_database}"
 echo "目标: 容器=$CONTAINER 用户=$DB_USER 数据库=$DB_NAME"
 
-BACKUP_DIR="apps/server/backups"
+BACKUP_DIR="$(resolve_backup_dir)"
 
 if [ -n "$1" ]; then
   BACKUP_FILE="$1"

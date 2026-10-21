@@ -70,11 +70,11 @@
 多重安全检查（顺序执行，任一失败即拒绝）：
 
 1. **magic number 校验** - 验证文件头真实类型，防止伪装扩展名
-2. **恶意内容扫描** - 检查文件内容是否含恶意代码
+2. **恶意内容扫描** - 检查文件内容是否含恶意代码；扫描前解码 XML 数值实体并剥离 `\r\n\t`，防止 `jav&#x0A;ascript:`、`&#106;avascript:`、`data&#58;text/html` 等变形绕过字面正则（L13）
 3. **路径遍历防护** - 文件名清洗，禁止 `..`、`/`、`\` 等路径字符
 4. **扩展名黑名单** - 禁止 `.exe`/`.bat`/`.sh`/`.php` 等可执行扩展名
 5. **大小限制** - 单文件最大 10MB（限制值由 `packages/shared/src/constants/files.ts` 的 `MAX_FILE_SIZE` 统一管理，前后端共享，禁止在 controller/页面内硬编码）
-6. **MIME 白名单** - 仅允许图片/文档等安全类型；`text/html` 已剔除（M4/J1=A：HTML 可内嵌脚本，静态托管/预览即 XSS 面，脚手架默认最小开口）。`image/svg+xml` 保留，但恶意内容扫描额外覆盖 `<iframe`/`<embed`/`<object`/`<foreignObject` 等可内嵌脚本/外链的容器标签
+6. **MIME 白名单** - 仅允许图片/文档等安全类型；`text/html` 已剔除（M4/J1=A：HTML 可内嵌脚本，静态托管/预览即 XSS 面，脚手架默认最小开口）。`image/svg+xml` 保留，但恶意内容扫描额外覆盖 `<iframe`/`<embed`/`<object`/`<foreignObject` 等可内嵌脚本/外链的容器标签；**`svg` 永不进入 `INLINE_SAFE_MIME_TYPES`**，预览/下载一律 `attachment` + `nosniff`（L13，实体解码增强也不得放松）
 7. **扩展名白名单** - 与 MIME 白名单联合校验（`html`/`htm` 已同步剔除）
 
 ### 文件存储

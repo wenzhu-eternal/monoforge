@@ -10,10 +10,11 @@ import { XssPipe } from '@/common/pipes/xss.pipe'
 import { RedisService } from '@/modules/redis/redis.service'
 
 /**
- * 冒烟测试：部署后全量 API 可用性验证
+ * 冒烟测试：部署后核心 API 与鉴权链路可用性验证
  *
- * 覆盖范围：63 个 API 端点（auth/users/roles/permissions/role-permissions/routes/files/
- *           audit-logs/error-logs/notifications/websocket/mail/wechat/setup/health/schedule）
+ * 覆盖范围：16 个模块的核心 CRUD（auth/users/roles/permissions/role-permissions/routes/
+ *           files/audit-logs/error-logs/notifications/websocket/mail/wechat/setup/health/schedule）；
+ *           71 个用例，实触 61 个端点，restore 系/个人改密/通知已读删除等边缘端点未纳入
  *
  * 运行前提：
  *   1. docker compose up -d postgres redis
@@ -615,7 +616,7 @@ describe('冒烟测试（Smoke）- 全量 API', () => {
       }
     })
 
-    it('error-logs 只读接口 @SkipThrottle 不被限流', async () => {
+    it('error-logs 只读接口连续 5 次不被限流', async () => {
       // 连续请求 5 次不应被 429 拦截
       for (let i = 0; i < 5; i++) {
         await request(app.getHttpServer())

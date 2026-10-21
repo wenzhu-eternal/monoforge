@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { envSchema, isValidTrustProxyValue } from './env'
+import { collectProductionWarnings, envSchema, isValidTrustProxyValue } from './env'
 
 describe('TRUST_PROXY 校验（M3）', () => {
   it.each([
@@ -81,5 +81,158 @@ describe('存储目录交叉校验（M2）', () => {
         BACKUP_DIR: '/data/backups',
       }).success,
     ).toBe(true)
+  })
+})
+
+const prodEnv = {
+  ...baseEnv,
+  NODE_ENV: 'production',
+  COOKIE_SECURE: 'true',
+  ALLOW_ORIGIN: 'https://app.example.com',
+}
+
+describe('env 上线防线（L24）', () => {
+  it('DB_POOL_MAX 默认 10，合法值转型，0/非法值拒绝', () => {
+    expect(envSchema.parse(baseEnv).DB_POOL_MAX).toBe(10)
+    expect(envSchema.parse({ ...baseEnv, DB_POOL_MAX: '25' }).DB_POOL_MAX).toBe(25)
+    expect(envSchema.safeParse({ ...baseEnv, DB_POOL_MAX: '0' }).success).toBe(false)
+    expect(envSchema.safeParse({ ...baseEnv, DB_POOL_MAX: 'abc' }).success).toBe(false)
+    expect(envSchema.safeParse({ ...baseEnv, DB_POOL_MAX: '1.5' }).success).toBe(false)
+  })
+
+  it('UPLOAD_DIR/BACKUP_DIR 空串归一为 undefined', () => {
+    const parsed = envSchema.parse({ ...baseEnv, UPLOAD_DIR: '', BACKUP_DIR: '' })
+    expect(parsed.UPLOAD_DIR).toBeUndefined()
+    expect(parsed.BACKUP_DIR).toBeUndefined()
+  })
+
+  it('BACKUP_CMD 空串归一、必须含占位符且禁止命令拼接', () => {
+    expect(envSchema.parse({ ...baseEnv, BACKUP_CMD: '' }).BACKUP_CMD).toBeUndefined()
+    expect(
+      envSchema.parse({
+        ...baseEnv,
+        BACKUP_CMD: 'docker exec mf-postgres pg_dump -U u -d d > {filepath}',
+      }).BACKUP_CMD,
+    ).toContain('{filepath}')
+    expect(envSchema.safeParse({ ...baseEnv, BACKUP_CMD: 'pg_dump -d d' }).success).toBe(false)
+    for (const unsafe of [
+      'pg_dump {filepath}; rm -rf /',
+      'pg_dump {filepath} && rm -rf /',
+      'pg_dump {filepath} | gzip',
+      'pg_dump {filepath}\nrm -rf /',
+      'pg_dump $(id) {filepath}',
+      'pg_dump `id` {filepath}',
+    ]) {
+      expect(envSchema.safeParse({ ...baseEnv, BACKUP_CMD: unsafe }).success).toBe(false)
+    }
+  })
+
+  it('生产未配 ALLOW_ORIGIN 拒绝，配置后放行', () => {
+    const missing = envSchema.safeParse({ ...prodEnv, ALLOW_ORIGIN: undefined })
+    expect(missing.success).toBe(false)
+    if (!missing.success) {
+      expect(missing.error.issues).toContainEqual(
+        expect.objectContaining({ path: ['ALLOW_ORIGIN'] }),
+      )
+    }
+    expect(envSchema.safeParse(prodEnv).success).toBe(true)
+  })
+
+  it('生产未启用 COOKIE_SECURE 拒绝，显式允诺不安全 cookie 后放行', () => {
+    const insecure = envSchema.safeParse({ ...prodEnv, COOKIE_SECURE: 'false' })
+    expect(insecure.success).toBe(false)
+    if (!insecure.success) {
+      expect(insecure.error.issues).toContainEqual(
+        expect.objectContaining({ path: ['COOKIE_SECURE'] }),
+      )
+    }
+    expect(
+      envSchema.safeParse({
+        ...prodEnv,
+        COOKIE_SECURE: 'false',
+        ALLOW_INSECURE_COOKIE: 'true',
+      }).success,
+    ).toBe(true)
+  })
+
+  it('ALLOW_THROTTLE_BYPASS 仅显式 true 才开启', () => {
+    expect(envSchema.parse(baseEnv).ALLOW_THROTTLE_BYPASS).toBe(false)
+    expect(
+      envSchema.parse({ ...baseEnv, ALLOW_THROTTLE_BYPASS: 'true' }).ALLOW_THROTTLE_BYPASS,
+    ).toBe(true)
+    expect(
+      envSchema.parse({ ...baseEnv, ALLOW_THROTTLE_BYPASS: 'false' }).ALLOW_THROTTLE_BYPASS,
+    ).toBe(false)
+  })
+
+  it('JWT 密钥拒绝过短、占位符与双密钥相同', () => {
+    expect(envSchema.safeParse({ ...baseEnv, JWT_SECRET: 'short' }).success).toBe(false)
+    expect(envSchema.safeParse({ ...baseEnv, JWT_SECRET: 'a'.repeat(31) }).success).toBe(false)
+    expect(
+      envSchema.safeParse({
+        ...baseEnv,
+        JWT_SECRET: 'REPLACE_ME_WITH_RANDOM_SECRET_AT_LEAST_32_CHARS',
+      }).success,
+    ).toBe(false)
+    const same = envSchema.safeParse({
+      ...baseEnv,
+      JWT_REFRESH_SECRET: baseEnv.JWT_SECRET,
+    })
+    expect(same.success).toBe(false)
+    if (!same.success) {
+      expect(same.error.issues).toContainEqual(
+        expect.objectContaining({ path: ['JWT_REFRESH_SECRET'] }),
+      )
+    }
+  })
+
+  it('DATABASE_URL/REDIS_URL 协议错误拒绝', () => {
+    expect(
+      envSchema.safeParse({ ...baseEnv, DATABASE_URL: 'mysql://user:pass@localhost/db' }).success,
+    ).toBe(false)
+    expect(envSchema.safeParse({ ...baseEnv, REDIS_URL: 'http://localhost:6379' }).success).toBe(
+      false,
+    )
+  })
+})
+
+describe('生产启动告警（L16）', () => {
+  it('生产开启限流旁路时输出告警', () => {
+    const warnings = collectProductionWarnings({
+      NODE_ENV: 'production',
+      TRUST_PROXY: 1,
+      ALLOW_THROTTLE_BYPASS: true,
+    })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('ALLOW_THROTTLE_BYPASS')
+    expect(warnings[0]).toContain('全站限流已旁路')
+  })
+
+  it('生产 TRUST_PROXY=false/true 沿用原有双告警', () => {
+    const none = collectProductionWarnings({
+      NODE_ENV: 'production',
+      TRUST_PROXY: false,
+      ALLOW_THROTTLE_BYPASS: false,
+    })
+    expect(none).toHaveLength(1)
+    expect(none[0]).toContain('未信任任何代理')
+
+    const all = collectProductionWarnings({
+      NODE_ENV: 'production',
+      TRUST_PROXY: true,
+      ALLOW_THROTTLE_BYPASS: false,
+    })
+    expect(all).toHaveLength(1)
+    expect(all[0]).toContain('已信任全部代理')
+  })
+
+  it('非生产环境不输出告警', () => {
+    expect(
+      collectProductionWarnings({
+        NODE_ENV: 'test',
+        TRUST_PROXY: false,
+        ALLOW_THROTTLE_BYPASS: true,
+      }),
+    ).toEqual([])
   })
 })

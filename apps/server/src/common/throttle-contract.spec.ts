@@ -5,8 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getEnv } from '@/config/env'
 import { AuthController } from '@/modules/auth/auth.controller'
 import { ErrorLogsController } from '@/modules/error-logs/error-logs.controller'
+import { MailController } from '@/modules/mail/mail.controller'
 import { NotificationsController } from '@/modules/notifications/notifications.controller'
 import type { RedisService } from '@/modules/redis/redis.service'
+import { SetupController } from '@/modules/setup/setup.controller'
+import { UsersController } from '@/modules/users/users.controller'
+import { WebsocketController } from '@/modules/websocket/websocket.controller'
+import { WechatController } from '@/modules/wechat/wechat.controller'
 import { CustomThrottlerGuard } from './guards/throttler.guard'
 import { buildThrottlerOptions } from './throttler-options'
 
@@ -66,6 +71,116 @@ describe('限流契约（M5）', () => {
     expect(
       Reflect.getMetadata('THROTTLER:SKIPdefault', AuthController.prototype.login),
     ).toBeUndefined()
+  })
+
+  // L15：安全关键声明值逐端点锁定，防止 named 桶/默认桶回归时静默放大
+  const contractCases: Array<{
+    name: string
+    cls: unknown
+    handler: unknown
+    expected: () => number
+  }> = [
+    {
+      name: 'login',
+      cls: AuthController,
+      handler: AuthController.prototype.login,
+      expected: () => getEnv().THROTTLE_LOGIN_LIMIT,
+    },
+    {
+      name: 'register',
+      cls: AuthController,
+      handler: AuthController.prototype.register,
+      expected: () => getEnv().THROTTLE_LOGIN_LIMIT,
+    },
+    {
+      name: 'send-register-code',
+      cls: AuthController,
+      handler: AuthController.prototype.sendRegisterCode,
+      expected: () => getEnv().THROTTLE_LOGIN_LIMIT,
+    },
+    {
+      name: 'refresh',
+      cls: AuthController,
+      handler: AuthController.prototype.refresh,
+      expected: () => 10,
+    },
+    {
+      name: 'error-logs report',
+      cls: ErrorLogsController,
+      handler: ErrorLogsController.prototype.reportError,
+      expected: () => 3,
+    },
+    {
+      name: 'error-logs list',
+      cls: ErrorLogsController,
+      handler: ErrorLogsController.prototype.findAll,
+      expected: () => 60,
+    },
+    {
+      name: 'error-logs detail',
+      cls: ErrorLogsController,
+      handler: ErrorLogsController.prototype.findOne,
+      expected: () => 60,
+    },
+    {
+      name: 'wechat qrcode',
+      cls: WechatController,
+      handler: WechatController.prototype.getQrCode,
+      expected: () => 3,
+    },
+    {
+      name: 'wechat login',
+      cls: WechatController,
+      handler: WechatController.prototype.login,
+      expected: () => 3,
+    },
+    {
+      name: 'mail welcome',
+      cls: MailController,
+      handler: MailController.prototype.sendWelcome,
+      expected: () => 3,
+    },
+    {
+      name: 'mail verification-code',
+      cls: MailController,
+      handler: MailController.prototype.sendVerificationCode,
+      expected: () => 3,
+    },
+    {
+      name: 'users change-password',
+      cls: UsersController,
+      handler: UsersController.prototype.changePassword,
+      expected: () => 5,
+    },
+    {
+      name: 'setup initialize',
+      cls: SetupController,
+      handler: SetupController.prototype.setup,
+      expected: () => 5,
+    },
+    {
+      name: 'setup status',
+      cls: SetupController,
+      handler: SetupController.prototype.status,
+      expected: () => 60,
+    },
+    {
+      name: 'websocket online',
+      cls: WebsocketController,
+      handler: WebsocketController.prototype.online,
+      expected: () => DEFAULT_LIMIT,
+    },
+    {
+      name: 'websocket me',
+      cls: WebsocketController,
+      handler: WebsocketController.prototype.me,
+      expected: () => DEFAULT_LIMIT,
+    },
+  ]
+
+  it.each(contractCases)('$name 声明值与 SkipThrottle 契约', async ({ cls, handler, expected }) => {
+    expect(await resolveLimit(cls, handler)).toBe(expected())
+    expect(Reflect.getMetadata('THROTTLER:SKIPdefault', handler)).toBeUndefined()
   })
 
   it('公开错误上报 3/min', async () => {

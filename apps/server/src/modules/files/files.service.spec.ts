@@ -56,9 +56,7 @@ vi.mock('node:fs/promises', () => ({
     close: vi.fn().mockResolvedValue(undefined),
     stat: vi.fn().mockResolvedValue({ size: 1 }),
   }),
-  readFile: vi
-    .fn()
-    .mockResolvedValue(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0x00, 0x00])),
+  readFile: vi.fn().mockResolvedValue('\x89PNG\r\n\x1a\n'),
 }))
 
 const { FilesService } = await import('./files.service')

@@ -5,7 +5,7 @@
 | 层级 | 目的 | 速度 | 依赖 | 命令 |
 |---|---|---|---|---|
 | 单元测试（unit） | 验证 service/controller 单一函数逻辑 | 快（ms） | Mock DB/Redis | `pnpm test` |
-| E2E 冒烟测试（smoke） | 验证后端**全量 16 模块 69 API 端点**端到端可用 | 中（s） | 真实 DB | `pnpm --filter=server test:e2e` |
+| E2E 冒烟测试（smoke） | 验证后端**16 模块核心 CRUD 与鉴权链路**端到端可用 | 中（s） | 真实 DB | `pnpm --filter=server test:e2e` |
 | 全链路 e2e（Playwright） | 验证前端 UI + 后端 API 全链路（含角色绑定/权限守卫/WebSocket） | 慢（s） | 真实 DB + 浏览器 | `pnpm test:e2e` |
 | 安全/规范检测 | 代码静态扫描 | 快（ms） | 无 | `pnpm security` |
 
@@ -52,7 +52,7 @@ pnpm --filter=web test:cov
 
 ### 定位
 
-**全量 API 冒烟**：覆盖后端 16 个模块的 69 个 API 端点，验证端到端可用。覆盖：
+**核心 API 冒烟**：覆盖后端 16 个模块的核心 CRUD 与鉴权链路（71 个用例，实触 61 个端点；restore 系、个人改密、通知已读/删除等边缘端点未纳入），验证端到端可用。覆盖：
 
 1. **健康检查**：`/api/v1/health` 返回 200
 2. **认证**：login 成功返回 access_token，错误密码 401；`/auth/me` 返回当前用户；refresh/logout 全流程
@@ -63,7 +63,7 @@ pnpm --filter=web test:cov
 7. **路由元数据**：GET `/routes` 返回全部 controller 路由
 8. **系统初始化**：GET `/setup/status` + POST `/setup`（未开启 `ALLOW_SETUP` 时 404 负路径）
 9. **WebSocket**：POST `/websocket/notify`（含越权防护）
-10. **邮件/微信**：mail/welcome + wechat login（未配置时 503）
+10. **邮件/微信**：mail 未配置返回 400；wechat 未配置返回 503
 11. **定时任务**：POST `/schedule/backup`
 
 > 共 71 个测试用例，文件位置：`apps/server/test/e2e/smoke.e2e-spec.ts`

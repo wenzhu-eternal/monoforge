@@ -32,7 +32,8 @@ import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { FilesService, UPLOAD_DIR } from './files.service'
 
-// 可 inline 预览的安全白名单（图片/PDF），其余类型一律 attachment 下载防 XSS
+// 可 inline 预览的安全白名单（图片/PDF），其余类型一律 attachment 下载防 XSS。
+// L13：svg 永不加入此白名单——实体编码/扫描规则都存在漏检可能，浏览器内联执行 SVG 脚本即 XSS
 const INLINE_SAFE_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',

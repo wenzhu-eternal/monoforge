@@ -33,7 +33,7 @@
 | `ADMIN_ROLE_ID` | admin 角色 ID（PermissionsGuard 超级管理员旁路判定用，seed 创建的 admin 默认 id=1） | `1` |
 | `DEFAULT_USER_ROLE_ID` | user 角色 ID（public register/默认建户/微信建户默认分配此角色，seed 默认 2） | `2` |
 | `UPLOAD_DIR` | 上传目录（默认 `<cwd>/uploads`，回收站为同前缀 `-trash` 目录）。变更 WORKDIR 的部署用绝对路径锚定，避免历史文件失联 | `<cwd>/uploads` |
-| `BACKUP_DIR` | 备份目录（默认 `<cwd>/backups`）。容器部署时确认已挂载持久卷 | `<cwd>/backups` |
+| `BACKUP_DIR` | 备份目录（默认 `<cwd>/backups`）。手动 `pnpm db:backup` / `pnpm db:restore` 读取同一变量，相对路径按后端 cwd（`apps/server`）解析；容器部署时确认已挂载持久卷 | `<cwd>/backups` |
 | `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制）。备份经 Redis SETNX 互斥锁串行执行（进行中再触发返回 409；Redis 异常时降级无锁执行），产物按 `backup-YYYYMMDD-HHmmss.sql` 秒级命名防同日覆盖。成败通知发给 `ADMIN_ROLE_ID` 角色下第一个启用用户的邮箱（即初始化管理员），查不到时回退 `MAIL_FROM` | `false` |
 | `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，需做 shell 单引号转义防注入）。注：生产镜像已内置 `postgresql16-client`，默认 pg_dump 链路开箱即用，仅在特殊场景（如走代理导出）才需配置此项 | - |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |

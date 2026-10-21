@@ -254,6 +254,34 @@ export const envSchema = z
 
 export type Env = z.infer<typeof envSchema>
 
+/**
+ * L16：生产启动告警——限流旁路/代理信任配置错误不会阻断启动，但必须显式暴露，避免静默塌缩。
+ */
+export function collectProductionWarnings(
+  env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY' | 'ALLOW_THROTTLE_BYPASS'>,
+): string[] {
+  if (env.NODE_ENV !== 'production') return []
+
+  const warnings: string[] = []
+  if (env.TRUST_PROXY === false) {
+    warnings.push(
+      '[TRUST_PROXY] 生产环境未信任任何代理：若前置 nginx/ngrok，请设置 TRUST_PROXY=1，' +
+        '否则 request.ip 恒为代理 IP，全局限流与登录锁定会退化为共享桶',
+    )
+  } else if (env.TRUST_PROXY === true) {
+    warnings.push(
+      '[TRUST_PROXY] 已信任全部代理（true）：仅适用于无法确定代理地址的场景，多级代理建议改为信任层数（如 1）',
+    )
+  }
+  if (env.ALLOW_THROTTLE_BYPASS) {
+    warnings.push(
+      '[THROTTLE] 生产环境启用了 ALLOW_THROTTLE_BYPASS=true：全站限流已旁路，' +
+        '仅允许临时排障使用，请立即改回 false 并重启',
+    )
+  }
+  return warnings
+}
+
 let validatedEnv: Env | null = null
 
 export function validateEnv() {
