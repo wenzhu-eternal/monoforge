@@ -215,11 +215,19 @@ describe('UsersController', () => {
       expect(service.update).not.toHaveBeenCalled()
     })
 
+    it('L12：禁用自己的账号 → 抛 ForbiddenException', async () => {
+      const dto = { status: false }
+
+      await expect(controller.update(1, dto, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.hasPermission).not.toHaveBeenCalled()
+      expect(service.update).not.toHaveBeenCalled()
+    })
+
     it('改 roleId 但无 USER_ROLE_MANAGE 权限 → 抛 ForbiddenException（防提权）', async () => {
       const dto = { roleId: 2 }
       vi.mocked(service.hasPermission).mockResolvedValue(false)
 
-      await expect(controller.update(1, dto, currentUser)).rejects.toThrow(ForbiddenException)
+      await expect(controller.update(2, dto, currentUser)).rejects.toThrow(ForbiddenException)
       expect(service.update).not.toHaveBeenCalled()
     })
 
@@ -227,19 +235,19 @@ describe('UsersController', () => {
       const dto = { status: false }
       vi.mocked(service.hasPermission).mockResolvedValue(false)
 
-      await expect(controller.update(1, dto, currentUser)).rejects.toThrow(ForbiddenException)
+      await expect(controller.update(2, dto, currentUser)).rejects.toThrow(ForbiddenException)
       expect(service.update).not.toHaveBeenCalled()
     })
 
-    it('改 status 且有 USER_ROLE_MANAGE 权限 → 成功', async () => {
+    it('改他人 status 且有 USER_ROLE_MANAGE 权限 → 成功', async () => {
       const dto = { status: false }
       vi.mocked(service.hasPermission).mockResolvedValue(true)
-      vi.mocked(service.update).mockResolvedValue({ id: 1, status: false } as never)
+      vi.mocked(service.update).mockResolvedValue({ id: 2, status: false } as never)
 
-      const result = await controller.update(1, dto, currentUser)
+      const result = await controller.update(2, dto, currentUser)
 
-      expect(result).toEqual({ id: 1, status: false })
-      expect(service.update).toHaveBeenCalledWith(1, dto, currentUser)
+      expect(result).toEqual({ id: 2, status: false })
+      expect(service.update).toHaveBeenCalledWith(2, dto, currentUser)
     })
   })
 

@@ -37,6 +37,10 @@ vi.mock('@/db/helpers', () => ({
   isUniqueViolation: vi.fn(() => false),
 }))
 
+vi.mock('@/config/env', () => ({
+  getEnv: vi.fn(() => ({ ADMIN_ROLE_ID: 1, DEFAULT_USER_ROLE_ID: 2 })),
+}))
+
 const { db: mockDb } = await import('@/db')
 
 import { RolesService } from './roles.service'
@@ -164,13 +168,39 @@ describe('RolesService', () => {
       await expect(service.update(999, { name: 'x' })).rejects.toThrow(NotFoundException)
     })
 
-    it('L6：目标名命中内置角色名时拒绝（不能改名成 admin/user）', async () => {
+    it('L6：自定义角色改名为内置名时拒绝（超管也只能改回内置角色自身）', async () => {
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
-        id: 1,
+        id: 5,
         name: 'editor',
       } as never)
 
-      await expect(service.update(1, { name: 'admin' }, true)).rejects.toThrow(ForbiddenException)
+      await expect(service.update(5, { name: 'admin' }, true)).rejects.toThrow(ForbiddenException)
+    })
+
+    it('L7：超管把内置 admin 角色改回原名时放行', async () => {
+      vi.mocked(mockDb.query.roles.findFirst)
+        .mockResolvedValueOnce({ id: 1, name: 'super-admin' } as never)
+        .mockResolvedValueOnce(undefined)
+      const updated = { id: 1, name: 'admin' }
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([updated]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.update(1, { name: 'admin' }, true)
+      expect(result).toEqual(updated)
+    })
+
+    it('L7：非超管把内置角色改回原名仍拒绝', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 1,
+        name: 'super-admin',
+      } as never)
+
+      await expect(service.update(1, { name: 'admin' }, false)).rejects.toThrow(ForbiddenException)
     })
 
     it('改成已存在的其他角色名时抛 ConflictException', async () => {

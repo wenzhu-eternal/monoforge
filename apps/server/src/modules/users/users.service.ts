@@ -289,26 +289,62 @@ export class UsersService {
       }
 
       // 用户被禁用时吊销所有 refresh + access token，防止封禁用户继续访问
+      // L9：DB 已提交后 Redis 抖动不能反抛 500，重试仍失败写 error_logs 留痕
       if (updateData.status === false) {
-        await this.redisService.deleteByPattern(`refresh:${id}:*`)
-        await this.revokeAccessTokens(id)
+        await this.retryAndLog(
+          () => this.redisService.deleteByPattern(`refresh:${id}:*`),
+          'refresh token 吊销',
+          'users.update',
+          '用户已禁用',
+        )
+        await this.retryAndLog(
+          () => this.revokeAccessTokens(id),
+          'access token 吊销',
+          'users.update',
+          '用户已禁用',
+        )
       }
 
       // 角色变更时吊销 access token（用户需用 refresh 重新签发走新角色）+ 失效旧/新角色权限缓存
       if (data.roleId !== undefined && data.roleId !== existingUser.roleId) {
-        await this.revokeAccessTokens(id)
+        await this.retryAndLog(
+          () => this.revokeAccessTokens(id),
+          'access token 吊销',
+          'users.update',
+          '角色已变更',
+        )
         if (existingUser.roleId) {
-          await this.redisService.del(`perm:role:${existingUser.roleId}`)
+          await this.retryAndLog(
+            () => this.redisService.del(`perm:role:${existingUser.roleId}`),
+            '旧角色权限缓存失效',
+            'users.update',
+            '角色已变更',
+          )
         }
         if (data.roleId) {
-          await this.redisService.del(`perm:role:${data.roleId}`)
+          await this.retryAndLog(
+            () => this.redisService.del(`perm:role:${data.roleId}`),
+            '新角色权限缓存失效',
+            'users.update',
+            '角色已变更',
+          )
         }
       }
 
       // 管理员重置密码后吊销所有 token，强制用户用新密码重新登录（与 changePassword 行为一致）
       if (rawPassword) {
-        await this.redisService.deleteByPattern(`refresh:${id}:*`)
-        await this.revokeAccessTokens(id)
+        await this.retryAndLog(
+          () => this.redisService.deleteByPattern(`refresh:${id}:*`),
+          'refresh token 吊销',
+          'users.update',
+          '密码已重置',
+        )
+        await this.retryAndLog(
+          () => this.revokeAccessTokens(id),
+          'access token 吊销',
+          'users.update',
+          '密码已重置',
+        )
       }
 
       const { password: _, ...userWithoutPassword } = updatedUser
@@ -367,6 +403,39 @@ export class UsersService {
   }
 
   /**
+   * L9：DB 已提交后的 Redis 操作统一降级——失败重试一次，仍失败写 error_logs 留痕，
+   * 不让缓存/吊销故障把已成功的业务请求反报为 500。
+   */
+  private async retryAndLog(
+    fn: () => Promise<unknown>,
+    what: string,
+    context: string,
+    outcome: string,
+  ): Promise<void> {
+    try {
+      await fn()
+    } catch {
+      try {
+        await fn()
+      } catch (retryErr) {
+        const message = `${context} ${what} 失败（重试后仍失败），${outcome}: ${
+          retryErr instanceof Error ? retryErr.message : String(retryErr)
+        }`
+        // 留痕自身失败只能降级 logger——业务已成功，不能因审计写失败再抛 500
+        try {
+          await this.errorLogsService.record({ message, internal: true })
+        } catch (recordErr) {
+          this.logger.warn(
+            `${context} ${what} 失败留痕写入失败: ${
+              recordErr instanceof Error ? recordErr.message : String(recordErr)
+            }`,
+          )
+        }
+      }
+    }
+  }
+
+  /**
    * 修改自己密码：必须验证旧密码，防止 token 泄露后被改密码锁账号
    */
   async changePassword(
@@ -416,33 +485,19 @@ export class UsersService {
         )
       }
     }
-    // L8：deleteByPattern/revokeAccessTokens Redis 抖动降级重试，仍失败记 error_logs 留痕
-    const revokeAndLog = async (fn: () => Promise<unknown>, what: string) => {
-      try {
-        await fn()
-      } catch {
-        try {
-          await fn()
-        } catch (retryErr) {
-          // L11：留痕自身失败只能降级 logger——密码已改成功，不能因审计写失败再抛 500
-          try {
-            await this.errorLogsService.record({
-              message: `changePassword ${what} 失败（重试后仍失败），密码已改: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
-              internal: true,
-            })
-          } catch (recordErr) {
-            this.logger.warn(
-              `changePassword ${what} 失败留痕写入失败: ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`,
-            )
-          }
-        }
-      }
-    }
-    await revokeAndLog(
+    // L8/L9：deleteByPattern/revokeAccessTokens Redis 抖动降级重试，仍失败记 error_logs 留痕
+    await this.retryAndLog(
       () => this.redisService.deleteByPattern(`refresh:${userId}:*`),
       'refresh token 吊销',
+      'changePassword',
+      '密码已改',
     )
-    await revokeAndLog(() => this.revokeAccessTokens(userId), 'access token 吊销')
+    await this.retryAndLog(
+      () => this.revokeAccessTokens(userId),
+      'access token 吊销',
+      'changePassword',
+      '密码已改',
+    )
 
     return { message: '密码修改成功，请重新登录' }
   }
@@ -504,8 +559,19 @@ export class UsersService {
     await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id))
 
     // 软删后吊销所有 token，与禁用逻辑保持一致
-    await this.redisService.deleteByPattern(`refresh:${id}:*`)
-    await this.revokeAccessTokens(id)
+    // L9：DB 已提交后 Redis 抖动不能反抛 500，重试仍失败写 error_logs 留痕
+    await this.retryAndLog(
+      () => this.redisService.deleteByPattern(`refresh:${id}:*`),
+      'refresh token 吊销',
+      'users.remove',
+      '用户已删除',
+    )
+    await this.retryAndLog(
+      () => this.revokeAccessTokens(id),
+      'access token 吊销',
+      'users.remove',
+      '用户已删除',
+    )
 
     return { message: `用户 ID ${id} 已删除` }
   }

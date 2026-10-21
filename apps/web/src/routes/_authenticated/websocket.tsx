@@ -19,6 +19,7 @@ import {
 import dayjs from 'dayjs'
 import { useWebSocketDemo } from '@/hooks/use-websocket'
 import { extractErrorMessage } from '@/lib/error'
+import { notifyContentRule, notifyTitleRule } from '@/lib/form-rules'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Title, Paragraph, Text } = Typography
@@ -141,18 +142,11 @@ export function WebSocketContent() {
               <Form.Item
                 label="标题"
                 name="title"
-                rules={[
-                  { required: true, message: '请输入标题' },
-                  { max: 200, message: '标题最多 200 字符' },
-                ]}
+                rules={[{ required: true, message: '请输入标题' }, notifyTitleRule]}
               >
                 <Input placeholder="如：系统测试通知" />
               </Form.Item>
-              <Form.Item
-                label="内容（可选）"
-                name="content"
-                rules={[{ max: 2000, message: '内容最多 2000 字符' }]}
-              >
+              <Form.Item label="内容（可选）" name="content" rules={[notifyContentRule]}>
                 <Input.TextArea rows={3} placeholder="通知内容" />
               </Form.Item>
               <Form.Item>

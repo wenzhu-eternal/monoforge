@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { emailRule, passwordRule, phoneRule, usernameRule } from './form-rules'
+import {
+  emailRule,
+  notifyContentRule,
+  notifyTitleRule,
+  passwordRule,
+  phoneRule,
+  usernameRule,
+} from './form-rules'
 
 // 辅助：把 Rule.validator 转成 Promise<boolean>，resolve 视为通过、reject 视为拒绝
 // antd Rule 是复杂联合类型（含 RuleRender 函数形式），helper 一律按 unknown 接收
@@ -131,6 +138,25 @@ describe('form-rules', () => {
     it('非数字被拒', async () => {
       const err = await runRuleReject(phoneRule, 'abcdefghijk')
       expect((err as Error).message).toContain('手机号')
+    })
+  })
+
+  describe('notify rules（复用 shared NotifySchema）', () => {
+    it('标题 200 字符通过，201 字符被拒', async () => {
+      await expect(runRule(notifyTitleRule, 'a'.repeat(200))).resolves.toBe(true)
+      const err = await runRuleReject(notifyTitleRule, 'a'.repeat(201))
+      expect((err as Error).message).toContain('200')
+    })
+
+    it('标题空值交给 required 控制，validator 放行', async () => {
+      await expect(runRule(notifyTitleRule, '')).resolves.toBe(true)
+    })
+
+    it('内容空值/2000 字符通过，2001 字符被拒', async () => {
+      await expect(runRule(notifyContentRule, '')).resolves.toBe(true)
+      await expect(runRule(notifyContentRule, 'a'.repeat(2000))).resolves.toBe(true)
+      const err = await runRuleReject(notifyContentRule, 'a'.repeat(2001))
+      expect((err as Error).message).toContain('2000')
     })
   })
 })

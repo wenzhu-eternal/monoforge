@@ -1,4 +1,4 @@
-import { PasswordSchema, PhoneSchema, UserEmailSchema, UsernameSchema } from '@shared'
+import { NotifySchema, PasswordSchema, PhoneSchema, UserEmailSchema, UsernameSchema } from '@shared'
 import type { Rule } from 'antd/es/form'
 
 /**
@@ -50,5 +50,30 @@ export const phoneRule: Rule = {
     return result.success
       ? Promise.resolve()
       : Promise.reject(new Error(result.error.issues[0]?.message ?? '手机号格式不正确'))
+  },
+}
+
+/**
+ * WebSocket 通知标题：复用 shared NotifySchema，长度/文案与后端 DTO 保持一致
+ */
+export const notifyTitleRule: Rule = {
+  validator: (_, value: string) => {
+    if (!value) return Promise.resolve()
+    const result = NotifySchema.shape.title.safeParse(value)
+    return result.success
+      ? Promise.resolve()
+      : Promise.reject(new Error(result.error.issues[0]?.message ?? '标题格式不正确'))
+  },
+}
+
+/**
+ * WebSocket 通知内容：可选，空值放行；长度上限复用 shared NotifySchema
+ */
+export const notifyContentRule: Rule = {
+  validator: (_, value: string | undefined) => {
+    const result = NotifySchema.shape.content.safeParse(value || undefined)
+    return result.success
+      ? Promise.resolve()
+      : Promise.reject(new Error(result.error.issues[0]?.message ?? '内容格式不正确'))
   },
 }

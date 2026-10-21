@@ -314,6 +314,11 @@ export class WechatService {
       where: and(eq(roles.id, getEnv().DEFAULT_USER_ROLE_ID), notDeleted(roles.deletedAt)),
     })
 
+    // L8：与 register 同口径 fail-fast——缺默认角色时不再落库 roleId=null 的用户
+    if (!userRole) {
+      throw new ConflictException('系统未初始化 user 角色，请联系管理员运行 pnpm db:seed')
+    }
+
     try {
       const [newUser] = await db
         .insert(users)
@@ -325,7 +330,7 @@ export class WechatService {
           avatar: safeAvatar,
           status: true,
           wechatOpenId: openId,
-          roleId: userRole?.id,
+          roleId: userRole.id,
         })
         .returning()
 

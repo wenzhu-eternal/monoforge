@@ -8,6 +8,7 @@ import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import type { Role } from '@shared/schemas/role'
 import { and, desc, eq, sql } from 'drizzle-orm'
+import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { rolePermissions, roles, users } from '@/db/schema'
@@ -90,10 +91,14 @@ export class RolesService {
       throw new NotFoundException(`角色 ID ${id} 不存在`)
     }
 
-    // L6：目标名入向同样封禁——create 已拒内置名，update 允许改名成 admin/user
-    // 会绕过限制造出第二个同名内置角色（与 create 口径对齐）
+    // L6/L7：目标名入向封禁内置名，但超管可把内置角色按 id 改回原名
+    // （内置角色可能先被改成其他名字，仅凭 name 无法识别其身份）
     if (data.name && data.name !== existing.name && ['admin', 'user'].includes(data.name)) {
-      throw new ForbiddenException('系统内置角色名不可用')
+      const builtinRoleId =
+        data.name === 'admin' ? getEnv().ADMIN_ROLE_ID : getEnv().DEFAULT_USER_ROLE_ID
+      if (!callerIsAdmin || id !== builtinRoleId) {
+        throw new ForbiddenException('系统内置角色名不可用')
+      }
     }
 
     if (data.name && data.name !== existing.name) {

@@ -297,6 +297,84 @@ describe('UsersService', () => {
       await service.update(1, { email: 'a@b.com', roleId: 1 }, { roleId: 1 })
     })
 
+    it('L9：禁用用户时 Redis 吊销连续失败不抛 500，并写入 error_logs', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([
+              {
+                id: 2,
+                username: 'bob',
+                email: 'b@b.com',
+                password: 'hashed',
+                status: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            ]),
+          }),
+        }),
+      } as never)
+      mockRedisService.deleteByPattern.mockRejectedValue(new Error('redis down'))
+      mockRedisService.scanKeys.mockRejectedValue(new Error('redis down'))
+
+      await expect(service.update(2, { status: false })).resolves.toMatchObject({
+        id: 2,
+        status: false,
+      })
+      // 每个吊销动作都重试一次
+      expect(mockRedisService.deleteByPattern).toHaveBeenCalledTimes(2)
+      expect(mockRedisService.scanKeys).toHaveBeenCalledTimes(2)
+      expect(mockErrorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          internal: true,
+          message: expect.stringContaining('用户已禁用'),
+        }),
+      )
+    })
+
+    it('L9：重置密码时 Redis 吊销连续失败不抛 500，并写入 error_logs', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([
+              {
+                id: 2,
+                username: 'bob',
+                email: 'b@b.com',
+                password: 'hashed',
+                status: true,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            ]),
+          }),
+        }),
+      } as never)
+      mockRedisService.deleteByPattern.mockRejectedValue(new Error('redis down'))
+      mockRedisService.scanKeys.mockRejectedValue(new Error('redis down'))
+
+      await expect(service.update(2, { password: 'new-pass-123' })).resolves.toMatchObject({
+        id: 2,
+      })
+      expect(mockErrorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          internal: true,
+          message: expect.stringContaining('密码已重置'),
+        }),
+      )
+    })
+
     it('非超管授予超管角色时抛 ForbiddenException', async () => {
       vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
         id: 2,
@@ -528,6 +606,36 @@ describe('UsersService', () => {
 
       const result = await service.remove(1)
       expect(result.message).toContain('1')
+    })
+
+    it('L9：删除用户时 Redis 吊销连续失败不抛 500，并写入 error_logs', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        username: 'bob',
+        roleId: 2,
+      } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      } as never)
+      mockRedisService.deleteByPattern.mockRejectedValue(new Error('redis down'))
+      mockRedisService.scanKeys.mockRejectedValue(new Error('redis down'))
+
+      await expect(service.remove(2)).resolves.toEqual({ message: '用户 ID 2 已删除' })
+      expect(mockRedisService.deleteByPattern).toHaveBeenCalledTimes(2)
+      expect(mockRedisService.scanKeys).toHaveBeenCalledTimes(2)
+      expect(mockErrorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          internal: true,
+          message: expect.stringContaining('用户已删除'),
+        }),
+      )
     })
 
     it('关联文件时抛 ConflictException', async () => {

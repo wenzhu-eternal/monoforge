@@ -115,8 +115,14 @@ export class UsersController {
     if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
       // 自改角色一律禁止（含 admin）：持 USER_ROLE_MANAGE 的普通用户可把自己改成 admin 角色完成提权，
       // role-permissions 已有同款"禁改自身角色"防线，此处补齐 users.update 路径
-      if (currentUser.sub === id && updateUserDto.roleId !== undefined) {
-        throw new ForbiddenException('不能修改自己的角色')
+      if (currentUser.sub === id) {
+        if (updateUserDto.roleId !== undefined) {
+          throw new ForbiddenException('不能修改自己的角色')
+        }
+        // L12：自禁用会让当前请求方立即失去访问能力，需走其他管理员或删号流程
+        if (updateUserDto.status === false) {
+          throw new ForbiddenException('不能禁用当前登录账号')
+        }
       }
       const canManage = await this.usersService.hasPermission(
         currentUser.sub,

@@ -1,10 +1,13 @@
-import { ServiceUnavailableException } from '@nestjs/common'
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/db', () => ({
   db: {
     query: {
       users: {
+        findFirst: vi.fn(),
+      },
+      roles: {
         findFirst: vi.fn(),
       },
     },
@@ -18,7 +21,11 @@ vi.mock('@/db/helpers', () => ({
   isUniqueViolation: vi.fn(() => false),
 }))
 
-await import('@/db')
+vi.mock('@/config/env', () => ({
+  getEnv: vi.fn(() => ({ DEFAULT_USER_ROLE_ID: 2 })),
+}))
+
+const { db: mockDb } = await import('@/db')
 
 import { WechatService } from './wechat.service'
 
@@ -111,6 +118,21 @@ describe('WechatService', () => {
       await expect(service.login('some-code', 'miniprogram')).rejects.toThrow(
         ServiceUnavailableException,
       )
+    })
+  })
+
+  describe('login - 默认角色缺失', () => {
+    it('L8：默认 user 角色不存在时抛 409，且不落库', async () => {
+      const { service, httpClient } = buildService(true)
+      vi.mocked(httpClient.get).mockResolvedValue({
+        openid: 'openid-1',
+        session_key: 'session-key',
+      } as never)
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue(undefined)
+
+      await expect(service.login('some-code', 'miniprogram')).rejects.toThrow(ConflictException)
+      expect(mockDb.insert).not.toHaveBeenCalled()
     })
   })
 
