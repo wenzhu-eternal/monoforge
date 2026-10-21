@@ -1,4 +1,5 @@
 import { isIP } from 'node:net'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 
 // JWT 密钥黑名单：拒绝 .env.example 的占位符，防止部署人 cp 后不改密钥导致生产用公开密钥
@@ -36,7 +37,7 @@ export function isValidTrustProxyValue(value: string): boolean {
   return value.split(',').every((part) => isValidTrustProxyEntry(part.trim()))
 }
 
-const envSchema = z
+export const envSchema = z
   .object({
     DATABASE_URL: z
       .string()
@@ -231,6 +232,22 @@ const envSchema = z
         code: 'custom',
         message: '生产环境必须显式设置 ALLOW_ORIGIN（前端实际访问源，逗号分隔可配多个）',
         path: ['ALLOW_ORIGIN'],
+      })
+    }
+    // M2：备份目录不得落在上传目录内——孤儿清理每小时 unlink uploadDir 下不在 files 表中的旧文件，
+    // 若 BACKUP_DIR=UPLOAD_DIR/backups，备份会在 1 小时后被静默删除。
+    const uploadDir = resolve(data.UPLOAD_DIR ?? 'uploads')
+    const backupDir = resolve(data.BACKUP_DIR ?? 'backups')
+    const backupRelativeToUpload = relative(uploadDir, backupDir)
+    if (
+      backupRelativeToUpload === '' ||
+      (!backupRelativeToUpload.startsWith('..') && !isAbsolute(backupRelativeToUpload))
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'BACKUP_DIR 不能等于或位于 UPLOAD_DIR 内，否则孤儿文件清理会删除备份文件；请改用独立目录',
+        path: ['BACKUP_DIR'],
       })
     }
   })

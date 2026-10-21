@@ -10,6 +10,7 @@ import { getEnv } from '../config/env'
 import { notDeleted } from './helpers'
 import { db } from './index'
 import { permissions, rolePermissions, roles, users } from './schema'
+import { assertAdminUsernameAvailable } from './seed-guards'
 
 // L17③：与 db/index.ts 一致，按当前 cwd 解析 ../../.env（apps/server 下运行即仓库根）
 config({ path: '../../.env' })
@@ -140,8 +141,14 @@ async function seed() {
     const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com'
     const adminNickname = process.env.SEED_ADMIN_NICKNAME ?? 'Administrator'
 
-    // admin 已存在时同步密码与改密标志：否则改了 SEED_ADMIN_PASSWORD /
-    // SEED_ADMIN_MUST_CHANGE_PASSWORD 后重跑 seed 不生效（onConflictDoNothing 会静默跳过）
+    // 此分支仅在“不存在 admin 角色用户”时到达；username='admin' 可能已被普通角色占位。
+    // 必须先校验，绝不能 upsert 把占位用户的密码重置为 SEED_ADMIN_PASSWORD。
+    const conflictingAdminUsername = await tx.query.users.findFirst({
+      where: and(eq(users.username, 'admin'), isNull(users.deletedAt)),
+      columns: { id: true, roleId: true },
+    })
+    assertAdminUsernameAvailable(conflictingAdminUsername, role.id)
+
     const [adminUser] = await tx
       .insert(users)
       .values({
@@ -152,13 +159,6 @@ async function seed() {
         roleId: role.id,
         status: true,
         mustChangePassword,
-      })
-      .onConflictDoUpdate({
-        target: users.username,
-        // users_username_unique 是部分唯一索引（WHERE deleted_at IS NULL），
-        // 必须带同款 targetWhere 才能被 PG 推断为冲突目标
-        targetWhere: sql`deleted_at IS NULL`,
-        set: { password: passwordHash, mustChangePassword, updatedAt: new Date() },
       })
       .returning()
 
