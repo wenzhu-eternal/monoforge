@@ -51,7 +51,8 @@ pnpm db:migrate
 pnpm db:seed
 
 # 4. 启动后端（同时托管前端 + 提供 API）
-NODE_ENV=production node apps/server/dist/main
+#    必须在 apps/server 下启动：env-loader 按 cwd 解析 ../../.env，仓库根启动会读不到根 .env
+(cd apps/server && NODE_ENV=production node dist/main)
 ```
 
 ### ngrok 临时外网部署
@@ -87,7 +88,8 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/
 
 # 2. 后端 API 可达
 curl -s http://localhost:9000/api/v1/health
-# 期望：{"code":200,"message":"ok","data":{"status":"ok","database":"ok","redis":"ok"}}
+# 期望（未认证）：{"code":200,"message":"成功","data":{"status":"ok","timestamp":"2026-...T...Z"}}
+# 注：database/redis 明细按设计仅超管可见；当前 /health 为 @Public，公开请求只返回基础字段
 
 # 3. Swagger 文档（仅非生产环境）
 curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
@@ -97,7 +99,12 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
 ## 初始化纪律（L21）
 
 - 初始化（`ALLOW_SETUP=true` + POST /setup，或 `pnpm db:seed`）必须在受控网络（本机/内网/VPN）内完成；未初始化窗口内 `/setup` 先到先得，暴露公网等于把管理员账号送给第一个访问者
-- 初始化完成后立即把 `ALLOW_SETUP` 改回 `false`（未开启时 POST /setup 返回 404），并确认配置已生效
+- 初始化完成后立即把 `ALLOW_SETUP` 改回 `false`（未开启时 POST /setup 返回 404），并核对状态：
+  ```bash
+  curl -s http://localhost:9000/api/v1/setup/status
+  # 期望：{"code":200,"message":"成功","data":{"initialized":true}}
+  ```
+  返回 `data.initialized=false` 说明初始化未落库或配置未生效，禁止对外放行。
 - 不要用 `.env.example` 的示例值上线；JWT 密钥用 `openssl rand -base64 48` 生成
 - 变更顺序：先 `pnpm db:backup` → 再 `pnpm db:migrate` → 最后启动并验证 `/api/v1/health`
 

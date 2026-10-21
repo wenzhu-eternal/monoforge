@@ -69,7 +69,7 @@ export class AuthController {
   @Post('send-register-code')
   @Public()
   @AuditAction('发送验证码')
-  // M6：使用 login named throttler
+  // M6：共享 default 桶，limit 读 THROTTLE_LOGIN_LIMIT
   @Throttle({
     default: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 },
   })
@@ -86,7 +86,7 @@ export class AuthController {
   @Post('register')
   @Public()
   @AuditAction('注册')
-  // M6：使用 login named throttler
+  // M6：共享 default 桶，limit 读 THROTTLE_LOGIN_LIMIT
   @Throttle({
     default: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 },
   })

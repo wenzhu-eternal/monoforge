@@ -80,7 +80,7 @@ docker compose --profile e2e up -d e2e-postgres redis
 # 运行 e2e 冒烟（自动 db:push+seed 到 e2e DB，再跑 vitest）
 pnpm --filter=server test:e2e
 
-# CI 环境用 test:e2e:ci（跳过 db:push+seed，由 workflow 单独执行）
+# CI 环境用 test:e2e:ci（跳过本地 db:push+seed，由 workflow 先执行 db:migrate+db:seed）
 pnpm --filter=server test:e2e:ci
 ```
 
@@ -236,7 +236,7 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 
 脚本会执行：
 
-1. **TypeScript 类型检查**：`pnpm -r exec tsc --noEmit`
+1. **TypeScript 类型检查**：`server` + `web` 的 `tsc --noEmit`（`shared` / `e2e` 由 CI `typecheck` job 覆盖）
 2. **Biome lint**：`pnpm lint`
 3. **软删除过滤审计**：扫描所有 service 的 `findFirst/findMany/count()` 是否有软删除过滤。采用函数级扫描（向前回溯 25 行 + 向后 8 行），识别 `notDeleted` / `maybeDeleted` / `includeDeleted` / `deletedFilter` 四种写法（过滤条件常预先计算为变量后复用）。白名单：`restore()` / `*Raw()` 方法与显式注明「故意不过滤」的查询需读取软删记录，属正确设计
 4. **前端 catch 块审计**：扫描所有 `.tsx` 是否有 `catch {}` 不读 error

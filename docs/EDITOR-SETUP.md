@@ -1,8 +1,8 @@
 # 编辑器配置规范
 
-## VSCode 配置（已落地）
+## VSCode 配置（本地示例，未入库）
 
-工作区配置已落地到 `.vscode/` 目录，团队成员 clone 后 VSCode 会自动推荐扩展并应用格式化设置。
+仓库未跟踪 `.vscode/`（被 `.gitignore` 忽略）；以下为本地配置示例，团队成员需自行复制/创建，clone 后不会自动生效。
 
 ### `.vscode/extensions.json`
 
@@ -28,7 +28,7 @@
 - `files.eol: "\n"` — 统一 LF 换行
 - `search.exclude` / `files.watcherExclude` — 排除 node_modules/dist/.turbo
 
-> **首次打开项目时**：VSCode 会弹窗提示「使用工作区 TypeScript 版本」，点击「允许」即可。如未弹窗，按 `Cmd+Shift+P` → `TypeScript: Select TypeScript Version` → 选择「Use Workspace Version」。
+> **复制配置后首次打开项目时**：VSCode 会弹窗提示「使用工作区 TypeScript 版本」，点击「允许」即可。如未弹窗，按 `Cmd+Shift+P` → `TypeScript: Select TypeScript Version` → 选择「Use Workspace Version」。
 
 ## EditorConfig
 
@@ -52,7 +52,7 @@
 - `useImportType: off`（避免 NestJS DI 的类型导入问题）
 - `noNonNullAssertion: off`（NestJS 常见 `!` 断言）
 - 格式化：2 空格 + 单引号 + 无分号 + 行宽 100
-- `formatWithErrors: true`（有错误也格式化，保证提交整洁）
+- `formatWithErrors: false`（有语法错误时跳过格式化，避免把错误文件写坏）
 - 包含范围：ts/tsx/js/jsx/json/yaml/yml/md
 
 ## Git Hooks
@@ -73,9 +73,11 @@ pnpm lint-staged
 ```jsonc
 "lint-staged": {
   "*.{ts,tsx,js,jsx}": ["biome check --write"],
-  "*.{json,md,yaml,yml}": ["biome format --write"]
+  "*.json": ["biome format --write"]
 }
 ```
+
+> 注意：当前 lint-staged 仅对 `*.json` 做格式化，Markdown/YAML 需手动执行 `pnpm format`。
 
 提交信息规范见 [CONVENTIONS.md](./CONVENTIONS.md) 的「提交规范」章节。
 

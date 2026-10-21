@@ -126,8 +126,6 @@ export class ErrorLogsController {
     return this.errorLogsService.findWhitelist(isAdmin)
   }
 
-  // 放宽限流阈值（高频查详情接口）
-
   @Get(':id')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @UseGuards(PermissionsGuard)

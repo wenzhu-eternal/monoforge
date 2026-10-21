@@ -17,7 +17,7 @@
 | `E2E_POSTGRES_USER` | e2e-postgres 容器用户名 | `e2e_user` |
 | `E2E_POSTGRES_PASSWORD` | e2e-postgres 容器密码 | `e2e_password` |
 | `E2E_POSTGRES_DB` | e2e-postgres 容器库名 | `monoforge_e2e_db` |
-| `REDIS_URL` | Redis 连接串（含密码：`redis://:password@host:port`） | `redis://localhost:6379` |
+| `REDIS_URL` | Redis 连接串（含密码：`redis://:password@host:port`） | `redis://:your_redis_password@localhost:6379` |
 | `REDIS_PASSWORD` | Redis 密码（docker-compose 强制必填；代码通过 REDIS_URL 消费，此项供文档/部署参考） | `your_redis_password` |
 | `JWT_SECRET` | JWT access token 密钥 | 必填，长度 >= 32 |
 | `JWT_REFRESH_SECRET` | JWT refresh token 密钥 | 必填，长度 >= 32 |
@@ -114,7 +114,7 @@ const port = portRaw ? Number(portRaw) : 587
 
 ### 验证码必须后端生成
 
-禁止前端传 `code` 字段，后端用 `node:crypto.randomUUID` 生成 6 位验证码：
+禁止前端传 `code` 字段，后端用 `node:crypto.randomInt` 生成 6 位验证码：
 
 ```ts
 import { randomInt } from 'node:crypto'
@@ -172,6 +172,7 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 | `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | createdAt 全量截断删（J1/M1=A，保留期=全量口径，未删通知不再无限堆积；M2 按 5000/批 ctid 子查询分批，避免首夜大存量超 statement_timeout） |
 | `error_logs` | ✅ 每天 1:30 cron（`dailyErrorLogsCleanup`） | 30 天 | createdAt 全量截断删（J1=A，保留期=全量口径，未删数据永不堆积） |
 | `files` trash | ✅ 每天 0:30 cron（`dailyTrashCleanup`） | 30 天 | 物理删除超期软删文件 |
+| `backups` | ✅ 每次成功备份后（`cleanOldBackups`） | 保留最新 30 份 | 按文件名字典序删除超出 `MAX_BACKUPS=30` 的旧 `backup-*.sql`；新命名零填充，字典序=时间序；旧格式混存时新格式优先删（见 schedule.service 注释） |
 | `audit_logs` | ❌ 无自动清理 | — | 归档责任由运维承担：建议定期导出后归档/清理，不自动删除（J1=A 留档，避免误删取证痕迹） |
 
 ## 定时任务时区说明

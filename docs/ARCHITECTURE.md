@@ -80,46 +80,99 @@ monoforge/
 }
 ```
 
-### 核心路由
+### 全部路由
+
+> 共 69 个 HTTP 端点（按 controller 静态扫描），另有 1 个 WebSocket 网关。认证列“否”为 `@Public` 端点。
+
+#### 认证与系统
 
 | 方法 | 路径 | 说明 | 认证 |
 |---|---|---|---|
 | POST | /api/v1/auth/login | 登录 | 否 |
+| POST | /api/v1/auth/send-register-code | 发送注册验证码 | 否 |
+| POST | /api/v1/auth/register | 公开注册 | 否 |
 | POST | /api/v1/auth/refresh | 刷新 token | 否 (cookie) |
 | POST | /api/v1/auth/logout | 登出 | 是 |
 | GET | /api/v1/auth/me | 获取当前用户信息 | 是 |
 | GET | /api/v1/health | 健康检查 | 否 |
-| GET/POST | /api/v1/users | 用户列表/创建 | 是 |
-| GET/PATCH/DELETE | /api/v1/users/:id | 用户详情/更新/删除 | 是 |
-| GET/POST | /api/v1/roles | 角色列表/创建 | 是 |
-| PATCH/DELETE | /api/v1/roles/:id | 角色更新/删除 | 是 |
-| GET/POST | /api/v1/permissions | 权限列表/创建 | 是 |
-| PATCH/DELETE | /api/v1/permissions/:id | 权限更新/删除 | 是 |
+| GET | /api/v1/setup/status | 查询初始化状态 | 否 |
+| POST | /api/v1/setup | 一键初始化（需 ALLOW_SETUP） | 否 |
+| GET | /api/v1/routes | 获取全部 API 路由元数据 | 是 |
+| GET | /api/v1/wechat/qrcode | 获取微信扫码登录二维码 | 否 |
+| POST | /api/v1/wechat/login | 微信登录 | 否 |
+| GET | /api/v1/wechat/status | 查询微信登录是否启用 | 否 |
+| GET | /api/v1/websocket/online | 获取在线用户 ID 列表 | 是 |
+| GET | /api/v1/websocket/me | 查询当前用户是否在线 | 是 |
+| POST | /api/v1/websocket/notify | 发送测试通知（持久化 + 在线推送） | 是 |
+
+#### 用户、角色与权限
+
+| 方法 | 路径 | 说明 | 认证 |
+|---|---|---|---|
+| GET | /api/v1/users | 分页查询用户 | 是 |
+| GET | /api/v1/users/stats | 用户统计（仪表盘用） | 是 |
+| GET | /api/v1/users/:id | 按 ID 查询用户 | 是 |
+| POST | /api/v1/users | 创建用户 | 是 |
+| PATCH | /api/v1/users/:id | 更新用户 | 是 |
+| POST | /api/v1/users/me/password | 修改当前用户密码 | 是 |
+| DELETE | /api/v1/users/:id | 删除用户 | 是 |
+| POST | /api/v1/users/:id/restore | 恢复已删除用户 | 是 |
+| GET | /api/v1/roles | 分页查询角色 | 是 |
+| GET | /api/v1/roles/:id | 按 ID 查询角色 | 是 |
+| POST | /api/v1/roles | 创建角色 | 是 |
+| PATCH | /api/v1/roles/:id | 更新角色 | 是 |
+| DELETE | /api/v1/roles/:id | 删除角色 | 是 |
+| POST | /api/v1/roles/:id/restore | 恢复已删除角色 | 是 |
+| GET | /api/v1/permissions | 分页查询权限 | 是 |
+| GET | /api/v1/permissions/list | 查询所有权限（不分页） | 是 |
+| GET | /api/v1/permissions/:id | 按 ID 查询权限 | 是 |
+| POST | /api/v1/permissions | 创建权限 | 是 |
+| PATCH | /api/v1/permissions/:id | 更新权限 | 是 |
+| DELETE | /api/v1/permissions/:id | 删除权限 | 是 |
+| POST | /api/v1/permissions/:id/restore | 恢复已删除权限 | 是 |
+| GET | /api/v1/role-permissions | 查询全部角色-权限绑定 | 是 |
+| GET | /api/v1/role-permissions/role/:roleId | 查询指定角色权限 | 是 |
 | PUT | /api/v1/role-permissions/role/:roleId | 配置角色权限 | 是 |
-| GET | /api/v1/error-logs | 错误日志列表 | 是 |
-| GET | /api/v1/error-logs/:id | 错误日志详情 | 是 |
+
+#### 业务与运维
+
+| 方法 | 路径 | 说明 | 认证 |
+|---|---|---|---|
+| POST | /api/v1/files/upload | 上传文件（单文件，字段名 file） | 是 |
+| GET | /api/v1/files | 分页查询文件列表 | 是 |
+| GET | /api/v1/files/:id/preview | 预览文件（支持 Range 请求） | 是 |
+| GET | /api/v1/files/:id/download | 下载文件 | 是 |
+| DELETE | /api/v1/files/:id | 删除文件 | 是 |
+| POST | /api/v1/files/:id/restore | 恢复已删除文件 | 是 |
+| GET | /api/v1/notifications | 分页拉取通知列表 | 是 |
+| GET | /api/v1/notifications/unread-count | 未读通知数 | 是 |
+| POST | /api/v1/notifications/:id/read | 标记单条已读 | 是 |
+| POST | /api/v1/notifications/read-all | 标记全部已读 | 是 |
+| DELETE | /api/v1/notifications/:id | 删除通知 | 是 |
+| GET | /api/v1/audit-logs | 分页查询审计日志 | 是 |
+| GET | /api/v1/audit-logs/:id | 审计日志详情 | 是 |
+| POST | /api/v1/error-logs/report | 前端/后端错误上报 | 否 |
+| GET | /api/v1/error-logs | 分页查询错误日志 | 是 |
 | GET | /api/v1/error-logs/stats | 错误日志统计 | 是 |
-| GET | /api/v1/error-logs/grouped | 错误聚合 Top N | 是 |
-| POST | /api/v1/error-logs/report | 前端错误上报 | 否 |
+| GET | /api/v1/error-logs/grouped | 相似错误聚合 Top N | 是 |
+| GET | /api/v1/error-logs/whitelist | 白名单列表 | 是 |
+| GET | /api/v1/error-logs/:id | 错误日志详情 | 是 |
 | POST | /api/v1/error-logs/:id/resolve | 标记已处理 | 是 |
 | POST | /api/v1/error-logs/batch-resolve | 批量标记已处理 | 是 |
 | DELETE | /api/v1/error-logs/:id | 删除错误日志 | 是 |
-| GET/POST | /api/v1/error-logs/whitelist | 白名单列表/创建 | 是 |
-| PATCH/DELETE | /api/v1/error-logs/whitelist/:id | 白名单更新/删除 | 是 |
-| GET | /api/v1/audit-logs | 审计日志列表 | 是 |
-| GET | /api/v1/audit-logs/:id | 审计日志详情 | 是 |
-| GET | /api/v1/files | 文件列表 | 是 |
-| POST | /api/v1/files/upload | 上传文件 | 是 |
-| DELETE | /api/v1/files/:id | 删除文件 | 是 |
+| POST | /api/v1/error-logs/whitelist | 创建白名单 | 是 |
+| PATCH | /api/v1/error-logs/whitelist/:id | 更新白名单 | 是 |
+| DELETE | /api/v1/error-logs/whitelist/:id | 删除白名单 | 是 |
+| POST | /api/v1/error-logs/whitelist/:id/restore | 恢复已删除白名单 | 是 |
 | POST | /api/v1/mail/welcome | 发送欢迎邮件 | 是 |
 | POST | /api/v1/mail/verification-code | 发送测试邮件（通道连通性验证，J2-C 不再伪造验证码） | 是 |
 | POST | /api/v1/schedule/backup | 手动触发数据库备份 | 是 |
-| GET | /api/v1/notifications | 通知列表 | 是 |
-| GET | /api/v1/notifications/unread-count | 未读通知数 | 是 |
-| POST | /api/v1/notifications/:id/read | 标记通知已读 | 是 |
-| POST | /api/v1/notifications/read-all | 全部标记已读 | 是 |
-| DELETE | /api/v1/notifications/:id | 删除通知 | 是 |
-| WS | / | WebSocket 实时推送 | 是 |
+
+#### WebSocket
+
+| 方法 | 路径 | 说明 | 认证 |
+|---|---|---|---|
+| WS | / | Socket.IO 实时推送与在线状态 | 是 |
 
 ---
 

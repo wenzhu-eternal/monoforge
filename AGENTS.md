@@ -40,7 +40,7 @@ pnpm --filter=shared build  # 单独构建 shared（schema 改动后必须执行
 # 测试
 pnpm test                   # 运行所有单元测试
 pnpm --filter=server test:e2e  # 运行 API 冒烟测试（需真实 DB，supertest）
-pnpm test:e2e               # 运行全链路 Playwright e2e（需 docker compose up -d postgres redis）
+pnpm test:e2e               # 运行全链路 Playwright e2e（需 docker compose --profile e2e up -d e2e-postgres redis）
 
 # 质量检测
 pnpm lint                   # Biome lint 检查所有包

@@ -175,7 +175,7 @@ export class UsersController {
   @ApiOperation({ summary: '删除用户' })
   async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
     // L17①：禁止软删自己（与改密需验旧密口径一致），防持 user:delete 的操作者误锁自身账号
-    // 初始管理员优先保留既有 409 契约（users.service 的 INITIAL_ADMIN_CANNOT_DELETE）
+    // 管理员账号统一保留既有 409 契约（users.service 对全部 admin 角色用户拦截）
     if (currentUser.sub === id && !isAdminUser(currentUser)) {
       throw new ForbiddenException('不能删除当前登录账号')
     }
