@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
@@ -12,9 +13,24 @@ import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { rolePermissions, roles, users } from '@/db/schema'
+import { RedisService } from '@/modules/redis/redis.service'
 
 @Injectable()
 export class RolesService {
+  private readonly logger = new Logger(RolesService.name)
+
+  constructor(private readonly redisService: RedisService) {}
+
+  /**
+   * L4：删除/恢复角色后失效权限缓存——PermissionsGuard 先查 perm:role:{id}，
+   * 不失效会让恢复后的角色在 ≤300s 内继续下发软删前的旧权限码。
+   */
+  private invalidatePermissionCache(roleId: number): void {
+    void this.redisService
+      .del(`perm:role:${roleId}`)
+      .catch((err) => this.logger.warn(`角色权限缓存失效失败: ${err}`))
+  }
+
   async findAll(page = 1, pageSize = 10, includeDeleted = false): Promise<PaginatedResponse<Role>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
@@ -170,6 +186,7 @@ export class RolesService {
       await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, id))
     })
 
+    this.invalidatePermissionCache(id)
     return { message: `角色 ID ${id} 已删除` }
   }
 
@@ -204,6 +221,7 @@ export class RolesService {
         throw new ConflictException('恢复角色失败')
       }
 
+      this.invalidatePermissionCache(id)
       return restored
     } catch (error) {
       if (isUniqueViolation(error)) {

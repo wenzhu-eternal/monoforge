@@ -47,10 +47,12 @@ import { RolesService } from './roles.service'
 
 describe('RolesService', () => {
   let service: RolesService
+  let redisService: { del: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
     vi.clearAllMocks()
-    service = new RolesService()
+    redisService = { del: vi.fn().mockResolvedValue(1) }
+    service = new RolesService(redisService as never)
   })
 
   describe('findAll', () => {
@@ -264,6 +266,31 @@ describe('RolesService', () => {
 
       const result = await service.remove(2)
       expect(result).toEqual({ message: '角色 ID 2 已删除' })
+      expect(redisService.del).toHaveBeenCalledWith('perm:role:2')
+    })
+
+    it('L4：缓存失效失败不影响软删结果', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 2,
+        name: 'editor',
+      } as never)
+      vi.mocked(mockDb.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ count: 0 }]),
+        }),
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      } as never)
+      vi.mocked(mockDb.delete).mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      } as never)
+      redisService.del.mockRejectedValueOnce(new Error('redis down'))
+
+      await expect(service.remove(2)).resolves.toEqual({ message: '角色 ID 2 已删除' })
+      await Promise.resolve()
     })
   })
 
@@ -298,6 +325,7 @@ describe('RolesService', () => {
 
       const result = await service.restore(1)
       expect(result).toEqual({ id: 1, name: 'admin', deletedAt: null })
+      expect(redisService.del).toHaveBeenCalledWith('perm:role:1')
     })
   })
 })
