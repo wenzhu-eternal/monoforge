@@ -1,10 +1,11 @@
 import type { SendVerificationCodeMail, SendWelcomeMail } from '@shared'
+import { SendWelcomeMailSchema } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import { Button, Divider, Form, Input, message, Radio, Space, Typography } from 'antd'
 import { useState } from 'react'
 import { useSendVerificationCodeMail, useSendWelcomeMail } from '@/hooks/use-mail'
 import { extractErrorMessage } from '@/lib/error'
-import { emailRule } from '@/lib/form-rules'
+import { emailRule, schemaLengthRule } from '@/lib/form-rules'
 
 const { Title, Text } = Typography
 
@@ -81,7 +82,7 @@ function MailPage() {
               label="用户名"
               rules={[
                 { required: true, message: '请输入用户名' },
-                { max: 50, message: '用户名最多 50 个字符' },
+                schemaLengthRule(SendWelcomeMailSchema.shape.username, '用户名'),
               ]}
             >
               <Input placeholder="请输入收件人用户名" />

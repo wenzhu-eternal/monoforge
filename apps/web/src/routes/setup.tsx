@@ -1,10 +1,11 @@
+import { SetupSchema } from '@shared'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Alert, Button, Form, Input, message, Typography } from 'antd'
 import { useEffect } from 'react'
 import { APP_NAME } from '@/config/brand'
 import { useSetup, useSetupStatus } from '@/hooks/use-setup'
 import { extractErrorMessage } from '@/lib/error'
-import { emailRule, passwordRule, usernameRule } from '@/lib/form-rules'
+import { emailRule, passwordRule, schemaLengthRule, usernameRule } from '@/lib/form-rules'
 
 const { Title, Paragraph } = Typography
 
@@ -94,7 +95,7 @@ function SetupPage() {
           <Form.Item
             label="昵称（可选）"
             name="nickname"
-            rules={[{ max: 50, message: '昵称最多 50 字' }]}
+            rules={[schemaLengthRule(SetupSchema.shape.nickname, '昵称')]}
           >
             <Input placeholder="可选" />
           </Form.Item>

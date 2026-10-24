@@ -1,3 +1,4 @@
+import { LoginSchema } from '@shared'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { Button, Form, Input, message, Tabs, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
@@ -5,7 +6,7 @@ import { APP_NAME } from '@/config/brand'
 import { useLogin } from '@/hooks/use-auth'
 import { useRegister, useSendRegisterCode } from '@/hooks/use-register'
 import { extractErrorMessage } from '@/lib/error'
-import { emailRule, passwordRule, usernameRule } from '@/lib/form-rules'
+import { emailRule, passwordRule, schemaLengthRule, usernameRule } from '@/lib/form-rules'
 import { useAuthStore } from '@/store/auth-store'
 
 const { Title } = Typography
@@ -159,7 +160,7 @@ function LoginPage() {
                     name="password"
                     rules={[
                       { required: true, message: '请输入密码' },
-                      { max: 100, message: '密码最多 100 个字符' },
+                      schemaLengthRule(LoginSchema.shape.password, '密码'),
                     ]}
                   >
                     <Input.Password placeholder="请输入密码" />

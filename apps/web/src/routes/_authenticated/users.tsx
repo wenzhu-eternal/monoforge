@@ -1,5 +1,5 @@
 import type { CreateUser, UpdateUser, User } from '@shared'
-import { DEFAULT_PAGE_SIZE } from '@shared'
+import { DEFAULT_PAGE_SIZE, UpdateUserSchema } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
@@ -30,7 +30,13 @@ import {
   useUsers,
 } from '@/hooks/use-users'
 import { extractErrorMessage } from '@/lib/error'
-import { emailRule, passwordRule, phoneRule, usernameRule } from '@/lib/form-rules'
+import {
+  emailRule,
+  passwordRule,
+  phoneRule,
+  schemaLengthRule,
+  usernameRule,
+} from '@/lib/form-rules'
 import { PermissionCodes } from '@/lib/permissions'
 
 const { Title } = Typography
@@ -404,7 +410,11 @@ export function UsersContent() {
               </Form.Item>
             </>
           )}
-          <Form.Item name="nickname" label="昵称" rules={[{ max: 50, message: '昵称最多 50 字' }]}>
+          <Form.Item
+            name="nickname"
+            label="昵称"
+            rules={[schemaLengthRule(UpdateUserSchema.shape.nickname, '昵称')]}
+          >
             <Input />
           </Form.Item>
           <Form.Item name="phone" label="手机号" rules={[phoneRule]}>
