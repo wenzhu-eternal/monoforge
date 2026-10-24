@@ -1,5 +1,5 @@
 import type { CreateRole, Role, UpdateRole } from '@shared'
-import { DEFAULT_PAGE_SIZE } from '@shared'
+import { CreateRoleSchema, DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Alert,
@@ -35,6 +35,7 @@ import {
   useUpdateRole,
 } from '@/hooks/use-roles'
 import { extractErrorMessage } from '@/lib/error'
+import { schemaLengthRule } from '@/lib/form-rules'
 import { PermissionCodes } from '@/lib/permissions'
 
 const { Title } = Typography
@@ -396,7 +397,7 @@ export function RolesContent() {
             label="角色名"
             rules={[
               { required: true, message: '请输入角色名' },
-              { max: 50, message: '角色名最多 50 个字符' },
+              schemaLengthRule(CreateRoleSchema.shape.name, '角色名'),
             ]}
           >
             <Input />

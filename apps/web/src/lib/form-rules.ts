@@ -1,5 +1,27 @@
 import { NotifySchema, PasswordSchema, PhoneSchema, UserEmailSchema, UsernameSchema } from '@shared'
 import type { Rule } from 'antd/es/form'
+import { ZodOptional, type ZodString } from 'zod'
+
+/**
+ * L24：长度校验直接读 shared schema 的 minLength/maxLength——前端不再手写数字，
+ * 契约调整时表单提示自动跟随（required 仍由各表单项自行声明）
+ */
+export function schemaLengthRule(schema: ZodString | ZodOptional<ZodString>, label: string): Rule {
+  const stringSchema = schema instanceof ZodOptional ? schema.unwrap() : schema
+  return {
+    validator: (_, value: string | undefined) => {
+      if (!value) return Promise.resolve()
+      const { minLength, maxLength } = stringSchema
+      if (minLength !== null && value.length < minLength) {
+        return Promise.reject(new Error(`${label}至少 ${minLength} 个字符`))
+      }
+      if (maxLength !== null && value.length > maxLength) {
+        return Promise.reject(new Error(`${label}最多 ${maxLength} 个字符`))
+      }
+      return Promise.resolve()
+    },
+  }
+}
 
 /**
  * 密码校验规则：直接复用 shared 的 PasswordSchema，避免前端手写规则与后端契约漂移

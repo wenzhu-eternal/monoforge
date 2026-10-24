@@ -1,5 +1,5 @@
 import type { WhitelistMatchType } from '@shared'
-import { DEFAULT_PAGE_SIZE } from '@shared'
+import { CreateErrorWhitelistSchema, DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
@@ -46,6 +46,7 @@ import {
 } from '@/hooks/use-logs'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { extractErrorMessage } from '@/lib/error'
+import { schemaLengthRule } from '@/lib/form-rules'
 import { PermissionCodes } from '@/lib/permissions'
 
 const { Title, Text, Paragraph } = Typography
@@ -844,8 +845,7 @@ export function WhitelistTab() {
             label="匹配模式"
             rules={[
               { required: true, message: '请输入匹配模式' },
-              { min: 4, message: '匹配模式至少 4 个字符' },
-              { max: 500, message: '匹配模式最多 500 个字符' },
+              schemaLengthRule(CreateErrorWhitelistSchema.shape.pattern, '匹配模式'),
             ]}
             extra="匹配类型为消息时，错误消息包含此字符串则过滤；为 URL 时，请求 URL 包含此字符串则过滤"
           >
@@ -859,7 +859,11 @@ export function WhitelistTab() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="description" label="说明">
+          <Form.Item
+            name="description"
+            label="说明"
+            rules={[schemaLengthRule(CreateErrorWhitelistSchema.shape.description, '说明')]}
+          >
             <Input.TextArea rows={2} placeholder="可选，说明此规则的用途" />
           </Form.Item>
           <Form.Item name="isActive" label="启用" valuePropName="checked">

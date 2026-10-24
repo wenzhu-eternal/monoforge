@@ -1,5 +1,5 @@
 import type { Permission } from '@shared'
-import { DEFAULT_PAGE_SIZE } from '@shared'
+import { CreatePermissionSchema, DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Alert,
@@ -32,6 +32,7 @@ import {
   useUpdatePermission,
 } from '@/hooks/use-permissions'
 import { extractErrorMessage } from '@/lib/error'
+import { schemaLengthRule } from '@/lib/form-rules'
 import { PermissionCodes } from '@/lib/permissions'
 
 const { Title } = Typography
@@ -352,7 +353,7 @@ export function PermissionCodesContent() {
             label="权限码"
             rules={[
               { required: true, message: '请输入权限码' },
-              { max: 50, message: '权限码最多 50 个字符' },
+              schemaLengthRule(CreatePermissionSchema.shape.code, '权限码'),
             ]}
           >
             <Input placeholder="如: user:view" disabled={!!editingPermission} />
@@ -362,7 +363,7 @@ export function PermissionCodesContent() {
             label="权限名"
             rules={[
               { required: true, message: '请输入权限名' },
-              { max: 100, message: '权限名最多 100 个字符' },
+              schemaLengthRule(CreatePermissionSchema.shape.name, '权限名'),
             ]}
           >
             <Input placeholder="如: 查看用户" />
