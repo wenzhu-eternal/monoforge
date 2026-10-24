@@ -59,7 +59,7 @@ export const DEFAULT_PERMISSIONS: DefaultPermission[] = [
     code: PermissionCodes.ROLE_DELETE,
     name: '删除角色',
     description: '删除角色',
-    routes: ['DELETE /roles/:id'],
+    routes: ['DELETE /roles/:id', 'POST /roles/:id/restore'],
   },
   {
     code: PermissionCodes.PERMISSION_VIEW,
@@ -83,7 +83,7 @@ export const DEFAULT_PERMISSIONS: DefaultPermission[] = [
     code: PermissionCodes.PERMISSION_DELETE,
     name: '删除权限',
     description: '删除权限',
-    routes: ['DELETE /permissions/:id'],
+    routes: ['DELETE /permissions/:id', 'POST /permissions/:id/restore'],
   },
   {
     code: PermissionCodes.FILE_VIEW,
