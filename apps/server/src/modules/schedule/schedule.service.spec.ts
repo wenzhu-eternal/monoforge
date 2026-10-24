@@ -120,6 +120,30 @@ describe('ScheduleService', () => {
       expect(mockUnlink).toHaveBeenCalledTimes(1)
       expect(String(mockUnlink.mock.calls[0][0])).toContain('backup-20260102-000000.sql')
     })
+
+    it('L5：stat 失败的文件不参与排序，不被当成最旧误删', async () => {
+      const names = [
+        'backup-20260101.sql',
+        ...Array.from(
+          { length: 30 },
+          (_, i) => `backup-202601${String(i + 2).padStart(2, '0')}-000000.sql`,
+        ),
+      ]
+      mockReaddir.mockResolvedValue(names)
+      mockStat.mockImplementation((p: string) => {
+        // 最旧的候选文件无法 stat（并发删除/权限异常）
+        if (p.endsWith('backup-20260102-000000.sql')) return Promise.reject(new Error('EACCES'))
+        const index = names.findIndex((n) => p.endsWith(n))
+        // 旧格式文件 mtime 最新，使不可读的 20260102 成为理论最旧
+        return Promise.resolve({ isFile: () => true, mtimeMs: index === 0 ? 9e12 : index })
+      })
+
+      await (service as unknown as { cleanOldBackups: () => Promise<void> }).cleanOldBackups()
+
+      // 跳过不可读文件后仍删除次旧的 backup-20260103
+      expect(mockUnlink).toHaveBeenCalledTimes(1)
+      expect(String(mockUnlink.mock.calls[0][0])).toContain('backup-20260103-000000.sql')
+    })
   })
 
   describe('dailyTrashCleanup（J3 回收站到期清理）', () => {

@@ -219,7 +219,7 @@ test('admin 查看用户列表', async ({ page }) => {
 | `lint` | `pnpm lint`（Biome） | 无 |
 | `typecheck` | `tsc --noEmit`（shared + server + web + e2e） | 无 |
 | `security` | `bash scripts/security-check.sh` | 无 |
-| `unit-test` | `pnpm test`（Mock DB，467 用例） | 无 |
+| `unit-test` | `pnpm test`（Mock DB，469 用例） | 无 |
 | `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，71 用例） | postgres + redis services |
 | `e2e-test` | `pnpm test:e2e`（Playwright，65 用例） | postgres + redis services + playwright install |
 | `build` | `pnpm build` | 依赖前 6 个 job 全部通过 |
@@ -264,7 +264,7 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 实际 CI 配置见 `.github/workflows/ci.yml`，push 时触发 6 个并行 job（lint / typecheck / security / unit-test / smoke-test / e2e-test），全部通过后聚合 build job 执行 `pnpm build`。
 
 **4 个测试链路全量通过门槛**：
-- `unit-test`：`pnpm test`（后端 467 + 前端 123 单测）
+- `unit-test`：`pnpm test`（后端 469 + 前端 124 单测）
 - `smoke-test`：`pnpm --filter=server test:e2e:ci`（71 个 API 冒烟）
 - `e2e-test`：`pnpm test:e2e`（65 个 Playwright 全链路）
 - `security`：`bash scripts/security-check.sh`（lint + typecheck + 软删除审计 + 依赖安全扫描）

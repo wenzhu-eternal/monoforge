@@ -119,6 +119,26 @@ describe('存储目录交叉校验（M2）', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it.skipIf(process.platform === 'win32')('UPLOAD_DIR 经 symlink 位于 BACKUP_DIR 内时放行', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mf-env-'))
+    try {
+      const backups = join(root, 'backups')
+      const uploads = join(backups, 'uploads')
+      mkdirSync(uploads, { recursive: true })
+      const link = join(root, 'uploads-link')
+      symlinkSync(uploads, link)
+      // 反向布局（UPLOAD_DIR ⊆ BACKUP_DIR）解析后仍应放行
+      const result = envSchema.safeParse({
+        ...baseEnv,
+        UPLOAD_DIR: link,
+        BACKUP_DIR: backups,
+      })
+      expect(result.success).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('角色 ID 互斥校验（M1）', () => {

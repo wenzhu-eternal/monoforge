@@ -447,14 +447,18 @@ export class ScheduleService {
         return
       }
 
-      const entries = await Promise.all(
+      const resolved = await Promise.all(
         backups.map(async (file) => {
           const st = await stat(join(BACKUP_DIR, file)).catch(() => null)
-          return { file, mtimeMs: st?.mtimeMs ?? 0 }
+          // L5：读不到 mtime 的文件不参与排序——避免因无法确认新旧而被当成最旧误删
+          return st ? { file, mtimeMs: st.mtimeMs } : null
         }),
       )
+      const entries = resolved.filter(
+        (entry): entry is { file: string; mtimeMs: number } => entry !== null,
+      )
       entries.sort((a, b) => a.mtimeMs - b.mtimeMs)
-      const toDelete = entries.slice(0, entries.length - MAX_BACKUPS).map((e) => e.file)
+      const toDelete = entries.slice(0, backups.length - MAX_BACKUPS).map((e) => e.file)
 
       for (const file of toDelete) {
         // L10：单文件删除失败（与并发备份窗口交叠时 ENOENT）不中断整轮清理
