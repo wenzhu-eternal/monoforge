@@ -148,7 +148,8 @@ export const envSchema = z
       .union([z.boolean(), z.string()])
       .transform((v) => v === true || v === 'true')
       .default(false),
-    // M6：登录/注册类匿名端点共享 default 桶，limit 读 THROTTLE_LOGIN_LIMIT，e2e/CI 可调高避免全套件限流撞墙
+    // M6：匿名端点各用独立的 default 桶（throttler v6 key 含 class-handler，不共享计数），
+    // limit 读 THROTTLE_LOGIN_LIMIT，e2e/CI 可调高避免全套件限流撞墙
     THROTTLE_LOGIN_LIMIT: z.coerce.number().min(1).default(5),
 
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

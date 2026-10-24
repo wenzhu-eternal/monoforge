@@ -66,7 +66,7 @@ describe('限流契约（M5）', () => {
     return storage.increment.mock.calls[0][2] as number
   }
 
-  it('login 命中 THROTTLE_LOGIN_LIMIT（default 共享桶，无 SkipThrottle）', async () => {
+  it('login 命中 THROTTLE_LOGIN_LIMIT（独立 default 桶，无 SkipThrottle）', async () => {
     expect(await resolveLimit(AuthController, AuthController.prototype.login)).toBe(
       getEnv().THROTTLE_LOGIN_LIMIT,
     )

@@ -39,7 +39,8 @@ export class AuthController {
   @Post('login')
   @Public()
   @AuditAction('登录')
-  // M1：登录/注册/发码共享 default 桶，limit 读 THROTTLE_LOGIN_LIMIT（避免 named 桶污染全部路由）
+  // M1：login/register/send-register-code 各为独立的 default 桶（throttler v6 的 key 含 class-handler-name），
+  // 不共享计数；limit 读 THROTTLE_LOGIN_LIMIT，避免 named 桶污染全部路由
   @Throttle({
     default: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 },
   })
@@ -69,7 +70,7 @@ export class AuthController {
   @Post('send-register-code')
   @Public()
   @AuditAction('发送验证码')
-  // M6：共享 default 桶，limit 读 THROTTLE_LOGIN_LIMIT
+  // M6：本端点独立的 default 桶，limit 读 THROTTLE_LOGIN_LIMIT
   @Throttle({
     default: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 },
   })
@@ -86,7 +87,7 @@ export class AuthController {
   @Post('register')
   @Public()
   @AuditAction('注册')
-  // M6：共享 default 桶，limit 读 THROTTLE_LOGIN_LIMIT
+  // M6：本端点独立的 default 桶，limit 读 THROTTLE_LOGIN_LIMIT
   @Throttle({
     default: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 },
   })
