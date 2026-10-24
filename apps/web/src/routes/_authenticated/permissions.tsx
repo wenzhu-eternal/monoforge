@@ -71,6 +71,7 @@ export function PermissionCodesContent() {
     isError: routesError,
     error: routesErr,
     isLoading: routesLoading,
+    refetch: refetchRoutes,
   } = useRoutes()
   const createPermission = useCreatePermission()
   const updatePermission = useUpdatePermission()
@@ -391,7 +392,12 @@ export function PermissionCodesContent() {
             type="error"
             showIcon
             className="mb-2"
-            message="路由清单加载失败，完成加载前不能保存配置"
+            title="路由清单加载失败，完成加载前不能保存配置"
+            action={
+              <Button size="small" onClick={() => refetchRoutes()}>
+                重试
+              </Button>
+            }
           />
         )}
         <div className="max-h-96 overflow-y-auto">

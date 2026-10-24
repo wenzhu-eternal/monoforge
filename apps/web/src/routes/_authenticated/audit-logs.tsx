@@ -163,7 +163,13 @@ function AuditLogsContent() {
       },
     },
     { title: '资源', dataIndex: 'resource', width: 100 },
-    { title: '资源ID', dataIndex: 'resourceId', width: 80, render: (v: number | null) => v || '-' },
+    {
+      title: '资源ID',
+      dataIndex: 'resourceId',
+      width: 80,
+      // L29：与 formatValue 同口径——仅 null/undefined/空串占位，0 等 falsy 真值如实展示
+      render: (v: number | null) => (v === null || v === undefined ? '-' : v),
+    },
     {
       title: '旧值',
       dataIndex: 'oldValue',

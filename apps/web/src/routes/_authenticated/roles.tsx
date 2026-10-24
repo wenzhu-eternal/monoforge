@@ -428,7 +428,7 @@ export function RolesContent() {
             type="error"
             showIcon
             className="mb-2"
-            message="权限回显加载失败，请关闭弹窗后重试"
+            title="权限回显加载失败，请关闭弹窗后重试"
             action={
               <Button size="small" onClick={() => refetchCurrentPerms()}>
                 重试
