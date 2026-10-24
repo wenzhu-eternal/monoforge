@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { collectProductionWarnings, envSchema, isValidTrustProxyValue } from './env'
 
@@ -80,6 +83,63 @@ describe('存储目录交叉校验（M2）', () => {
         UPLOAD_DIR: '/data/uploads',
         BACKUP_DIR: '/data/backups',
       }).success,
+    ).toBe(true)
+  })
+
+  it('反向布局（UPLOAD_DIR 位于 BACKUP_DIR 内）放行', () => {
+    expect(
+      envSchema.safeParse({
+        ...baseEnv,
+        UPLOAD_DIR: '/data/backups/uploads',
+        BACKUP_DIR: '/data/backups',
+      }).success,
+    ).toBe(true)
+  })
+
+  it.skipIf(process.platform === 'win32')('symlink 指向 UPLOAD_DIR 时同样拒绝', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mf-env-'))
+    try {
+      const uploads = join(root, 'uploads')
+      mkdirSync(uploads, { recursive: true })
+      const link = join(root, 'backups-link')
+      symlinkSync(uploads, link)
+      // link/backups 尚不存在，靠祖先链解析 symlink 后仍应命中交叉校验
+      const result = envSchema.safeParse({
+        ...baseEnv,
+        UPLOAD_DIR: uploads,
+        BACKUP_DIR: join(link, 'backups'),
+      })
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(
+          expect.objectContaining({ path: ['BACKUP_DIR'] }),
+        )
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('角色 ID 互斥校验（M1）', () => {
+  it('ADMIN_ROLE_ID 与 DEFAULT_USER_ROLE_ID 同值时拒绝', () => {
+    const result = envSchema.safeParse({
+      ...baseEnv,
+      ADMIN_ROLE_ID: '3',
+      DEFAULT_USER_ROLE_ID: '3',
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({ path: ['DEFAULT_USER_ROLE_ID'] }),
+      )
+    }
+  })
+
+  it('默认 1/2 与显式不同值放行', () => {
+    expect(envSchema.safeParse(baseEnv).success).toBe(true)
+    expect(
+      envSchema.safeParse({ ...baseEnv, ADMIN_ROLE_ID: '1', DEFAULT_USER_ROLE_ID: '3' }).success,
     ).toBe(true)
   })
 })

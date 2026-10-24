@@ -1,5 +1,6 @@
+import { realpathSync } from 'node:fs'
 import { isIP } from 'node:net'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 
 // JWT 密钥黑名单：拒绝 .env.example 的占位符，防止部署人 cp 后不改密钥导致生产用公开密钥
@@ -234,10 +235,20 @@ export const envSchema = z
         path: ['ALLOW_ORIGIN'],
       })
     }
+    // M1：两个角色 ID 相同会让注册/建户/wx 建户全部绑定到超管角色，且无任何告警
+    if (data.ADMIN_ROLE_ID === data.DEFAULT_USER_ROLE_ID) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'ADMIN_ROLE_ID 与 DEFAULT_USER_ROLE_ID 不能相同，否则新注册用户会被直接授予超管角色',
+        path: ['DEFAULT_USER_ROLE_ID'],
+      })
+    }
     // M2：备份目录不得落在上传目录内——孤儿清理每小时 unlink uploadDir 下不在 files 表中的旧文件，
     // 若 BACKUP_DIR=UPLOAD_DIR/backups，备份会在 1 小时后被静默删除。
-    const uploadDir = resolve(data.UPLOAD_DIR ?? 'uploads')
-    const backupDir = resolve(data.BACKUP_DIR ?? 'backups')
+    // L2：比较前解析 symlink；反向（UPLOAD_DIR 位于 BACKUP_DIR 内）放行——cleanOldBackups 只删 backup-*.sql
+    const uploadDir = resolveRealPath(data.UPLOAD_DIR ?? 'uploads')
+    const backupDir = resolveRealPath(data.BACKUP_DIR ?? 'backups')
     const backupRelativeToUpload = relative(uploadDir, backupDir)
     if (
       backupRelativeToUpload === '' ||
@@ -251,6 +262,24 @@ export const envSchema = z
       })
     }
   })
+
+// L2：目录可能尚不存在（首次启动），逐级向上找到最近的已存在祖先做 realpath，再拼回未存在的尾段，
+// 从而把 symlink 解析成真实路径；纯词法比较会被 backups-link -> uploads/real 这类布局绕过
+function resolveRealPath(target: string): string {
+  const resolved = resolve(target)
+  let current = resolved
+  const tail: string[] = []
+  for (;;) {
+    try {
+      return resolve(realpathSync(current), ...tail)
+    } catch {
+      const parent = dirname(current)
+      if (parent === current) return resolved
+      tail.unshift(basename(current))
+      current = parent
+    }
+  }
+}
 
 export type Env = z.infer<typeof envSchema>
 
