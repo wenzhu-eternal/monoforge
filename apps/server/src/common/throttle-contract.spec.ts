@@ -15,15 +15,17 @@ import { WechatController } from '@/modules/wechat/wechat.controller'
 import { CustomThrottlerGuard } from './guards/throttler.guard'
 import { buildThrottlerOptions } from './throttler-options'
 
-// 与 env.ts THROTTLE_LIMIT 默认值保持一致（L15③ 提到 60/min）
-const DEFAULT_LIMIT = 60
+// L11：默认桶上限单源读 env——避免 env 默认值调整后 60 系断言静默通过而非报红
+function defaultLimit(): number {
+  return getEnv().THROTTLE_LIMIT
+}
 
 function fakeConfig(throttleBypass: string): ConfigService {
   return {
     get: (key: string, fallback?: unknown) => {
       if (key === 'ALLOW_THROTTLE_BYPASS') return throttleBypass
       if (key === 'THROTTLE_TTL') return 60
-      if (key === 'THROTTLE_LIMIT') return DEFAULT_LIMIT
+      if (key === 'THROTTLE_LIMIT') return defaultLimit()
       return fallback
     },
   } as unknown as ConfigService
@@ -52,7 +54,7 @@ describe('限流契约（M5）', () => {
       timeToBlockExpire: 0,
     })
     guard = new CustomThrottlerGuard(
-      [{ ttl: 60_000, limit: DEFAULT_LIMIT }],
+      [{ ttl: 60_000, limit: defaultLimit() }],
       storage as never,
       new Reflector(),
     )
@@ -168,13 +170,13 @@ describe('限流契约（M5）', () => {
       name: 'websocket online',
       cls: WebsocketController,
       handler: WebsocketController.prototype.online,
-      expected: () => DEFAULT_LIMIT,
+      expected: () => defaultLimit(),
     },
     {
       name: 'websocket me',
       cls: WebsocketController,
       handler: WebsocketController.prototype.me,
-      expected: () => DEFAULT_LIMIT,
+      expected: () => defaultLimit(),
     },
   ]
 
@@ -199,7 +201,7 @@ describe('限流契约（M5）', () => {
   it('无装饰器端点继承默认 THROTTLE_LIMIT', async () => {
     expect(
       await resolveLimit(NotificationsController, NotificationsController.prototype.list),
-    ).toBe(DEFAULT_LIMIT)
+    ).toBe(defaultLimit())
   })
 
   it('L15①：仅显式 ALLOW_THROTTLE_BYPASS 才旁路，生产默认不旁路', () => {
@@ -212,6 +214,6 @@ describe('限流契约（M5）', () => {
     }
     expect(prod.skipIf()).toBe(false)
     expect(bypass.skipIf()).toBe(true)
-    expect(prod.throttlers).toEqual([{ ttl: 60_000, limit: DEFAULT_LIMIT }])
+    expect(prod.throttlers).toEqual([{ ttl: 60_000, limit: defaultLimit() }])
   })
 })
