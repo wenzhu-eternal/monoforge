@@ -6,6 +6,7 @@ import { appendErrorLog } from '@/common/logger'
 import { normalizeIpForKey } from '@/common/utils/ip-normalize'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
+import { trackDbWrite } from '@/db/pending-writes'
 import { errorLogs } from '@/db/schema'
 import { errorWhitelist } from '@/db/schema/error-whitelist'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -25,6 +26,21 @@ export interface ReportErrorParams {
   userId?: number
   ip?: string
   userAgent?: string
+}
+
+/** 后端内部记录入参（record 专用） */
+export interface RecordErrorParams {
+  message: string
+  stack?: string
+  statusCode?: number
+  url?: string
+  method?: string
+  context?: Record<string, unknown>
+  userId?: number
+  ip?: string
+  userAgent?: string
+  /** L12：运维补偿/失败留痕，不经白名单（宽 pattern 不得吞掉内部故障证据） */
+  internal?: boolean
 }
 
 // 活跃白名单子集（isActive=true），供 checkWhitelist 命中匹配使用
@@ -58,20 +74,14 @@ export class ErrorLogsService {
    * 与公开 report() 分桶：后端异常不走 IP 日限额——若共用配额，攻击者可先打满
    * 自身 IP 配额，使后续真实攻击触发的后端 5xx 日志被拒（审计消音）。
    * N1：4xx（扫描/过期 token/限流）按端点分钟级封顶 20 条，防限流器反成 DB 写入放大器
+   * 关闭排空：该方法多为 fire-and-forget 调用，需登记到 pending-writes，
+   * 由 DatabaseModule 在 client.end() 前 drain，避免 CONNECTION_ENDED 假告警
    */
-  async record(params: {
-    message: string
-    stack?: string
-    statusCode?: number
-    url?: string
-    method?: string
-    context?: Record<string, unknown>
-    userId?: number
-    ip?: string
-    userAgent?: string
-    /** L12：运维补偿/失败留痕，不经白名单（宽 pattern 不得吞掉内部故障证据） */
-    internal?: boolean
-  }): Promise<void> {
+  record(params: RecordErrorParams): Promise<void> {
+    return trackDbWrite(this.recordInternal(params))
+  }
+
+  private async recordInternal(params: RecordErrorParams): Promise<void> {
     // M2：401/403/429 属于安全事件（认证/授权/限流），白名单只能降噪 5xx 与业务报错；
     // 否则持 error_log:manage 的委托管理员可用 pattern="权限不足" 整批吞掉越权探测日志
     const skipWhitelist =

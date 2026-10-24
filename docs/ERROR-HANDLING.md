@@ -62,6 +62,7 @@ export class AuthService {
 - `appendErrorLog(message, stack)` 写入 `apps/server/logs/error-YYYY-MM-DD.log`（按天滚动）
 - 作为数据库错误日志的兜底：DB 抖动时不丢日志
 - 文件写入失败时降级到 `console.error`（`logger.ts:37`，唯一允许的 console 兜底）
+- **优雅关闭排空**：`record()` 多为 fire-and-forget 调用，写入会登记到 `db/pending-writes.ts`；`DatabaseModule.onModuleDestroy` 先 `drainDbWrites()`（默认 3s 上限）再 `client.end()`，避免 INSERT 与连接池关闭竞态产生 `CONNECTION_ENDED` 假告警
 
 ### 白名单匹配
 
