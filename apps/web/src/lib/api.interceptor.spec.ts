@@ -2,7 +2,7 @@ import { ErrorCodes, ErrorMessages } from '@shared'
 import axios, { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/store/auth-store'
-import { api } from './api'
+import { api, authRedirect } from './api'
 import { clearUserScopedState } from './auth-cleanup'
 
 // 拦截器集成测试：真 api 实例 + 假 adapter，让请求/响应拦截器完整执行。
@@ -30,6 +30,16 @@ function ok200(config: InternalAxiosRequestConfig, data: unknown = {}): AxiosRes
   return { status: 200, statusText: 'OK', headers: {}, config, data }
 }
 
+function err403(config: InternalAxiosRequestConfig) {
+  return new AxiosError('Request failed with status code 403', 'ERR_BAD_REQUEST', config, null, {
+    status: 403,
+    statusText: 'Forbidden',
+    headers: {},
+    config,
+    data: { message: '无权限' },
+  } as AxiosResponse)
+}
+
 describe('拦截器 401 处置矩阵', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -40,6 +50,7 @@ describe('拦截器 401 处置矩阵', () => {
 
   afterEach(() => {
     api.defaults.adapter = axios.getAdapter(api.defaults.adapter)
+    vi.useRealTimers()
   })
 
   it('M1：登录 401（账密错误）→ 不进刷新链、不触发终态登出，错误透传给表单', async () => {
@@ -160,5 +171,82 @@ describe('拦截器 401 处置矩阵', () => {
     await secondAssertion
     // 两条原始请求各打一次 401，均未带 dead-token 重试
     expect(adapterCalls).toBe(2)
+  })
+
+  it('L27：skipAuthFlow 请求 401 → 不进入刷新链，错误直接透传', async () => {
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
+    const postSpy = vi.spyOn(axios, 'post')
+    api.defaults.adapter = async (config) => {
+      throw err401(config as InternalAxiosRequestConfig)
+    }
+
+    await expect(api.get('/api/v1/users', { skipAuthFlow: true } as never)).rejects.toMatchObject({
+      response: { status: 401 },
+    })
+    expect(postSpy).not.toHaveBeenCalled()
+    expect(clearUserScopedState).not.toHaveBeenCalled()
+  })
+
+  it('L27：GET 403 跳 /403；PATCH 403 交由调用方处理', async () => {
+    const redirectSpy = vi.spyOn(authRedirect, 'to').mockImplementation(() => undefined)
+    const postSpy = vi.spyOn(axios, 'post')
+    api.defaults.adapter = async (config) => {
+      throw err403(config as InternalAxiosRequestConfig)
+    }
+
+    await expect(api.get('/api/v1/users')).rejects.toMatchObject({ response: { status: 403 } })
+    expect(redirectSpy).toHaveBeenCalledWith('/403')
+
+    redirectSpy.mockClear()
+    await expect(api.patch('/api/v1/users/1', {})).rejects.toMatchObject({
+      response: { status: 403 },
+    })
+    expect(redirectSpy).not.toHaveBeenCalled()
+    expect(postSpy).not.toHaveBeenCalled()
+  })
+
+  it('L27：业务 401 + MUST_CHANGE_PASSWORD → 前置改密分支，不刷新不清态', async () => {
+    useAuthStore.setState({ token: 'valid-token', isAuthenticated: true })
+    const redirectSpy = vi.spyOn(authRedirect, 'to').mockImplementation(() => undefined)
+    const postSpy = vi.spyOn(axios, 'post')
+    api.defaults.adapter = async (config) => {
+      throw err401(config as InternalAxiosRequestConfig, MUST_CHANGE_MSG)
+    }
+
+    await expect(api.get('/api/v1/users')).rejects.toMatchObject({
+      response: { status: 401, data: { message: MUST_CHANGE_MSG } },
+    })
+    expect(redirectSpy).toHaveBeenCalledWith('/change-password')
+    expect(postSpy).not.toHaveBeenCalled()
+    expect(clearUserScopedState).not.toHaveBeenCalled()
+  })
+
+  it('L27：排队请求 15s 超时 → 中文超时文案', async () => {
+    vi.useFakeTimers()
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
+    let resolveRefresh: ((value: AxiosResponse) => void) | undefined
+    vi.spyOn(axios, 'post').mockReturnValue(
+      new Promise<AxiosResponse>((resolve) => {
+        resolveRefresh = resolve
+      }) as never,
+    )
+    api.defaults.adapter = async (config) => {
+      throw err401(config as InternalAxiosRequestConfig)
+    }
+
+    const first = api.get('/api/v1/users')
+    void first.catch(() => undefined)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(axios.post).toHaveBeenCalledTimes(1)
+
+    const second = api.get('/api/v1/roles')
+    const secondAssertion = expect(second).rejects.toThrow('登录状态刷新超时，请重新登录')
+    await vi.advanceTimersByTimeAsync(15_000)
+    await secondAssertion
+
+    // 收尾：让首个请求的刷新落定，避免悬挂 promise 影响后续用例
+    resolveRefresh?.({ data: { data: { accessToken: 'late-token' } } } as AxiosResponse)
+    await vi.advanceTimersByTimeAsync(0)
+    await first.catch(() => undefined)
   })
 })

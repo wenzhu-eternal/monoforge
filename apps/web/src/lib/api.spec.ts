@@ -102,3 +102,36 @@ describe('L11：无 Web Locks 时刷新失败后二次检查共享键', () => {
     expect(useAuthStore.getState().token).toBe('shared-after-lock-error')
   })
 })
+
+describe('L26：锁回调已执行后失败 → 保留真实刷新错误', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
+    useAuthStore.setState({ token: null })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('callbackStarted=true 时按原错误立即落定，不回落共享键', async () => {
+    vi.useFakeTimers()
+    const refreshError = new Error('callback-true-refresh-failed')
+    const request = vi.fn(async (_name: string, cb: () => Promise<string>) => cb())
+    Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true })
+    // 刷新请求在回调内失败，同时写入"他 tab 已刷新"的共享键——若错误回落二查会被误采用
+    vi.spyOn(axios, 'post').mockImplementation(async () => {
+      localStorage.setItem(AT_KEY, String(Date.now()))
+      localStorage.setItem(RT_KEY, 'stale-shared-token')
+      throw refreshError
+    })
+
+    const promise = refreshAccessToken(Date.now() - 1000)
+    const assertion = expect(promise).rejects.toThrow('callback-true-refresh-failed')
+    // 若错误地进入回落分支，500ms 后会采用共享 token 并 resolve
+    await vi.advanceTimersByTimeAsync(600)
+    await assertion
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().token).toBeNull()
+  })
+})

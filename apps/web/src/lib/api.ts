@@ -174,6 +174,13 @@ export async function bootstrapAuth(): Promise<void> {
   }
 }
 
+// L27：跳转统一出口——拦截器跳转分支（403/改密/登出）在 spec 中可断言目标
+export const authRedirect = {
+  to(path: string): void {
+    window.location.href = path
+  },
+}
+
 api.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().token
@@ -207,7 +214,7 @@ api.interceptors.response.use(
       !(originalRequest as ApiRequestConfig | undefined)?.skipForbiddenRedirect &&
       originalRequest?.method?.toUpperCase() === 'GET'
     ) {
-      window.location.href = '/403'
+      authRedirect.to('/403')
       return Promise.reject(error)
     }
 
@@ -219,7 +226,7 @@ api.interceptors.response.use(
       error.response?.data?.message === ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD] &&
       !window.location.pathname.startsWith('/change-password')
     ) {
-      window.location.href = '/change-password'
+      authRedirect.to('/change-password')
       return Promise.reject(error)
     }
 
@@ -299,12 +306,12 @@ api.interceptors.response.use(
           refreshErr.response.data?.message === ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD]
         ) {
           if (!window.location.pathname.startsWith('/change-password')) {
-            window.location.href = '/change-password'
+            authRedirect.to('/change-password')
           }
           return Promise.reject(refreshError)
         }
         clearUserScopedState()
-        window.location.href = '/login'
+        authRedirect.to('/login')
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false
@@ -316,7 +323,7 @@ api.interceptors.response.use(
     // 重载、错误提示闪现即失（上轮 L16 修复丢条件，本轮 P0 修正）
     if (error.response?.status === 401 && originalRequest?._retry === true) {
       clearUserScopedState()
-      window.location.href = '/login'
+      authRedirect.to('/login')
     }
 
     return Promise.reject(error)
