@@ -73,8 +73,8 @@ export default defineConfig({
         NODE_ENV: 'development',
         DATABASE_URL: e2eDatabaseUrl,
         THROTTLE_LIMIT: '1000',
-        // M6/L18：登录/注册/发码共享 default 桶（THROTTLE_LOGIN_LIMIT），
-        // e2e 内大量登录请求调高避免撞 5/min 红线
+        // M6/L18：login/register/send-register-code 各为独立 default 桶（THROTTLE_LOGIN_LIMIT），
+        // e2e 内大量登录请求调高避免各自撞 5/min 红线
         THROTTLE_LOGIN_LIMIT: '1000',
         // M7：webServer 内会重跑 db:seed，默认密码强制首登改密会踢飞 e2e 会话——显式豁免
         SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false',

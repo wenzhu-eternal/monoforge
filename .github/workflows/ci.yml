@@ -118,7 +118,7 @@ jobs:
       # e2e 期间调高限流，避免频繁登录触发 429
       THROTTLE_TTL: 60
       THROTTLE_LIMIT: 1000
-      # M6：登录/注册/发码共享 default 桶（非独立桶）
+      # M6：login/register/send-register-code 各为独立 default 桶（不共享计数）
       THROTTLE_LOGIN_LIMIT: 1000
       # M7：默认密码强制首登改密会让 e2e 首步 GET /users 401 全套崩，显式豁免
       SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false'

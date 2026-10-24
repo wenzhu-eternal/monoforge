@@ -38,7 +38,7 @@
 | `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，需做 shell 单引号转义防注入）。注：生产镜像已内置 `postgresql16-client`，默认 pg_dump 链路开箱即用，仅在特殊场景（如走代理导出）才需配置此项 | - |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
 | `THROTTLE_LIMIT` | 时间窗口内最大请求数（生产 60；e2e 由 `playwright.config.ts` 的 webServer.env 覆盖为 1000） | `60` |
-| `THROTTLE_LOGIN_LIMIT` | 登录/注册/发码共享 default 桶的请求上限（生产 5；e2e 覆盖为 1000 避免频繁登录触 429）。非独立桶——`@Throttle` 覆盖的是 default 桶，不引入 named 桶 | `5` |
+| `THROTTLE_LOGIN_LIMIT` | 登录/注册/发码各自独立 default 桶的请求上限（每端点 5；e2e 覆盖为 1000 避免频繁登录触 429）。`@Throttle` 覆盖的是 default 桶，不引入 named 桶 | `5` |
 | `ALLOW_THROTTLE_BYPASS` | 显式限流旁路开关（仅 e2e/vitest 由测试 setup 设为 true；生产保持 false。原按 `NODE_ENV=test` 隐式旁路已移除，M3/L15） | `false` |
 | `SEED_ADMIN_EMAIL` | seed 创建 admin 的邮箱（可选，默认 `admin@example.com`） | `admin@example.com` |
 | `SEED_ADMIN_PASSWORD` | seed 创建 admin 的密码（可选，默认 `888888`）。**无论默认还是自定义密码，首登均强制改密**（与 setup 对齐） | `888888` |
