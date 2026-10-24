@@ -469,22 +469,14 @@ export class UsersService {
     // 改密后吊销所有 token，强制重新登录
     // L9：先写 logout:at 时间戳作为兜底——若后续 Redis 抖动导致 revokeAccessTokens 失败，
     // 用户重试时 refresh 早退仍可检测到此时间戳，防止旧 token 续命
-    // L6：set 失败重试一次，仍失败仅 warn 不抛——密码已改成功，接口不应 500 恐慌用户
-    try {
-      await this.redisService.set(
-        `logout:at:${userId}`,
-        String(Date.now()),
-        8 * 24 * 60 * 60, // 8天，盖过 refresh TTL（7d）留余量
-      )
-    } catch {
-      try {
-        await this.redisService.set(`logout:at:${userId}`, String(Date.now()), 8 * 24 * 60 * 60)
-      } catch (retryErr) {
-        this.logger.warn(
-          `logout:at 写入失败（重试后仍失败），密码已改: ${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
-        )
-      }
-    }
+    // L3：兜底本身失败必须留痕——Nest logger 不进文件日志也不进 error_logs，
+    // 半开 Redis 下旧 refresh 可续命 7d 且零审计痕迹，故与下方吊销链路同走 retryAndLog
+    await this.retryAndLog(
+      () => this.redisService.set(`logout:at:${userId}`, String(Date.now()), 8 * 24 * 60 * 60),
+      'logout:at 写入',
+      'changePassword',
+      '密码已改',
+    )
     // L8/L9：deleteByPattern/revokeAccessTokens Redis 抖动降级重试，仍失败记 error_logs 留痕
     await this.retryAndLog(
       () => this.redisService.deleteByPattern(`refresh:${userId}:*`),

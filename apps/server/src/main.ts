@@ -11,19 +11,33 @@ import helmet from 'helmet'
 import { ZodValidationPipe } from 'nestjs-zod'
 import { AppModule } from './app.module'
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter'
+import { appendErrorLog } from './common/logger'
 import { SanitizeBodyPipe } from './common/pipes/sanitize-body.pipe'
 import { XssPipe } from './common/pipes/xss.pipe'
 import { collectProductionWarnings, validateEnv } from './config'
+import { ErrorLogsService } from './modules/error-logs/error-logs.service'
 
 async function bootstrap() {
   const env = validateEnv()
 
   // M3/L16：生产反代与限流旁路配置错误不阻断启动，但必须启动即告警，避免静默塌缩
-  for (const warning of collectProductionWarnings(env)) {
+  // L9：同时落文件日志，避免只有 stdout 可查
+  const productionWarnings = collectProductionWarnings(env)
+  for (const warning of productionWarnings) {
     console.warn(warning)
+    appendErrorLog(warning)
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule)
+
+  // L9：告警同步落 error_logs，运维在管理界面即可发现限流旁路等配置问题；写库失败退回文件日志
+  if (productionWarnings.length > 0) {
+    const errorLogsService = app.get(ErrorLogsService)
+    for (const message of productionWarnings) {
+      await errorLogsService.record({ message, internal: true }).catch(() => undefined)
+    }
+  }
+
   const configService = app.get(ConfigService)
   const isProduction = configService.get<string>('NODE_ENV') === 'production'
   const appName = env.APP_NAME

@@ -578,6 +578,30 @@ describe('UsersService', () => {
       expect(result.message).toContain('密码修改成功')
       expect(mockRedisService.deleteByPattern).toHaveBeenCalledWith('refresh:1:*')
     })
+
+    it('L3：logout:at 兜底连续失败仍改密成功，并写入 error_logs 留痕', async () => {
+      vi.mocked(argon2.verify).mockResolvedValue(true as never)
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        password: 'old-hash',
+        status: true,
+      } as never)
+      mockDb.update.mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+          }),
+        }),
+      } as never)
+      mockRedisService.set.mockRejectedValue(new Error('redis down'))
+
+      const result = await service.changePassword(1, 'old-pass', 'new-pass-123')
+
+      expect(result.message).toContain('密码修改成功')
+      expect(mockErrorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('logout:at 写入 失败') }),
+      )
+    })
   })
 
   describe('remove', () => {
