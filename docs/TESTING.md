@@ -67,6 +67,13 @@ pnpm --filter=web test:coverage
 11. **定时任务**：POST `/schedule/backup`
 
 > 共 71 个测试用例，文件位置：`apps/server/test/e2e/smoke.e2e-spec.ts`
+
+**启动告警进程级 e2e**：`apps/server/test/e2e/startup-warnings.e2e-spec.ts`（2 个用例）以真实子进程运行 `bootstrap()`，覆盖 L9 两条不变量：
+
+1. **写库成功**：`NODE_ENV=production` + `ALLOW_THROTTLE_BYPASS=true` 启动后，告警落库到 `error_logs`（`source='backend'`）
+2. **写库失败**：`DATABASE_URL` 指向不存在的库（3D000）时，服务仍启动并监听（`/health` 503 即证据），stderr 含告警、无 `[Bootstrap] 启动失败`
+
+> 前置：e2e postgres + redis 已启动、目标库已迁移；spec 的 `beforeAll` 会自动构建 `shared` 与 `server` 的 dist（tsx 不产出装饰器元数据，无法直接跑 src/main.ts）。
 >
 > 注意：smoke 会向 e2e 库写入 `smoke_user_*` / `smoke-role-*` 数据，重复本地运行会累积并影响 Playwright 列表分页断言（如 admin 被挤到第 2 页）。跑全链路 e2e 前按下方「重置 e2e DB」清空数据卷。
 
@@ -220,7 +227,7 @@ test('admin 查看用户列表', async ({ page }) => {
 | `typecheck` | `tsc --noEmit`（shared + server + web + e2e） | 无 |
 | `security` | `bash scripts/security-check.sh` | 无 |
 | `unit-test` | `pnpm test`（Mock DB，469 用例） | 无 |
-| `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，71 用例） | postgres + redis services |
+| `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，73 用例：71 冒烟 + 2 启动告警） | postgres + redis services |
 | `e2e-test` | `pnpm test:e2e`（Playwright，65 用例） | postgres + redis services + playwright install |
 | `build` | `pnpm build` | 依赖前 6 个 job 全部通过 |
 
@@ -265,6 +272,6 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 
 **4 个测试链路全量通过门槛**：
 - `unit-test`：`pnpm test`（后端 469 + 前端 124 单测）
-- `smoke-test`：`pnpm --filter=server test:e2e:ci`（71 个 API 冒烟）
+- `smoke-test`：`pnpm --filter=server test:e2e:ci`（73 个：71 API 冒烟 + 2 启动告警）
 - `e2e-test`：`pnpm test:e2e`（65 个 Playwright 全链路）
 - `security`：`bash scripts/security-check.sh`（lint + typecheck + 软删除审计 + 依赖安全扫描）
