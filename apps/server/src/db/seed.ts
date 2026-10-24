@@ -17,14 +17,9 @@ config({ path: '../../.env' })
 
 // admin 默认密码（首次登录后请立即修改）。新项目可通过环境变量 SEED_ADMIN_PASSWORD 覆盖
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? '888888'
-// 首登强制改密：默认沿用默认密码 888888 时强制（安全默认），自定义密码则不强制。
+// L8：与 setup 对齐，seed 管理员一律首次登录强制改密——自定义密码由部署者自选，弱值即长期弱口令。
 // 本地开发想跳过改密流程可显式设 SEED_ADMIN_MUST_CHANGE_PASSWORD=false；生产不应关闭
-const mustChangePassword =
-  process.env.SEED_ADMIN_MUST_CHANGE_PASSWORD === 'false'
-    ? false
-    : process.env.SEED_ADMIN_MUST_CHANGE_PASSWORD === 'true'
-      ? true
-      : ADMIN_PASSWORD === '888888'
+const mustChangePassword = process.env.SEED_ADMIN_MUST_CHANGE_PASSWORD !== 'false'
 
 async function seed() {
   console.log('Seeding database...')
@@ -34,6 +29,10 @@ async function seed() {
   const passwordHash = await argon2.hash(ADMIN_PASSWORD)
 
   await db.transaction(async (tx) => {
+    // L7：与 POST /setup 共用同一 advisory 事务锁 key——seed‖setup 并发时双方都读到 0 个 admin
+    // 会各自建出一个活跃超管；事务级锁随提交/回滚自动释放，不泄露到连接池
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(1234567890)`)
+
     // M11：与 setup 共用 @shared 的 DEFAULT_PERMISSIONS，两条初始化路径权限集单一来源
     // 创建默认权限（已存在则跳过，匹配部分唯一索引 permissions_code_unique）
     await tx.insert(permissions).values(DEFAULT_PERMISSIONS).onConflictDoNothing()

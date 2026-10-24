@@ -41,9 +41,9 @@
 | `THROTTLE_LOGIN_LIMIT` | 登录/注册/发码共享 default 桶的请求上限（生产 5；e2e 覆盖为 1000 避免频繁登录触 429）。非独立桶——`@Throttle` 覆盖的是 default 桶，不引入 named 桶 | `5` |
 | `ALLOW_THROTTLE_BYPASS` | 显式限流旁路开关（仅 e2e/vitest 由测试 setup 设为 true；生产保持 false。原按 `NODE_ENV=test` 隐式旁路已移除，M3/L15） | `false` |
 | `SEED_ADMIN_EMAIL` | seed 创建 admin 的邮箱（可选，默认 `admin@example.com`） | `admin@example.com` |
-| `SEED_ADMIN_PASSWORD` | seed 创建 admin 的密码（可选，默认 `888888`）。**未显式设置时首登强制改密**（`mustChangePassword=true`）；显式设置则视为运维知情，不强制 | `888888` |
+| `SEED_ADMIN_PASSWORD` | seed 创建 admin 的密码（可选，默认 `888888`）。**无论默认还是自定义密码，首登均强制改密**（与 setup 对齐） | `888888` |
 | `SEED_ADMIN_NICKNAME` | seed 创建 admin 的昵称（可选，默认 `Administrator`） | `Administrator` |
-| `SEED_ADMIN_MUST_CHANGE_PASSWORD` | 首登强制改密开关（可选）。不设时按密码推断（默认密码强制、自定义密码不强制）；显式 `false` 跳过改密流程（仅本地开发，生产勿关）；显式 `true` 强制 | 未设置 |
+| `SEED_ADMIN_MUST_CHANGE_PASSWORD` | 首登强制改密开关（可选）。不设时默认强制；显式 `false` 跳过改密流程（仅本地开发，生产勿关） | 未设置 |
 
 > **Docker 部署提醒**：新增后端环境变量时，除在 `env.ts` 声明外，还须在 `docker-compose.yml` 的 `app.environment` 中显式透传，否则容器内读不到该变量（根 `.env` 仅对本地直跑生效）。
 
