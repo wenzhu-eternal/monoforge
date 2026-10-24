@@ -524,6 +524,28 @@ describe('FilesService', () => {
       expect(mockUnlink).toHaveBeenCalledWith('/t/2-b.png')
       expect(mockUnlink).toHaveBeenCalledWith('/u/b.png')
     })
+
+    it('L6：满 5000 行后继续下一批，累计返回全量', async () => {
+      const batch = Array.from({ length: 5000 }, (_, i) => ({
+        id: i,
+        path: `/u/${i}.png`,
+        trashPath: null,
+      }))
+      const deleteWhere = vi
+        .fn()
+        .mockReturnValueOnce({ returning: vi.fn().mockResolvedValueOnce(batch) })
+        .mockReturnValueOnce({
+          returning: vi
+            .fn()
+            .mockResolvedValueOnce([{ id: 5001, path: '/u/last.png', trashPath: null }]),
+        })
+      mockDelete.mockReturnValue({ where: deleteWhere })
+
+      const removed = await service.purgeExpiredTrash()
+
+      expect(removed).toBe(5001)
+      expect(mockDelete).toHaveBeenCalledTimes(2)
+    })
   })
 
   describe('ensureUploadDir', () => {

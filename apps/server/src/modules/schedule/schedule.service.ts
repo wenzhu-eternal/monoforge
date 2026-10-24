@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { ConflictException, Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { isNotNull, lt, sql } from 'drizzle-orm'
+import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-batch'
 import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
 import { getEnv } from '@/config/env'
@@ -31,11 +32,7 @@ const MANUAL_BACKUP_DAILY_LIMIT = 3
 // J1：通知保留期 90 天，与 files trash（30 天）口径对齐；error_logs 另有独立保留 cron（30 天）；audit_logs 不自动清，归档责任见 CONFIGURATION.md「保留与归档」
 const NOTIFICATION_RETENTION_DAYS = 90
 const ERROR_LOGS_RETENTION_DAYS = 30
-// M2：单批删除量——避免 `DELETE … RETURNING` 一次性缓冲全表（postgres.js 全行组装后才 resolve，
-// 叠加 30s statement_timeout 会首夜超时回滚并长期持锁），5000 行远低于超时阈值
-const CLEANUP_BATCH_SIZE = 5000
-// 批次间让出 100ms，避免清理把连接池/IO 打满影响在线请求
-const CLEANUP_BATCH_PAUSE_MS = 100
+// M2/L6：分批删除常量与执行器收敛到 common/utils/cleanup-batch，files 回收站清理共用同一口径
 
 @Injectable()
 export class ScheduleService {
@@ -164,20 +161,14 @@ export class ScheduleService {
 
   /**
    * M2：分批清理公共实现——每批按 ctid 子查询限流，避免单语句全表 DELETE 的 RETURNING 缓冲。
-   * 单批不足 CLEANUP_BATCH_SIZE 即视为清空；批次间暂停，防止打满连接池。
+   * 批量口径与 files.purgeExpiredTrash 共用 runCleanupInBatches。
    */
   private async cleanupExpiredInBatches(
     runBatch: () => Promise<number>,
     label: string,
     retentionDays: number,
   ): Promise<void> {
-    let total = 0
-    for (;;) {
-      const removed = await runBatch()
-      total += removed
-      if (removed < CLEANUP_BATCH_SIZE) break
-      await new Promise((resolve) => setTimeout(resolve, CLEANUP_BATCH_PAUSE_MS))
-    }
+    const total = await runCleanupInBatches(runBatch)
     if (total > 0) {
       this.logger.log(
         `${label}：${total} 条超 ${retentionDays} 天已物理删除（createdAt 全量截断，分批）`,

@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common'
 import type { FileItem, UploadResult } from '@shared/schemas/file'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
-import { and, count, desc, eq, isNotNull, isNull, lt } from 'drizzle-orm'
+import { and, count, desc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import {
   generateSafeFilename,
   isPathSafe,
@@ -23,6 +23,7 @@ import {
   validateFileSize,
   validateMimeType,
 } from '@/common/file-validator'
+import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-batch'
 import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
 import { getEnv } from '@/config/env'
@@ -326,24 +327,28 @@ export class FilesService {
   async purgeExpiredTrash(): Promise<number> {
     const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
 
+    // L6：与通知/error_logs 清理同口径分批——ctid 子查询只取单批，RETURNING 也不会缓冲全表；
     // M2：先条件硬删拿 returning 行、再清盘——删行与过期复查同一语句原子完成（含 F-1 窗口）：
     // restore 抢锁在前则行不删不返回、磁盘分毫不碰；restore 在后则其条件更新 0 命中直接 409，
     // 先于任何磁盘操作——磁盘所有权随行归属确定，杜绝"DB 显示存活但磁盘被 purge 双删"
-    const purged = await db
-      .delete(files)
-      .where(and(isNotNull(files.deletedAt), lt(files.deletedAt, cutoff)))
-      .returning({ id: files.id, path: files.path, trashPath: files.trashPath })
-    if (purged.length === 0) return 0
+    return runCleanupInBatches(async () => {
+      const purged = await db
+        .delete(files)
+        .where(
+          sql`ctid IN (SELECT ctid FROM ${files} WHERE ${isNotNull(files.deletedAt)} AND ${lt(files.deletedAt, cutoff)} LIMIT ${CLEANUP_BATCH_SIZE})`,
+        )
+        .returning({ id: files.id, path: files.path, trashPath: files.trashPath })
 
-    for (const row of purged) {
-      if (row.trashPath && isPathSafe(row.trashPath, TRASH_DIR)) {
-        await unlink(row.trashPath).catch(() => undefined)
+      for (const row of purged) {
+        if (row.trashPath && isPathSafe(row.trashPath, TRASH_DIR)) {
+          await unlink(row.trashPath).catch(() => undefined)
+        }
+        if (isPathSafe(row.path, UPLOAD_DIR)) {
+          await unlink(row.path).catch(() => undefined)
+        }
       }
-      if (isPathSafe(row.path, UPLOAD_DIR)) {
-        await unlink(row.path).catch(() => undefined)
-      }
-    }
-    return purged.length
+      return purged.length
+    })
   }
 
   /**
