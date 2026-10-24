@@ -94,20 +94,22 @@ export class ScheduleService {
     try {
       const uploadDir = getUploadDir()
       const entries = await readdir(uploadDir).catch(() => [] as string[])
-      if (entries.length === 0) return
-      const known = await db.select({ path: files.path }).from(files)
-      const knownSet = new Set(known.map((r) => r.path))
-      const cutoff = Date.now() - 3_600_000
-      let removed = 0
-      for (const name of entries) {
-        const full = join(uploadDir, name)
-        const st = await stat(full).catch(() => null)
-        if (!st || !st.isFile() || st.mtimeMs > cutoff || knownSet.has(full)) continue
-        await unlink(full).catch(() => null)
-        removed += 1
-      }
-      if (removed > 0) {
-        this.logger.log(`清理 uploads 孤儿文件 ${removed} 个`)
+      // L1：uploads 为空是常见稳态，不能提前 return——否则下方 trash 孤儿清扫整轮跳过
+      if (entries.length > 0) {
+        const known = await db.select({ path: files.path }).from(files)
+        const knownSet = new Set(known.map((r) => r.path))
+        const cutoff = Date.now() - 3_600_000
+        let removed = 0
+        for (const name of entries) {
+          const full = join(uploadDir, name)
+          const st = await stat(full).catch(() => null)
+          if (!st || !st.isFile() || st.mtimeMs > cutoff || knownSet.has(full)) continue
+          await unlink(full).catch(() => null)
+          removed += 1
+        }
+        if (removed > 0) {
+          this.logger.log(`清理 uploads 孤儿文件 ${removed} 个`)
+        }
       }
     } catch (err) {
       this.logger.warn(`孤儿文件清理失败: ${err instanceof Error ? err.message : String(err)}`)
@@ -441,10 +443,9 @@ export class ScheduleService {
   }
 
   /**
-   * 清理旧备份: 按文件名字典序删除超出 MAX_BACKUPS 的旧文件。
-   * 新命名 backup-YYYYMMDD-HHmmss.sql 零填充，字典序与时间序一致；
-   * 与旧格式 backup-YYYYMMDD.sql 混存时：'-'(45) < '.'(46)，新格式（含 -HHmmss）字典序更小，
-   * 会被优先删除（即新备份先被清理），删除顺序与注释先前描述相反，以此注释为准。
+   * 清理旧备份: 保留最近 MAX_BACKUPS 份，按文件 mtime 排序删除最旧的。
+   * L5：不用字面量字典序——新格式 backup-YYYYMMDD-HHmmss.sql 与旧格式 backup-YYYYMMDD.sql
+   * 混存时 '-'(45) < '.'(46)，字典序会把新备份排在旧备份前，反而先删最新。
    */
   private async cleanOldBackups(): Promise<void> {
     try {
@@ -455,8 +456,14 @@ export class ScheduleService {
         return
       }
 
-      backups.sort()
-      const toDelete = backups.slice(0, backups.length - MAX_BACKUPS)
+      const entries = await Promise.all(
+        backups.map(async (file) => {
+          const st = await stat(join(BACKUP_DIR, file)).catch(() => null)
+          return { file, mtimeMs: st?.mtimeMs ?? 0 }
+        }),
+      )
+      entries.sort((a, b) => a.mtimeMs - b.mtimeMs)
+      const toDelete = entries.slice(0, entries.length - MAX_BACKUPS).map((e) => e.file)
 
       for (const file of toDelete) {
         // L10：单文件删除失败（与并发备份窗口交叠时 ENOENT）不中断整轮清理

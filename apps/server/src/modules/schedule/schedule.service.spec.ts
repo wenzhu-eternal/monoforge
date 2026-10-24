@@ -22,9 +22,11 @@ vi.mock('node:fs', () => ({
 const mockReturning = vi.fn()
 const mockWhere = vi.fn()
 const mockDelete = vi.fn()
+const mockSelect = vi.fn()
 vi.mock('@/db', () => ({
   db: {
     delete: (...args: unknown[]) => mockDelete(...(args as Parameters<typeof mockDelete>)),
+    select: (...args: unknown[]) => mockSelect(...(args as Parameters<typeof mockSelect>)),
   },
 }))
 
@@ -77,6 +79,48 @@ describe('ScheduleService', () => {
   function mockSpawnPgDump(impl: () => Promise<void>) {
     return vi.spyOn(service as never, 'spawnPgDump' as never).mockImplementation(impl as never)
   }
+
+  describe('cleanOrphanUploads（L1 空 uploads 仍清扫 trash）', () => {
+    it('uploads 为空时仍执行 trash 孤儿清扫', async () => {
+      const oldMtime = Date.now() - 31 * 24 * 60 * 60 * 1000
+      mockReaddir.mockImplementation((dir: string) =>
+        Promise.resolve(dir.endsWith('uploads-trash') ? ['orphan.sql'] : []),
+      )
+      mockStat.mockResolvedValue({ isFile: () => true, mtimeMs: oldMtime })
+      mockSelect.mockReturnValue({
+        from: () => ({ where: () => Promise.resolve([{ trashPath: '/known/other.sql' }]) }),
+      })
+
+      await service.cleanOrphanUploads()
+
+      expect(mockUnlink).toHaveBeenCalledTimes(1)
+      expect(String(mockUnlink.mock.calls[0][0])).toContain('orphan.sql')
+    })
+  })
+
+  describe('cleanOldBackups（L5 按 mtime 保留最新）', () => {
+    it('新旧命名混存时删除 mtime 最旧的一份，而非字典序最小', async () => {
+      const names = [
+        'backup-20260101.sql',
+        ...Array.from(
+          { length: 30 },
+          (_, i) => `backup-202601${String(i + 2).padStart(2, '0')}-000000.sql`,
+        ),
+      ]
+      // 旧格式文件 mtime 最新：字典序会先删它，mtime 排序应保留它
+      const mtime = new Map(names.map((n, i) => [n, i === 0 ? 9e12 : i]))
+      mockReaddir.mockResolvedValue(names)
+      mockStat.mockImplementation((p: string) => {
+        const name = names.find((n) => p.endsWith(n))
+        return Promise.resolve({ isFile: () => true, mtimeMs: mtime.get(name ?? '') })
+      })
+
+      await (service as unknown as { cleanOldBackups: () => Promise<void> }).cleanOldBackups()
+
+      expect(mockUnlink).toHaveBeenCalledTimes(1)
+      expect(String(mockUnlink.mock.calls[0][0])).toContain('backup-20260102-000000.sql')
+    })
+  })
 
   describe('dailyTrashCleanup（J3 回收站到期清理）', () => {
     it('委托 filesService.purgeExpiredTrash', async () => {
