@@ -45,6 +45,11 @@ describe('上传安全边界（M4/J1=A）', () => {
     ['十进制字符实体', '<svg><a xlink:href="&#106;avascript:alert(1)">x</a></svg>'],
     ['冒号实体', '<svg><image href="data&#58;text/html;base64,PHNjcmlwdD4="/></svg>'],
     ['字面控制字符', '<svg><a xlink:href="jav\r\nascript:alert(1)">x</a></svg>'],
+    [
+      '命名实体拆分协议',
+      '<svg><a xlink:href="jav&NewLine;a&Tab;script&colon;alert(1)">x</a></svg>',
+    ],
+    ['斜杠分隔事件属性', '<svg><image src=x/onerror=alert(1)></svg>'],
   ])('SVG 实体/控制字符变形 %s 被隔离', async (_label, content) => {
     const file = join(dir, `${_label}.svg`)
     await writeFile(file, content, 'latin1')

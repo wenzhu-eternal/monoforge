@@ -62,7 +62,8 @@ const MAGIC_NUMBERS: Array<{ ext: string; bytes: number[] }> = [
 const MALICIOUS_PATTERNS = [
   /<script[\s\S]*?>/i,
   /javascript:/i,
-  /\son\w+\s*=/i,
+  // L10：属性分隔不只空白——`<image src=x/onerror=…>` 用 '/' 分隔事件属性
+  /(?:[\s/"'=]|^)on\w+\s*=/i,
   /data:text\/html/i,
   /<iframe/i,
   /<embed/i,
@@ -184,12 +185,42 @@ function decodeCodePoint(codePoint: number): string {
   return String.fromCodePoint(codePoint)
 }
 
-// L13：XML 数值实体解码——`jav&#x0A;ascript:`/`&#106;avascript:`/`data&#58;text/html`
-// 在属性值中会被解析回协议文本，字面正则会漏检
+// L10：命名实体同样可把协议/属性拆开（HTML5 命名引用大小写敏感，按规范原样映射）
+const NAMED_ENTITIES: Record<string, string> = {
+  NewLine: '\n',
+  Tab: '\t',
+  colon: ':',
+  sol: '/',
+  bsol: '\\',
+  lpar: '(',
+  rpar: ')',
+  period: '.',
+  comma: ',',
+  semi: ';',
+  equals: '=',
+  hyphen: '-',
+  excl: '!',
+  quest: '?',
+  num: '#',
+  dollar: '$',
+  percnt: '%',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
+// L13/L10：XML 数值与命名实体解码——`jav&#x0A;ascript:`/`jav&NewLine;ascript&colon;`
+// 在属性值中会被浏览器解析回协议文本，字面正则会漏检
 function decodeNumericEntities(content: string): string {
   return content
     .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => decodeCodePoint(Number.parseInt(hex, 16)))
     .replace(/&#([0-9]+);/g, (_, dec: string) => decodeCodePoint(Number.parseInt(dec, 10)))
+    .replace(
+      /&([a-z][a-z0-9]{1,31});/gi,
+      (match: string, name: string) => NAMED_ENTITIES[name] ?? match,
+    )
 }
 
 export async function scanForMalware(filePath: string): Promise<void> {

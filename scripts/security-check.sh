@@ -109,12 +109,10 @@ while IFS= read -r file; do
     fi
   done || true)
 
-  if [ -n "$BAD_CATCH" ]; then
-    # 排除已知合理例外（login/setup/websocket 全局拦截器兜底）
-    REAL_CATCH=$(echo "$BAD_CATCH" | grep -v -E '(login\.tsx|setup\.tsx|websocket)' || true)
-    if [ -n "$REAL_CATCH" ]; then
-      CATCH_ISSUES="${CATCH_ISSUES}\n${file}:\n${REAL_CATCH}\n"
-    fi
+  # 排除已知合理例外（login/setup/websocket 全局拦截器兜底）
+  # L13：按文件名排除——原 grep 作用在"行号:代码内容"上，按内容匹配白名单永不命中
+  if [ -n "$BAD_CATCH" ] && ! echo "$file" | grep -q -E '(login\.tsx|setup\.tsx|websocket)'; then
+    CATCH_ISSUES="${CATCH_ISSUES}\n${file}:\n${BAD_CATCH}\n"
   fi
 done < <(find apps/web/src -name "*.tsx" -type f)
 
