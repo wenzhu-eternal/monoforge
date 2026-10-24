@@ -75,7 +75,7 @@ curl https://xxx.ngrok-free.dev/api/v1/health        # API 健康检查
 ### 关键约束
 
 - **ngrok 必须绑 `127.0.0.1:9000`**，不能绑 3000（vite dev server）。原因：后端通过 ServeStaticModule 做静态资源中转，单一端口同时处理 API 和前端
-- **Vite 配置**：`host: '0.0.0.0'`（IPv4）+ `strictPort: true` + `.ngrok-free.dev` 加入 `allowedHosts`
+- **Vite 配置**：`server.host` 默认 `localhost`，容器/ngrok 场景经 `VITE_DEV_HOST=0.0.0.0` 覆盖 + `strictPort: true` + `.ngrok-free.dev` 加入 `allowedHosts`
 
 ## 健康检查
 
@@ -168,7 +168,7 @@ docker compose down
 | app | 9000 | postgres, redis | NestJS 后端（含前端 dist，单一入口） |
 | e2e-postgres | 5433 | - | e2e 专用 PostgreSQL 16（profile 隔离，DEV DB 零污染） |
 
-> 生产环境建议：仅启动 postgres + redis 容器，server 直接 `node apps/server/dist/main` 运行（避免多层容器网络开销）。
+> 生产环境建议：仅启动 postgres + redis 容器，server 直接 `(cd apps/server && node dist/main)` 运行（避免多层容器网络开销）。
 
 ### 反向代理信任
 
@@ -187,5 +187,5 @@ git checkout <previous-tag>
 psql $DATABASE_URL -c "ALTER TABLE ... DROP ..."
 
 # 4. 重启
-pnpm db:migrate && NODE_ENV=production node apps/server/dist/main
+pnpm db:migrate && (cd apps/server && NODE_ENV=production node dist/main)
 ```

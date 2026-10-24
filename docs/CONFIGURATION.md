@@ -30,10 +30,10 @@
 | `ALLOW_INSECURE_COOKIE` | 生产环境允许非 secure cookie（ngrok/单容器 HTTP 调试场景；生产强制 COOKIE_SECURE 除非此项为 true） | `false` |
 | `ALLOW_SETUP` | 首次部署初始化开关（true 时允许调用 /setup 接口创建管理员；初始化事务内同步灌入 `@shared` 的 `DEFAULT_PERMISSIONS` 并绑定 admin 角色，与 `db:seed` 同源；初始化后建议设为 false）。**M3：未初始化窗口内 /setup 先到先得，务必仅在受控网络（本机/VPN/内网）完成初始化后再对外暴露，初始化完成后立即改回 false** | `false` |
 | `ALLOW_REGISTER` | 公开注册开关（true 时允许调用 register/send-register-code；默认 false 最小开口，需要开放注册的项目显式打开；关闭时两接口直接 404，前端登录页翻译为"未开放公开注册"） | `false` |
-| `ADMIN_ROLE_ID` | admin 角色 ID（PermissionsGuard 超级管理员旁路判定用，seed 创建的 admin 默认 id=1） | `1` |
+| `ADMIN_ROLE_ID` | admin 角色 ID（PermissionsGuard 超级管理员旁路判定用，seed 创建的 admin 默认 id=1）。**不得与 `DEFAULT_USER_ROLE_ID` 相同**，否则启动即失败 | `1` |
 | `DEFAULT_USER_ROLE_ID` | user 角色 ID（public register/默认建户/微信建户默认分配此角色，seed 默认 2） | `2` |
 | `UPLOAD_DIR` | 上传目录（默认 `<cwd>/uploads`，回收站为同前缀 `-trash` 目录）。变更 WORKDIR 的部署用绝对路径锚定，避免历史文件失联 | `<cwd>/uploads` |
-| `BACKUP_DIR` | 备份目录（默认 `<cwd>/backups`）。手动 `pnpm db:backup` / `pnpm db:restore` 读取同一变量，相对路径按后端 cwd（`apps/server`）解析；容器部署时确认已挂载持久卷 | `<cwd>/backups` |
+| `BACKUP_DIR` | 备份目录（默认 `<cwd>/backups`）。**不得等于或位于 `UPLOAD_DIR` 内**（比较前会解析 symlink，否则孤儿清理会删掉备份）。手动 `pnpm db:backup` / `pnpm db:restore` 读取同一变量，相对路径按后端 cwd（`apps/server`）解析；容器部署时确认已挂载持久卷 | `<cwd>/backups` |
 | `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制）。备份经 Redis SETNX 互斥锁串行执行（进行中再触发返回 409；Redis 异常时降级无锁执行），产物按 `backup-YYYYMMDD-HHmmss.sql` 秒级命名防同日覆盖。成败通知发给 `ADMIN_ROLE_ID` 角色下第一个启用用户的邮箱（即初始化管理员），查不到时回退 `MAIL_FROM` | `false` |
 | `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，需做 shell 单引号转义防注入）。注：生产镜像已内置 `postgresql16-client`，默认 pg_dump 链路开箱即用，仅在特殊场景（如走代理导出）才需配置此项 | - |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
@@ -66,8 +66,8 @@
 TypeScript 泛型只是编译期断言，运行时返回值类型由 `.env` 文件内容决定，**所有值都是 string**。数字类型必须 `Number()` 强转：
 
 ```ts
-const portRaw = this.configService.get<number>('MAIL_PORT') // 运行时仍是 string
-const port = portRaw ? Number(portRaw) : 587
+const portRaw = this.configService.get<string>('MAIL_PORT') // 运行时是 string
+const port = portRaw ? Number(portRaw) : undefined // 未配置时交给 nodemailer 默认 587
 ```
 
 典型踩坑：`MAIL_PORT=465` 直接传给 `nodemailer.createTransport({ port })` 会因类型不符静默失败或报错。
@@ -101,7 +101,7 @@ const port = portRaw ? Number(portRaw) : 587
 ### 品牌配置
 
 - 品牌名统一由 `apps/web/src/config/brand.ts` 管理，禁止在组件中硬编码
-- `brand.ts` 通过 `apps/web/src/lib/env.ts` 的 `env` 对象读取 `VITE_APP_NAME` / `VITE_APP_SHORT_NAME` / `VITE_ENABLE_MOCK`，不直接读 `import.meta.env`（统一经 zod schema 校验）
+- `brand.ts` 通过 `apps/web/src/lib/env.ts` 的 `env` 对象读取 `VITE_APP_NAME` / `VITE_APP_SHORT_NAME`，不直接读 `import.meta.env`（统一经 zod schema 校验）；`VITE_ENABLE_MOCK` 的消费点在 `main.tsx`（MSW 启动开关），不在 `brand.ts`
 - 新项目接入时修改 `.env` 的 `VITE_APP_NAME` / `VITE_APP_SHORT_NAME` 即可
 - `index.html` 的 `<title>` 使用 `%VITE_APP_NAME%` 由 Vite 注入
 

@@ -36,7 +36,7 @@ MonoForge 全栈 Monorepo 是一个可复用的中后台全栈脚手架，基于
 monoforge/
 ├── apps/
 │   ├── web/                      # 前端 (React 19 + Vite 8 + antd6 + TanStack)
-│   │   ├── src/{routes,components,hooks,stores,lib}
+│   │   ├── src/{routes,components,hooks,store,lib}
 │   │   └── vite.config.ts
 │   └── server/                   # 后端 (NestJS 11 + Drizzle + PostgreSQL)
 │       ├── src/{modules,common,db,config}
@@ -59,7 +59,7 @@ monoforge/
 
 核心业务表：`users` / `roles` / `permissions` / `role_permissions` / `files` / `notifications` / `error_logs` / `error_whitelist` / `audit_logs`。
 
-所有业务表均含 `deleted_at` 软删除字段；`audit_logs` 为 append-only 表例外。详细表结构与字段说明见 [DATABASE.md](./DATABASE.md)。
+所有业务表均含 `deleted_at` 软删除字段；`audit_logs` 与 `role_permissions` 为 append-only 例外（后者随角色/权限硬删级联清理）。详细表结构与字段说明见 [DATABASE.md](./DATABASE.md)。
 
 ---
 
@@ -165,7 +165,7 @@ monoforge/
 | DELETE | /api/v1/error-logs/whitelist/:id | 删除白名单 | 是 |
 | POST | /api/v1/error-logs/whitelist/:id/restore | 恢复已删除白名单 | 是 |
 | POST | /api/v1/mail/welcome | 发送欢迎邮件 | 是 |
-| POST | /api/v1/mail/verification-code | 发送测试邮件（通道连通性验证，J2-C 不再伪造验证码） | 是 |
+| POST | /api/v1/mail/verification-code | 发送测试邮件（通道连通性验证，J2=C 不再伪造验证码） | 是 |
 | POST | /api/v1/schedule/backup | 手动触发数据库备份 | 是 |
 
 #### WebSocket
@@ -257,7 +257,7 @@ src/routes/
 
 - antd6 开启 cssVar 模式，输出 `--ant-*` 变量
 - Tailwind `@theme` 引用 `var(--ant-*)` 做单一主题源
-- Preflight 收窄，避免与 antd 组件冲突
+- 仅 `@import "tailwindcss"` 引入，未做 Preflight 收窄（antd 样式优先级由 CSS 变量与作用域控制）
 - 分工: antd 管组件样式，Tailwind 管布局样式
 
 ### RBAC 权限
@@ -292,7 +292,7 @@ packages/shared/src/schemas/
 
 ### 使用方式
 
-**后端**: `nestjs-zod` 桥接 zod 做 DTO 校验 + `zod-to-openapi` 生成 OpenAPI spec
+**后端**: `nestjs-zod` 桥接 zod 做 DTO 校验 + `@nestjs/swagger` 生成 OpenAPI spec（非 zod-to-openapi）
 
 ```typescript
 // 后端 DTO 校验

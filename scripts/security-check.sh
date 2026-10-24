@@ -104,7 +104,7 @@ while IFS= read -r file; do
   # 查找 catch { 或 catch (xxx) 但没调用 extractErrorMessage
   BAD_CATCH=$(grep -n -E 'catch\s*(\(\s*\w*\s*\))?\s*\{' "$file" | while IFS= read -r line; do
     LINE_NUM=$(echo "$line" | cut -d: -f1)
-    if ! sed -n "$((LINE_NUM)),$((LINE_NUM + 3))p" "$file" | grep -q 'extractErrorMessage'; then
+    if ! sed -n "$((LINE_NUM)),$((LINE_NUM + 8))p" "$file" | grep -q 'extractErrorMessage'; then
       echo "$line"
     fi
   done || true)

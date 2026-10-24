@@ -16,7 +16,7 @@
 
 - **getPermissionsByUserId / getRoleByUserId** - 中间步骤也要过滤
 
-`wechat.service.findOrCreateUser` 的 `findFirst` 必须加 `notDeleted(users.deletedAt)`，否则已删除的微信用户扫码后会复活旧账号。
+`wechat.service.findOrCreateUser` 的 `findFirst` **故意不加** `notDeleted(users.deletedAt)`：需查到软删用户才能抛「账号已注销」401；若过滤掉会被当作新用户重建，触发 `openId` 唯一索引冲突。软删即拒绝登录（见 wechat.service.ts 对应注释）。
 
 `getRoleByUserId` 查询 role 时必须加 `notDeleted(roles.deletedAt)`，已删除角色的权限不得生效。
 
@@ -137,13 +137,13 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - **授予不得超过自身权限集**：非 admin 提交的权限码必须是调用者自身已持有的子集，超出部分 403（防止横向扩散未授权能力）
 
-- **禁止全无效码清空**：提交的权限码全部无效（含全部指向已软删权限）时直接 400 拒绝，否则事务会「删光旧权限、不插新权限」构成无感权限清空攻击；明确传空数组清空仍允许（PUT 已进审计留痕）
+- **禁止全无效码清空**：提交的权限码全部无效（含全部指向已软删权限）时直接 400 拒绝，否则事务会「删光旧权限、不插新权限」构成无感权限清空攻击；明确传空数组清空仍允许，但**仅超管**（非超管传空数组 403），PUT 已进审计留痕
 
 - 更新使用事务（delete + insert）保证原子性，成功后按 `perm:role:{roleId}` 失效缓存（失败仅告警，权限以 DB 为准，禁止 unhandledRejection 拖垮进程）
 
 ### 验证码尝试计数（原子化）
 
-邮箱验证码尝试次数（`verify_code:attempts:*`）必须用 Lua 脚本原子执行 INCR + EXPIRE（首次 INCR 时设置 TTL），禁止分两次调用——否则并发下 EXPIRE 丢失会导致计数永驻 Redis。同模式适用于所有"计数 + 过期"场景（限流、错误日志 IP 限额）。
+邮箱验证码尝试次数（`register:code:attempts:*`）必须用 Lua 脚本原子执行 INCR + EXPIRE（首次 INCR 时设置 TTL），禁止分两次调用——否则并发下 EXPIRE 丢失会导致计数永驻 Redis。同模式适用于所有"计数 + 过期"场景（限流、错误日志 IP 限额）。
 
 ### WebSocket 模块守卫
 

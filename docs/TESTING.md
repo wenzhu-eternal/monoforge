@@ -38,7 +38,7 @@
 
 ```bash
 pnpm --filter=server test:cov
-pnpm --filter=web test:cov
+pnpm --filter=web test:coverage
 ```
 
 ### Bug 修复流程
@@ -57,7 +57,7 @@ pnpm --filter=web test:cov
 1. **健康检查**：`/api/v1/health` 返回 200
 2. **认证**：login 成功返回 access_token，错误密码 401；`/auth/me` 返回当前用户；refresh/logout 全流程
 3. **CRUD 全量**：users/roles/permissions/files/audit-logs/error-logs 的 list/create/update/delete 全流程
-4. **Zod 校验**：缺字段返回 400 + issues 字段（与 main.ts 一致使用 `SanitizeBodyPipe + XssPipe + ZodValidationPipe`）
+4. **Zod 校验**：缺字段返回 400（统一消息「参数校验失败」，不回传 issues 字段）
 5. **权限保护**：无 token 访问受保护接口返回 401；越权访问返回 403
 6. **角色-权限绑定**：GET/PUT `/role-permissions/role/:roleId`
 7. **路由元数据**：GET `/routes` 返回全部 controller 路由
@@ -169,7 +169,7 @@ apps/e2e/
 
 **约束**：e2e 跑时必须停 dev server + dev web（端口冲突）。
 **数据隔离**：e2e 用独立 DB（`monoforge_e2e_db`），DEV DB 完全不受影响。`playwright.config.ts` 的 `webServer.command` 启动前自动执行 `db:push && db:seed` 重置 e2e DB，确保每次跑都是干净状态。
-**用户名命名**：e2e 用户名必须用下划线（如 `e2e_normal_user`），禁止连字符——`UsernameSchema` 正则为 `^[a-zA-Z0-9_]+$`，含连字符的用户名会在 global-setup 的 `POST /users` 被 Zod 校验拒 400，导致套件 setup 阶段直接失败。
+**用户名命名**：e2e 用户名必须用下划线（如 `e2e_normal_user`），禁止连字符——`UsernameSchema` 正则（小写化后）为 `^[a-z0-9_]+$`，含连字符的用户名会在 global-setup 的 `POST /users` 被 Zod 校验拒 400，导致套件 setup 阶段直接失败。
 
 ### 运行
 
@@ -217,9 +217,9 @@ test('admin 查看用户列表', async ({ page }) => {
 | Job | 内容 | 依赖 |
 |---|---|---|
 | `lint` | `pnpm lint`（Biome） | 无 |
-| `typecheck` | `tsc --noEmit`（server + web + e2e） | 无 |
+| `typecheck` | `tsc --noEmit`（shared + server + web + e2e） | 无 |
 | `security` | `bash scripts/security-check.sh` | 无 |
-| `unit-test` | `pnpm test`（Mock DB，180+ 用例） | 无 |
+| `unit-test` | `pnpm test`（Mock DB，467 用例） | 无 |
 | `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，71 用例） | postgres + redis services |
 | `e2e-test` | `pnpm test:e2e`（Playwright，65 用例） | postgres + redis services + playwright install |
 | `build` | `pnpm build` | 依赖前 6 个 job 全部通过 |
@@ -264,7 +264,7 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 实际 CI 配置见 `.github/workflows/ci.yml`，push 时触发 6 个并行 job（lint / typecheck / security / unit-test / smoke-test / e2e-test），全部通过后聚合 build job 执行 `pnpm build`。
 
 **4 个测试链路全量通过门槛**：
-- `unit-test`：`pnpm test`（后端 180+ + 前端 hooks 单测）
+- `unit-test`：`pnpm test`（后端 467 + 前端 123 单测）
 - `smoke-test`：`pnpm --filter=server test:e2e:ci`（71 个 API 冒烟）
 - `e2e-test`：`pnpm test:e2e`（65 个 Playwright 全链路）
 - `security`：`bash scripts/security-check.sh`（lint + typecheck + 软删除审计 + 依赖安全扫描）
