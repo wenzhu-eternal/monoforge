@@ -46,12 +46,17 @@ export const Route = createFileRoute('/_authenticated/roles')({
 
 function RolePermissionCodes({ roleId }: { roleId: number }) {
   const can = useCan()
-  const { data: permissions } = useRolePermissions(roleId)
+  const { data: permissions, isError } = useRolePermissions(roleId)
   const { data: allPermissions } = useAllPermissions()
 
   // M5：查询按 permission:view 门控，无权限时显式占位区分"没权限"与"没有权限项"
   if (!can(PermissionCodes.PERMISSION_VIEW)) {
     return <span className="text-gray-400">无查看权限</span>
+  }
+
+  // L19：请求失败（429/网络错）与"确无权限"都曾显示 '-'，失败态必须可辨
+  if (isError) {
+    return <span className="text-gray-400">加载失败</span>
   }
 
   if (!permissions || permissions.length === 0) {

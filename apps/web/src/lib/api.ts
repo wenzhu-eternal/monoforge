@@ -238,7 +238,10 @@ api.interceptors.response.use(
       // M1：注册链路的 401（验证码错误等）与登录同理——本就是未登录态，进刷新链
       // 必失败并触发终态登出整页重载，吞掉注册页的错误提示
       !originalRequest.url?.includes('/api/v1/auth/register') &&
-      !originalRequest.url?.includes('/api/v1/auth/send-register-code')
+      !originalRequest.url?.includes('/api/v1/auth/send-register-code') &&
+      // L15：登出不进刷新链——AT 过期时点退出会白耗一次 refresh（单次消费）再重发；
+      // 401 由 useLogout 的 catch 兜底走本地清态
+      !originalRequest.url?.includes('/api/v1/auth/logout')
     ) {
       if (isRefreshing) {
         // 排队等待 refresh 完成，加 15s 超时避免永久挂起
@@ -310,8 +313,13 @@ api.interceptors.response.use(
           }
           return Promise.reject(refreshError)
         }
-        clearUserScopedState()
-        authRedirect.to('/login')
+        // L16：仅鉴权类失败（401/403）判终态登出；网络错/超时/5xx 时 refresh cookie
+        // 本仍有效，清态会踢掉登录并丢弃未保存表单——只透传错误，留待下次请求重试
+        const status = refreshErr?.response?.status
+        if (status === 401 || status === 403) {
+          clearUserScopedState()
+          authRedirect.to('/login')
+        }
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false

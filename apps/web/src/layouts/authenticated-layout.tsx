@@ -65,7 +65,7 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
     return (
       <Layout style={{ minHeight: '100vh' }}>
         <Content style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Spin size="large" tip="加载用户信息…" />
+          <Spin size="large" description="加载用户信息…" />
         </Content>
       </Layout>
     )

@@ -1,5 +1,5 @@
 import type { SendVerificationCodeMail, SendWelcomeMail } from '@shared'
-import { SendWelcomeMailSchema } from '@shared'
+import { SendVerificationCodeMailSchema, SendWelcomeMailSchema } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import { Button, Divider, Form, Input, message, Radio, Space, Typography } from 'antd'
 import { useState } from 'react'
@@ -36,7 +36,11 @@ function MailPage() {
 
   const handleSendVerificationCode = async (values: SendVerificationCodeMail) => {
     try {
-      const res = await verificationMutation.mutateAsync(values)
+      // L13：可选字段空串统一转 undefined——schema min(1) 会拒空串，前端放行后提交必 400
+      const res = await verificationMutation.mutateAsync({
+        ...values,
+        name: values.name || undefined,
+      })
       messageApi.success(res.message)
       verificationForm.resetFields()
     } catch (error) {
@@ -108,7 +112,11 @@ function MailPage() {
             >
               <Input placeholder="user@example.com" />
             </Form.Item>
-            <Form.Item name="name" label="称呼（可选）">
+            <Form.Item
+              name="name"
+              label="称呼（可选）"
+              rules={[schemaLengthRule(SendVerificationCodeMailSchema.shape.name, '称呼')]}
+            >
               <Input placeholder="如：张三" />
             </Form.Item>
             <Form.Item>

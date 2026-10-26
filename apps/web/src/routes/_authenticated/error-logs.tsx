@@ -388,7 +388,15 @@ export function LogsTab() {
         <Input.Search
           placeholder="搜索错误消息"
           value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
+          onChange={(e) => {
+            setSearchInput(e.target.value)
+            // L12：allowClear 的 ✕ 只触发 onChange（空串）不走 onSearch——
+            // 不同步清 keyword 会出现"输入框已空、列表仍按旧词过滤"的假全量视图
+            if (e.target.value === '') {
+              setKeyword(undefined)
+              setPage(1)
+            }
+          }}
           onSearch={(v) => {
             setKeyword(v || undefined)
             setPage(1)
