@@ -76,23 +76,25 @@ test.describe('邮件发送（admin 视角）', () => {
       to: recipient,
       username: 'e2e-test-user',
     })
-    // 已配置 SMTP：200；未配置：400；收件人 60s 限频：409；路由 3/min 限频：429；SMTP 拒绝：500
-    expect([200, 400, 409, 429, 500]).toContain(status)
+    // L18：只接受两种确定态——已配置 SMTP 200 / 未配置 400；
+    // 429/409 是测试自身污染（限频），500 是 SMTP 拒绝（环境故障），均不得静默通过
+    expect(status === 200 || status === 400).toBe(true)
 
-    // UI 操作：填表 + 提交，验证按钮 loading 状态出现
+    // UI 用不同收件人，避免撞上上一步触发的 60s 同收件人限频
+    const uiRecipient = mailRecipient('welcome-ui')
     await page.goto('/mail')
-    await page.getByLabel('收件人邮箱').fill(recipient)
+    await page.getByLabel('收件人邮箱').fill(uiRecipient)
     await page.getByLabel('用户名').fill('e2e-test-user')
-    const submitBtn = page.getByRole('button', { name: '发送欢迎邮件' })
-    await submitBtn.click()
-    // 按钮应进入 loading 或显示结果消息（兼容 SMTP 超时/拒绝/成功）
-    await expect(submitBtn)
-      .toBeDisabled({ timeout: 3000 })
-      .catch(() => {})
-    // 最终会出现 message（成功或失败）
-    await expect(page.locator('.ant-message-error, .ant-message-success').first()).toBeVisible({
-      timeout: 30000,
-    })
+    await page.getByRole('button', { name: '发送欢迎邮件' }).click()
+    // L18：按后端确定态固定期望——未配置必须提示"未配置"，已配置必须成功，
+    // 不再用"成功或失败二选一"的弱断言
+    if (status === 400) {
+      await expect(page.locator('.ant-message-error').first()).toContainText('邮件服务未配置', {
+        timeout: 30_000,
+      })
+    } else {
+      await expect(page.locator('.ant-message-success').first()).toBeVisible({ timeout: 30_000 })
+    }
   })
 
   test('发送验证码邮件 - 后端响应验证', async ({ page }) => {
@@ -101,19 +103,20 @@ test.describe('邮件发送（admin 视角）', () => {
       to: recipient,
       name: 'e2e 测试',
     })
-    // 同欢迎邮件：200/400/409/429/500 均为可解释响应
-    expect([200, 400, 409, 429, 500]).toContain(status)
+    // L18：同欢迎邮件，只接受 200（已配置）/ 400（未配置）两种确定态
+    expect(status === 200 || status === 400).toBe(true)
 
+    const uiRecipient = mailRecipient('verification-ui')
     await page.goto('/mail')
     await page.getByText('验证码邮件', { exact: true }).click()
-    await page.getByLabel('收件人邮箱').fill(recipient)
-    const submitBtn = page.getByRole('button', { name: '发送验证码邮件' })
-    await submitBtn.click()
-    await expect(submitBtn)
-      .toBeDisabled({ timeout: 3000 })
-      .catch(() => {})
-    await expect(page.locator('.ant-message-error, .ant-message-success').first()).toBeVisible({
-      timeout: 30000,
-    })
+    await page.getByLabel('收件人邮箱').fill(uiRecipient)
+    await page.getByRole('button', { name: '发送验证码邮件' }).click()
+    if (status === 400) {
+      await expect(page.locator('.ant-message-error').first()).toContainText('邮件服务未配置', {
+        timeout: 30_000,
+      })
+    } else {
+      await expect(page.locator('.ant-message-success').first()).toBeVisible({ timeout: 30_000 })
+    }
   })
 })

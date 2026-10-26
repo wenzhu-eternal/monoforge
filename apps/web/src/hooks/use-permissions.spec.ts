@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     get: vi.fn(),
+    put: vi.fn(),
   },
 }))
 
@@ -13,7 +14,7 @@ vi.mock('@/lib/api', () => ({
 
 import { useAuthStore } from '@/store/auth-store'
 import { renderHookWithQuery, waitFor } from '@/test/utils'
-import { useAllPermissions, useRolePermissions } from './use-permissions'
+import { useAllPermissions, useRolePermissions, useUpdateRolePermissions } from './use-permissions'
 
 describe('use-permissions 辅助查询（M5 门控）', () => {
   beforeEach(() => {
@@ -59,5 +60,19 @@ describe('use-permissions 辅助查询（M5 门控）', () => {
     await waitFor(() => expect(byRole.result.current.isSuccess).toBe(true))
     expect(apiMock.get).toHaveBeenCalledWith('/api/v1/permissions/list')
     expect(apiMock.get).toHaveBeenCalledWith('/api/v1/role-permissions/role/5')
+  })
+
+  it('⑧ 更新角色权限 → 失效 role-permissions 与 auth.me', async () => {
+    apiMock.put.mockResolvedValue({ data: { code: 200, data: { message: 'ok' } } })
+    const { result, queryClient } = renderHookWithQuery(() => useUpdateRolePermissions())
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await result.current.mutateAsync({ roleId: 5, permissions: ['user:view'] })
+
+    expect(apiMock.put).toHaveBeenCalledWith('/api/v1/role-permissions/role/5', {
+      permissions: ['user:view'],
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['role-permissions'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['auth', 'me'] })
   })
 })

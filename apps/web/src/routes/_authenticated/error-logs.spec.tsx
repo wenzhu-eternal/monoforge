@@ -7,9 +7,18 @@ type PendingCall = {
   reject: (error: unknown) => void
 }
 
+type LogsParams = {
+  page: number
+  pageSize: number
+  keyword?: string
+  source?: string
+  isResolved?: boolean
+}
+
 const state = vi.hoisted(() => ({
   resolveCalls: [] as PendingCall[],
   updateCalls: [] as PendingCall[],
+  logsParams: [] as LogsParams[],
 }))
 
 vi.mock('antd', async (importOriginal) => {
@@ -90,13 +99,16 @@ vi.mock('@/hooks/use-logs', () => {
   })
 
   return {
-    useErrorLogs: () => ({
-      data: { list: logs, total: logs.length },
-      isLoading: false,
-      isError: false,
-      error: null,
-      isSuccess: true,
-    }),
+    useErrorLogs: (params: LogsParams) => {
+      state.logsParams.push(params)
+      return {
+        data: { list: logs, total: logs.length },
+        isLoading: false,
+        isError: false,
+        error: null,
+        isSuccess: true,
+      }
+    },
     useErrorStats: () => ({ data: undefined }),
     useErrorLogsGrouped: () => ({ data: [] }),
     useResolveErrorLog: () => pendingMutation(state.resolveCalls),
@@ -128,6 +140,7 @@ describe('L6：错误日志页面行级并发', () => {
   beforeEach(() => {
     state.resolveCalls = []
     state.updateCalls = []
+    state.logsParams = []
   })
 
   it('LogsTab：A 在途点 B，各自 loading 独立，A 完成不清 B（L4）', async () => {
@@ -199,6 +212,31 @@ describe('L6：错误日志页面行级并发', () => {
     })
     await waitFor(() => {
       expect(within(rowB).getByRole('switch')).not.toHaveClass('ant-switch-loading')
+    })
+  })
+})
+
+describe('L12：搜索框清空后同步清过滤词', () => {
+  beforeEach(() => {
+    state.resolveCalls = []
+    state.updateCalls = []
+    state.logsParams = []
+  })
+
+  it('输入回车生效，清空输入框（allowClear 的空值 onChange）时 keyword 同步归 undefined', async () => {
+    render(<LogsTab />)
+
+    const input = screen.getByPlaceholderText('搜索错误消息')
+    fireEvent.change(input, { target: { value: '错误' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 13 })
+    await waitFor(() => {
+      expect(state.logsParams.at(-1)?.keyword).toBe('错误')
+    })
+
+    // allowClear 的 ✕ 只触发 onChange 空串，不触发 onSearch
+    fireEvent.change(input, { target: { value: '' } })
+    await waitFor(() => {
+      expect(state.logsParams.at(-1)?.keyword).toBeUndefined()
     })
   })
 })

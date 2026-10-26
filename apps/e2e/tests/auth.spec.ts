@@ -1,6 +1,6 @@
 import { adminUser } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
-import { resetAuthTokenCache } from '@e2e/helpers/auth'
+import { logout, resetAuthTokenCache } from '@e2e/helpers/auth'
 import { expect, test } from '@playwright/test'
 
 /**
@@ -44,9 +44,8 @@ test.describe('认证链路', () => {
     await page.locator('button[type="submit"]').click()
     await expect(page).toHaveURL(/\/dashboard$/)
 
-    // 点右上角头像展开下拉
-    await page.locator('.ant-dropdown-trigger').first().click()
-    await page.getByText('退出登录').click()
+    // 点右上角头像展开下拉后退出（helper 内已等待跳转 /login）
+    await logout(page)
 
     await expect(page).toHaveURL(/\/login$/, { timeout: 10_000 })
 

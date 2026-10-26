@@ -141,6 +141,53 @@ describe('拦截器 401 处置矩阵', () => {
     expect(useAuthStore.getState().token).toBe('expired-token')
   })
 
+  it('L15：logout 401 → 不进刷新链，不白耗一次 refresh 单次消费', async () => {
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
+    const postSpy = vi.spyOn(axios, 'post')
+    api.defaults.adapter = async (config) => {
+      throw err401(config as InternalAxiosRequestConfig)
+    }
+
+    await expect(api.post('/api/v1/auth/logout')).rejects.toMatchObject({
+      response: { status: 401 },
+    })
+    expect(postSpy).not.toHaveBeenCalled()
+    // 本地清态由 useLogout 的 catch 兜底，拦截器不再抢先终态登出
+    expect(clearUserScopedState).not.toHaveBeenCalled()
+  })
+
+  it('L16：refresh 网络错误（无 response）→ 不终态登出、不清态，错误透传', async () => {
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
+    api.defaults.adapter = async (config) => {
+      throw err401(config as InternalAxiosRequestConfig)
+    }
+    vi.spyOn(axios, 'post').mockRejectedValue(new AxiosError('Network Error', 'ERR_NETWORK'))
+
+    await expect(api.get('/api/v1/users')).rejects.toThrow('Network Error')
+    expect(clearUserScopedState).not.toHaveBeenCalled()
+    // refresh cookie 仍有效，不清 token，等待下次请求重试
+    expect(useAuthStore.getState().token).toBe('expired-token')
+  })
+
+  it('L16：refresh 5xx → 同样不终态登出', async () => {
+    useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
+    api.defaults.adapter = async (config) => {
+      throw err401(config as InternalAxiosRequestConfig)
+    }
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      new AxiosError('Request failed with status code 503', 'ERR_BAD_RESPONSE', undefined, null, {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {},
+        config: {} as InternalAxiosRequestConfig,
+        data: {},
+      } as AxiosResponse),
+    )
+
+    await expect(api.get('/api/v1/users')).rejects.toMatchObject({ response: { status: 503 } })
+    expect(clearUserScopedState).not.toHaveBeenCalled()
+  })
+
   it('L2：refresh 期间登出 → 排队请求立即失败，不重发死 token', async () => {
     useAuthStore.setState({ token: 'expired-token', isAuthenticated: true })
     let resolveRefresh: ((value: AxiosResponse) => void) | undefined

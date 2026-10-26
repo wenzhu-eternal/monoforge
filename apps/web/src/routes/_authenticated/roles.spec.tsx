@@ -5,7 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // vi.mock hoist 约束：可变状态放 vi.hoisted；每例 preset 后 render（无外部触发重渲染需求）
 const state = vi.hoisted(() => ({
-  permsQuery: { data: undefined as string[] | undefined, isFetching: true },
+  permsQuery: {
+    data: undefined as string[] | undefined,
+    isFetching: true,
+    isError: false,
+  },
   deleteCalls: [] as { id: number; resolve: () => void }[],
 }))
 
@@ -88,7 +92,7 @@ async function openPermissionModal() {
 
 describe('L10：配置权限弹窗回显竞态防护', () => {
   beforeEach(() => {
-    state.permsQuery = { data: undefined, isFetching: true }
+    state.permsQuery = { data: undefined, isFetching: true, isError: false }
   })
 
   it('L10：回显未到（首次打开 fetching）时勾选与确定禁用（修复前可勾可提交，晚到数据覆盖后静默丢失）', async () => {
@@ -102,7 +106,7 @@ describe('L10：配置权限弹窗回显竞态防护', () => {
   })
 
   it('回显已到 → 勾选与确定恢复可用（控制组）', async () => {
-    state.permsQuery = { data: ['user:view'], isFetching: false }
+    state.permsQuery = { data: ['user:view'], isFetching: false, isError: false }
     await openPermissionModal()
 
     expect(screen.getByRole('checkbox', { name: /user:view/ })).toBeEnabled()
@@ -114,7 +118,7 @@ describe('L10：配置权限弹窗回显竞态防护', () => {
 
 describe('L6：角色行级并发', () => {
   beforeEach(() => {
-    state.permsQuery = { data: undefined, isFetching: true }
+    state.permsQuery = { data: undefined, isFetching: true, isError: false }
     state.deleteCalls = []
   })
 
@@ -156,5 +160,20 @@ describe('L6：角色行级并发', () => {
         'ant-btn-loading',
       )
     })
+  })
+})
+
+describe('L19：权限标签失败态可辨', () => {
+  it('请求失败显示「加载失败」，不再与"确无权限"的 - 混淆', async () => {
+    state.permsQuery = { data: undefined, isFetching: false, isError: true }
+
+    render(
+      <ConfigProvider locale={zhCN}>
+        <RolesContent />
+      </ConfigProvider>,
+    )
+
+    expect((await screen.findAllByText('加载失败')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('无查看权限')).not.toBeInTheDocument()
   })
 })

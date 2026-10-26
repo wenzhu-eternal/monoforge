@@ -111,18 +111,12 @@ export async function loginAsNormalUser(page: Page) {
 
 /**
  * 登出当前用户
+ * L18：原实现找 role=button 的"退出"按钮恒不命中（真实入口是右上角头像下拉的
+ * role=menuitem），主分支为死代码；改走真实交互链路
  */
 export async function logout(page: Page) {
-  const logoutBtn = page.getByRole('button', { name: /退出|登出/ })
-  if (await logoutBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-    await logoutBtn.click()
-  } else {
-    // 兜底：直接清 localStorage 跳回登录页
-    await page.evaluate(() => {
-      localStorage.removeItem('auth-storage')
-    })
-    await page.goto('/login')
-  }
+  await page.locator('.ant-dropdown-trigger').first().click()
+  await page.getByText('退出登录').click()
   await page.waitForURL('**/login', { timeout: 10_000 })
 }
 

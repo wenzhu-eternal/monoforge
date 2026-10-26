@@ -112,7 +112,12 @@ test.describe('用户管理（admin 视角）', () => {
     expect(created?.id).toBeTruthy()
 
     await page.goto('/users')
-    await page.waitForTimeout(1500)
+    // L18：原 waitForTimeout(1500) 是无断言的死等——改为锁定新用户已渲染，
+    // 既验证页面数据确实刷新，又避免固定延时在慢机上失效。
+    // exact: 必填——用户名同时出现在邮箱 cell（name@test.com）里，模糊匹配会 strict 双命中
+    await expect(page.getByRole('cell', { name: tempUsername, exact: true })).toBeVisible({
+      timeout: 10_000,
+    })
 
     // 删除临时用户（用 API 直接删，UI 操作在另一条用例覆盖）
     const { status } = await apiClient.delete(`/users/${created?.id}`)

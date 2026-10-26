@@ -120,4 +120,28 @@ describe('use-users hooks', () => {
       expect(apiMock.delete).toHaveBeenCalledWith('/api/v1/users/1')
     })
   })
+
+  describe('⑧ mutation 缓存联动', () => {
+    it('改用户角色 → 同时失效 users 与 auth.me（防 30s 内按旧权限放行）', async () => {
+      apiMock.patch.mockResolvedValue({ data: { code: 200, data: { id: 1 } } })
+      const { result, queryClient } = renderHookWithQuery(() => useUpdateUser())
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+      await result.current.mutateAsync({ id: 1, data: { roleId: 3 } })
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['users'] })
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['auth', 'me'] })
+    })
+
+    it('未改角色 → 不失效 auth.me（避免无意义重查）', async () => {
+      apiMock.patch.mockResolvedValue({ data: { code: 200, data: { id: 1 } } })
+      const { result, queryClient } = renderHookWithQuery(() => useUpdateUser())
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+      await result.current.mutateAsync({ id: 1, data: { nickname: '新昵称' } })
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['users'] })
+      expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['auth', 'me'] })
+    })
+  })
 })

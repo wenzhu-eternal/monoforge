@@ -2,7 +2,7 @@ import { ErrorCodes, ErrorMessages } from '@shared'
 import axios, { type AxiosError } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/store/auth-store'
-import { refreshAccessToken } from './api'
+import { bootstrapAuth, refreshAccessToken } from './api'
 
 const AT_KEY = 'monoforge-auth-refresh-at'
 const RT_KEY = 'monoforge-auth-refresh-token'
@@ -132,6 +132,86 @@ describe('L26：锁回调已执行后失败 → 保留真实刷新错误', () =>
     await vi.advanceTimersByTimeAsync(600)
     await assertion
     expect(request).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().token).toBeNull()
+  })
+})
+
+describe('② 刷新单飞与 bootstrapAuth 行为锁', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
+    useAuthStore.setState({ token: null, isAuthenticated: false, user: null })
+    Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('M9：同 tab 并发调用共享同一 in-flight（refresh 只发一次）', async () => {
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { data: { accessToken: 'dedup-token' } },
+    })
+
+    const [a, b] = await Promise.all([refreshAccessToken(1), refreshAccessToken(1)])
+
+    expect(a).toBe('dedup-token')
+    expect(b).toBe('dedup-token')
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  it('M11：Web Locks 主路径串行执行回调并落定', async () => {
+    const request = vi.fn(async (_name: string, cb: () => Promise<string>) => cb())
+    Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true })
+    vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { data: { accessToken: 'lock-token' } },
+    })
+
+    await expect(refreshAccessToken(Date.now() - 1000)).resolves.toBe('lock-token')
+    expect(request).toHaveBeenCalledWith('monoforge-auth-refresh', expect.any(Function))
+  })
+
+  it('M11：等锁期间他 tab 已完成刷新 → 复用共享 token，不再消费 refresh cookie', async () => {
+    const request = vi.fn(async (_name: string, cb: () => Promise<string>) => cb())
+    Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true })
+    localStorage.setItem(AT_KEY, String(Date.now()))
+    localStorage.setItem(RT_KEY, 'shared-fresh-token')
+    const post = vi.spyOn(axios, 'post')
+
+    await expect(refreshAccessToken(Date.now() - 5000)).resolves.toBe('shared-fresh-token')
+    expect(post).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().token).toBe('shared-fresh-token')
+  })
+
+  it('bootstrapAuth：已认证但 token 为空 → 用 cookie 刷新写回 token', async () => {
+    useAuthStore.setState({ token: null, isAuthenticated: true })
+    vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { data: { accessToken: 'boot-token' } },
+    })
+
+    await bootstrapAuth()
+
+    expect(useAuthStore.getState().token).toBe('boot-token')
+  })
+
+  it('bootstrapAuth：未认证或已有 token → 不发刷新请求', async () => {
+    const post = vi.spyOn(axios, 'post')
+
+    useAuthStore.setState({ token: null, isAuthenticated: false })
+    await bootstrapAuth()
+    useAuthStore.setState({ token: 'existing', isAuthenticated: true })
+    await bootstrapAuth()
+
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('bootstrapAuth：刷新失败 → 清态兜底（不残留半登录态）', async () => {
+    useAuthStore.setState({ token: null, isAuthenticated: true })
+    vi.spyOn(axios, 'post').mockRejectedValue(new Error('refresh failed'))
+
+    await bootstrapAuth()
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
     expect(useAuthStore.getState().token).toBeNull()
   })
 })
