@@ -3,7 +3,13 @@ import { createWriteStream } from 'node:fs'
 import { mkdir, readdir, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { ConflictException, Injectable, Logger } from '@nestjs/common'
+import {
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  type OnApplicationBootstrap,
+} from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { isNotNull, lt, sql } from 'drizzle-orm'
 import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-batch'
@@ -34,8 +40,25 @@ const NOTIFICATION_RETENTION_DAYS = 90
 const ERROR_LOGS_RETENTION_DAYS = 30
 // M2/L6：分批删除常量与执行器收敛到 common/utils/cleanup-batch，files 回收站清理共用同一口径
 
+// M1：cron 停机错过零补偿——@nestjs/schedule 为标准 CronJob 无 catch-up，进程在窗口内
+// 重启/宕机（滚动发布跨零点极常见）时当日备份静默消失。落最后成功时间戳，
+// 由启动钩子与每小时孤儿清理校验，超过阈值即入库告警（每日去重）
+const LAST_RUN_KEY_PREFIX = 'schedule:last-run:'
+const LAST_RUN_TTL = 40 * 24 * 60 * 60
+const BACKUP_FRESHNESS_MAX_HOURS = 25
+const BACKUP_MISSING_ALERT_KEY_PREFIX = 'schedule:backup:missing-alert:'
+
+type ScheduleTask =
+  | 'dailyBackup'
+  | 'cleanOrphanUploads'
+  | 'dailyTrashCleanup'
+  | 'dailyNotificationCleanup'
+  | 'dailyErrorLogsCleanup'
+
+type BackupResult = { status: 'ok' } | { status: 'busy' } | { status: 'failed'; error: string }
+
 @Injectable()
-export class ScheduleService {
+export class ScheduleService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ScheduleService.name)
 
   constructor(
@@ -44,6 +67,64 @@ export class ScheduleService {
     private readonly redisService: RedisService,
     private readonly filesService: FilesService,
   ) {}
+
+  /**
+   * M1：启动即校验备份新鲜度——滚动发布跨零点会错过当日 0:00 的备份，
+   * 而 CronJob 无 catch-up，需在启动时主动发现缺口
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    await this.checkBackupFreshness()
+  }
+
+  /** M1：记录任务最后成功执行时间（Redis 故障只告警，不影响任务本身） */
+  private async recordLastRun(task: ScheduleTask): Promise<void> {
+    try {
+      await this.redisService.set(
+        `${LAST_RUN_KEY_PREFIX}${task}`,
+        new Date().toISOString(),
+        LAST_RUN_TTL,
+      )
+    } catch (err) {
+      this.logger.warn(
+        `记录 ${task} 执行时间失败: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  /**
+   * M1：备份新鲜度校验——最后成功备份超过 25h（日备份 + 1h 余量）即入库告警。
+   * 备份"跑失败"已有邮件 + error_logs 双留痕，但"根本没跑"原先零痕迹，最长 30 天无人发现。
+   * 每日去重，避免 Redis 正常但 cron 停摆时每小时刷屏。
+   */
+  async checkBackupFreshness(): Promise<void> {
+    if (!getEnv().ENABLE_BACKUP) return
+    try {
+      const raw = await this.redisService.get(`${LAST_RUN_KEY_PREFIX}dailyBackup`)
+      // 无基线（首次部署/Redis 被清）无法判定，不告警——避免新装即噪声
+      if (!raw) return
+      const lastRun = Date.parse(raw)
+      if (Number.isNaN(lastRun)) return
+      const hours = (Date.now() - lastRun) / 3_600_000
+      if (hours <= BACKUP_FRESHNESS_MAX_HOURS) return
+
+      const now = new Date()
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const alertKey = `${BACKUP_MISSING_ALERT_KEY_PREFIX}${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+      if (await this.redisService.exists(alertKey)) return
+      await this.redisService.set(alertKey, '1', 24 * 60 * 60)
+
+      this.logger.error(
+        `定时备份已 ${hours.toFixed(1)} 小时未成功执行（最后成功: ${raw}），请检查进程是否在备份窗口内重启`,
+      )
+      await this.errorLogsService.record({
+        message: `定时备份已超过 ${BACKUP_FRESHNESS_MAX_HOURS} 小时未成功执行（最后成功时间: ${raw}）`,
+        context: { task: 'backupFreshness', lastSuccessAt: raw },
+        internal: true,
+      })
+    } catch (err) {
+      this.logger.warn(`备份新鲜度校验失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
 
   /**
    * 每天 0 点执行数据库备份（受 ENABLE_BACKUP 开关控制）
@@ -67,8 +148,8 @@ export class ScheduleService {
     if (userId !== undefined) {
       await consumeDailyQuota(this.redisService, 'backup', userId, MANUAL_BACKUP_DAILY_LIMIT)
     }
-    const executed = await this.doBackup(userId)
-    if (!executed) {
+    const result = await this.doBackup(userId)
+    if (result.status === 'busy') {
       // L1：锁忙未实际执行 → 退还刚扣的配额，防连点把 3 次额度耗在 409 上、真需备份时被拒
       if (userId !== undefined) {
         try {
@@ -79,6 +160,11 @@ export class ScheduleService {
       }
       throw new ConflictException('已有备份任务进行中，请稍后再试')
     }
+    // L7：失败已在 doBackup 内入库 + 发失败邮件；此处让调用者看到非 200，
+    // 避免"手动备份失败仍回成功"的操作者视角静默
+    if (result.status === 'failed') {
+      throw new InternalServerErrorException(`数据库备份执行失败: ${result.error}`)
+    }
   }
 
   /**
@@ -88,6 +174,8 @@ export class ScheduleService {
    */
   @Cron('0 * * * *')
   async cleanOrphanUploads() {
+    // M1：每小时顺带校验备份新鲜度——错零点重启造成的备份缺口最迟 1 小时内可见
+    await this.checkBackupFreshness()
     try {
       const uploadDir = getUploadDir()
       const entries = await readdir(uploadDir).catch(() => [] as string[])
@@ -117,7 +205,10 @@ export class ScheduleService {
     try {
       const trashDir = getTrashDir()
       const trashEntries = await readdir(trashDir).catch(() => [] as string[])
-      if (trashEntries.length === 0) return
+      if (trashEntries.length === 0) {
+        await this.recordLastRun('cleanOrphanUploads')
+        return
+      }
       // trashPath 绝对路径集合用于快速排除已知行
       const trashRows = await db
         .select({ trashPath: files.trashPath })
@@ -136,6 +227,7 @@ export class ScheduleService {
       if (trashRemoved > 0) {
         this.logger.log(`清理 uploads-trash 孤儿文件 ${trashRemoved} 个`)
       }
+      await this.recordLastRun('cleanOrphanUploads')
     } catch (err) {
       this.logger.warn(
         `uploads-trash 孤儿清理失败: ${err instanceof Error ? err.message : String(err)}`,
@@ -154,6 +246,7 @@ export class ScheduleService {
       if (removed > 0) {
         this.logger.log(`回收站清理：${removed} 个超期软删文件已物理删除`)
       }
+      await this.recordLastRun('dailyTrashCleanup')
     } catch (err) {
       this.logger.error(`回收站清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -196,6 +289,7 @@ export class ScheduleService {
         '通知清理',
         NOTIFICATION_RETENTION_DAYS,
       )
+      await this.recordLastRun('dailyNotificationCleanup')
     } catch (err) {
       this.logger.error(`通知清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -221,6 +315,7 @@ export class ScheduleService {
         'error_logs 清理',
         ERROR_LOGS_RETENTION_DAYS,
       )
+      await this.recordLastRun('dailyErrorLogsCleanup')
     } catch (err) {
       this.logger.error(`error_logs 清理失败: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -228,9 +323,10 @@ export class ScheduleService {
 
   /**
    * 实际执行备份的逻辑：互斥锁 → pg_dump 导出 → 清理旧备份 → 邮件通知
-   * 返回 false 表示未抢到锁（已有备份进行中），true 表示已执行（含执行失败）
+   * L7：返回细化状态——'busy'（未抢到锁）/ 'failed'（执行失败）/ 'ok'，
+   * 让手动触发能把失败暴露为 5xx，而非恒回"已执行"
    */
-  private async doBackup(userId?: number): Promise<boolean> {
+  private async doBackup(userId?: number): Promise<BackupResult> {
     // M13：SETNX 互斥锁——cron 与手动触发（或连发）并发时两个 pg_dump 交叉截断写同一文件，
     // 产物静默损坏且邮件照报成功。Redis 异常时降级无锁执行（备份可用性优先，锁仅为并发防御）
     let locked = true
@@ -247,7 +343,7 @@ export class ScheduleService {
     }
     if (!locked) {
       this.logger.warn('已有备份任务进行中，跳过本次触发')
-      return false
+      return { status: 'busy' }
     }
 
     // M5：失败时清理半截产物——pg_dump 中途失败/超时会留下截断的 .sql，
@@ -304,6 +400,8 @@ export class ScheduleService {
           `备份成功但通知邮件发送失败: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`,
         )
       }
+      // M1：备份产物已落盘即记为成功——邮件失败不影响"备份可用"这一事实
+      await this.recordLastRun('dailyBackup')
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       this.logger.error(`数据库备份失败: ${errorMsg}`)
@@ -332,8 +430,7 @@ export class ScheduleService {
         )
       }
       // L11/L9：filepath 在一切检查前赋值，走到 catch 即已经扣额（手动触发）且备份未成功，
-      // 统一退还配额并返回 true，让 manualBackup 正常走错误上报/失败邮件流程；
-      // 只有 filepath 赋值前（当前不可达）的异常才向外抛
+      // 统一退还配额；失败原因随返回值上抛，由 manualBackup 转 5xx（邮件/入库已在此完成）
       if (filepath && userId !== undefined) {
         try {
           await rollbackDailyQuota(this.redisService, 'backup', userId)
@@ -343,7 +440,7 @@ export class ScheduleService {
           )
         }
       }
-      return true
+      return { status: 'failed', error: errorMsg }
     } finally {
       // 释放失败仅告警：锁有 TTL 兜底，不会永久卡死后续备份
       void this.redisService
@@ -352,7 +449,7 @@ export class ScheduleService {
           this.logger.warn(`备份锁释放失败: ${err instanceof Error ? err.message : String(err)}`),
         )
     }
-    return true
+    return { status: 'ok' }
   }
 
   /**

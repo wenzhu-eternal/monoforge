@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common'
+import { ConflictException, InternalServerErrorException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // fs/promises mock（mkdir/stat/readdir/unlink）
@@ -47,6 +47,9 @@ describe('ScheduleService', () => {
     setNx: ReturnType<typeof vi.fn>
     del: ReturnType<typeof vi.fn>
     eval: ReturnType<typeof vi.fn>
+    set: ReturnType<typeof vi.fn>
+    get: ReturnType<typeof vi.fn>
+    exists: ReturnType<typeof vi.fn>
   }
   let filesService: { purgeExpiredTrash: ReturnType<typeof vi.fn> }
 
@@ -64,6 +67,9 @@ describe('ScheduleService', () => {
       setNx: vi.fn().mockResolvedValue(true),
       del: vi.fn().mockResolvedValue(1),
       eval: vi.fn().mockResolvedValue(1),
+      set: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockResolvedValue(null),
+      exists: vi.fn().mockResolvedValue(false),
     }
     filesService = { purgeExpiredTrash: vi.fn().mockResolvedValue(0) }
 
@@ -286,6 +292,11 @@ describe('ScheduleService', () => {
     })
 
     it('配额内 → 正常执行备份', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
       redisService.eval.mockResolvedValue(1)
 
       await service.manualBackup(7)
@@ -389,15 +400,16 @@ describe('ScheduleService', () => {
       )
     })
 
-    it('spawnPgDump reject（pg_dump 退出码非 0） → 入库 + 发送失败邮件', async () => {
+    it('spawnPgDump reject（pg_dump 退出码非 0） → 入库 + 发送失败邮件 + L7 手动触发回 5xx', async () => {
       mockGetEnv.mockReturnValue({
         BACKUP_CMD: undefined,
         DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
       })
       mockSpawnPgDump(vi.fn().mockRejectedValue(new Error('pg_dump 退出码 1')))
 
-      // doBackup 内部 catch 会吞错并入库，不向外抛
-      await service.manualBackup()
+      // L7：失败不再恒回成功——入库/邮件仍完成，但调用方看到 500
+      await expect(service.manualBackup()).rejects.toThrow(InternalServerErrorException)
+      await expect(service.manualBackup()).rejects.toThrow('pg_dump 退出码 1')
 
       // service catch 块给 record 的 message 加 "数据库备份失败:" 前缀
       expect(errorLogsService.record).toHaveBeenCalledWith(
@@ -410,14 +422,14 @@ describe('ScheduleService', () => {
       expect(mailService.sendBackupNotification).toHaveBeenCalledWith(false, 'pg_dump 退出码 1')
     })
 
-    it('spawnPgDump reject（pg_dump not found） → 入库 + 发送失败邮件', async () => {
+    it('spawnPgDump reject（pg_dump not found） → 入库 + 发送失败邮件 + 5xx', async () => {
       mockGetEnv.mockReturnValue({
         BACKUP_CMD: undefined,
         DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
       })
       mockSpawnPgDump(vi.fn().mockRejectedValue(new Error('pg_dump not found')))
 
-      await service.manualBackup()
+      await expect(service.manualBackup()).rejects.toThrow(InternalServerErrorException)
 
       expect(errorLogsService.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -434,7 +446,7 @@ describe('ScheduleService', () => {
       })
       mockSpawnPgDump(vi.fn().mockRejectedValue(new Error('pg_dump 退出码 1')))
 
-      await service.manualBackup()
+      await expect(service.manualBackup()).rejects.toThrow(InternalServerErrorException)
 
       expect(mockUnlink).toHaveBeenCalledWith(expect.stringContaining('backup-'))
     })
@@ -459,7 +471,7 @@ describe('ScheduleService', () => {
     it('DATABASE_URL 未配置 → 抛错并入库', async () => {
       mockGetEnv.mockReturnValue({ BACKUP_CMD: undefined, DATABASE_URL: undefined })
 
-      await service.manualBackup()
+      await expect(service.manualBackup()).rejects.toThrow(InternalServerErrorException)
 
       expect(errorLogsService.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -481,6 +493,120 @@ describe('ScheduleService', () => {
       // 自定义命令走 exec 不走 spawnPgDump
       expect(spawnSpy).not.toHaveBeenCalled()
       expect(mailService.sendBackupNotification).toHaveBeenCalledWith(true, expect.any(String))
+    })
+  })
+
+  describe('M1 备份心跳与缺口告警', () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+
+    it('备份成功后写入最后成功时间戳', async () => {
+      mockGetEnv.mockReturnValue({
+        ENABLE_BACKUP: true,
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
+
+      await service.dailyBackup()
+
+      expect(redisService.set).toHaveBeenCalledWith(
+        'schedule:last-run:dailyBackup',
+        expect.any(String),
+        40 * 24 * 60 * 60,
+      )
+    })
+
+    it('备份失败不写时间戳（避免把失败当成功基线）', async () => {
+      mockGetEnv.mockReturnValue({
+        ENABLE_BACKUP: true,
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      mockSpawnPgDump(vi.fn().mockRejectedValue(new Error('pg_dump 退出码 1')))
+
+      await service.dailyBackup()
+
+      expect(redisService.set).not.toHaveBeenCalledWith(
+        'schedule:last-run:dailyBackup',
+        expect.any(String),
+        expect.any(Number),
+      )
+    })
+
+    it('最后成功备份超过 25h → 入库告警并落去重键', async () => {
+      mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
+      redisService.get.mockResolvedValue(hoursAgo(26))
+
+      await service.checkBackupFreshness()
+
+      expect(errorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('超过 25 小时未成功执行'),
+          internal: true,
+        }),
+      )
+      expect(redisService.set).toHaveBeenCalledWith(
+        expect.stringContaining('schedule:backup:missing-alert:'),
+        '1',
+        24 * 60 * 60,
+      )
+    })
+
+    it('未超过 25h → 不告警', async () => {
+      mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
+      redisService.get.mockResolvedValue(hoursAgo(24))
+
+      await service.checkBackupFreshness()
+
+      expect(errorLogsService.record).not.toHaveBeenCalled()
+    })
+
+    it('无基线（首次部署/Redis 被清）→ 不告警', async () => {
+      mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
+      redisService.get.mockResolvedValue(null)
+
+      await service.checkBackupFreshness()
+
+      expect(errorLogsService.record).not.toHaveBeenCalled()
+    })
+
+    it('ENABLE_BACKUP=false → 不校验不告警', async () => {
+      mockGetEnv.mockReturnValue({ ENABLE_BACKUP: false })
+      redisService.get.mockResolvedValue(hoursAgo(48))
+
+      await service.checkBackupFreshness()
+
+      expect(redisService.get).not.toHaveBeenCalled()
+      expect(errorLogsService.record).not.toHaveBeenCalled()
+    })
+
+    it('当日已告警 → 去重不重复入库', async () => {
+      mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
+      redisService.get.mockResolvedValue(hoursAgo(26))
+      redisService.exists.mockResolvedValue(true)
+
+      await service.checkBackupFreshness()
+
+      expect(errorLogsService.record).not.toHaveBeenCalled()
+    })
+
+    it('Redis 异常 → 只告警日志，不外抛（cron 不中断）', async () => {
+      mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
+      redisService.get.mockRejectedValue(new Error('redis down'))
+
+      await expect(service.checkBackupFreshness()).resolves.toBeUndefined()
+      expect(errorLogsService.record).not.toHaveBeenCalled()
+    })
+
+    it('每小时孤儿清理顺带执行新鲜度校验', async () => {
+      mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
+      redisService.get.mockResolvedValue(hoursAgo(26))
+
+      await service.cleanOrphanUploads()
+
+      expect(errorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('超过 25 小时') }),
+      )
     })
   })
 })
