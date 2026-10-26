@@ -34,6 +34,7 @@ vi.mock('@/common/logger', () => ({
   appendErrorLog: (...args: unknown[]) => mockAppendErrorLog(...args),
 }))
 
+import { drainDbWrites } from '@/db/pending-writes'
 import { AuditService } from './audit.service'
 
 describe('AuditService', () => {
@@ -161,6 +162,32 @@ describe('AuditService', () => {
 
       // 降级：即使 Redis 故障也入库
       expect(mockDb.insert).toHaveBeenCalled()
+    })
+
+    it('L1：审计 insert 登记到 pending-writes，优雅关闭排空会等待其落定', async () => {
+      let resolveInsert!: () => void
+      const insertPromise = new Promise<void>((resolve) => {
+        resolveInsert = resolve
+      })
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue(insertPromise),
+      } as never)
+
+      const recordPromise = service.record({ userId: 1, action: 'create', resource: 'user' })
+      // 让 record 越过封顶检查并完成登记（eval 为已 resolve 的 mock）
+      await new Promise((r) => setTimeout(r, 0))
+
+      let drained = false
+      const drainPromise = drainDbWrites(1000).then(() => {
+        drained = true
+      })
+      await new Promise((r) => setTimeout(r, 10))
+      expect(drained).toBe(false)
+
+      resolveInsert()
+      await recordPromise
+      await drainPromise
+      expect(drained).toBe(true)
     })
   })
 

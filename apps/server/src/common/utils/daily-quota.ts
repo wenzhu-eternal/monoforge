@@ -1,5 +1,10 @@
 import { ConflictException } from '@nestjs/common'
+import { appendErrorLog } from '@/common/logger'
 import type { RedisService } from '@/modules/redis/redis.service'
+
+// L4：降级告警每分钟至多一条，防上传高峰时日志线性放大（与限流存储 fail-open 同口径）
+const FAIL_OPEN_LOG_INTERVAL_MS = 60_000
+let lastFailOpenLogAt = 0
 
 /**
  * L6：按用户+动作的日配额（Redis 计数，TTL 到当日 24:00）——
@@ -19,15 +24,28 @@ export async function consumeDailyQuota(
   const ttl = Math.max(1, Math.ceil((midnight.getTime() - now.getTime()) / 1000))
 
   const key = quotaKey(action, userId, now)
-  const used = Number(
-    await redis.eval(
+  let raw: unknown
+  try {
+    raw = await redis.eval(
       `local n = redis.call('INCR', KEYS[1])
        if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
        return n`,
       [key],
       [ttl],
-    ),
-  )
+    )
+  } catch (err) {
+    // L4：Redis 故障降级放行（未扣额）——全仓口径为 fail-open（限流/登录锁/审计），
+    // 配额是纵深项且上传/备份/通知各有独立管控；fail-closed 会把抖动放大成全量原生 500
+    const nowTs = Date.now()
+    if (nowTs - lastFailOpenLogAt >= FAIL_OPEN_LOG_INTERVAL_MS) {
+      lastFailOpenLogAt = nowTs
+      appendErrorLog(
+        `[Quota] Redis 配额存储异常，本次 ${action} 未扣额放行: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    return
+  }
+  const used = Number(raw)
 
   if (used > limit) {
     const label = action === 'backup' ? '备份' : action === 'upload' ? '上传' : '通知'

@@ -5,6 +5,7 @@ import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { appendErrorLog } from '@/common/logger'
 import { normalizeIpForKey } from '@/common/utils/ip-normalize'
 import { db } from '@/db'
+import { trackDbWrite } from '@/db/pending-writes'
 import { auditLogs, users } from '@/db/schema'
 import { RedisService } from '@/modules/redis/redis.service'
 
@@ -46,16 +47,22 @@ export class AuditService {
       return
     }
 
-    await db.insert(auditLogs).values({
-      userId: params.userId,
-      action: params.action,
-      resource: params.resource,
-      resourceId: params.resourceId,
-      oldValue: params.oldValue,
-      newValue: params.newValue,
-      ip: params.ip,
-      userAgent: params.userAgent,
-    })
+    // L1：登记到 pending-writes——优雅关闭时 client.end() 前先排空，避免在飞请求的
+    // 审计 insert 以 CONNECTION_ENDED 失败（与 error_logs 异步落库同口径）
+    await trackDbWrite(
+      (async () => {
+        await db.insert(auditLogs).values({
+          userId: params.userId,
+          action: params.action,
+          resource: params.resource,
+          resourceId: params.resourceId,
+          oldValue: params.oldValue,
+          newValue: params.newValue,
+          ip: params.ip,
+          userAgent: params.userAgent,
+        })
+      })(),
+    )
   }
 
   /**

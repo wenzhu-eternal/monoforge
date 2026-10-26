@@ -1,5 +1,11 @@
 import { ConflictException } from '@nestjs/common'
 import { describe, expect, it, vi } from 'vitest'
+
+const mockAppendErrorLog = vi.fn()
+vi.mock('@/common/logger', () => ({
+  appendErrorLog: (...args: unknown[]) => mockAppendErrorLog(...args),
+}))
+
 import { consumeDailyQuota, rollbackDailyQuota } from './daily-quota'
 
 function mockRedis(evalResult: number) {
@@ -27,6 +33,13 @@ describe('consumeDailyQuota（L6 日配额）', () => {
     await expect(consumeDailyQuota(mockRedis(4) as never, 'backup', 7, 3)).rejects.toThrow(
       ConflictException,
     )
+  })
+
+  it('L4：Redis 故障降级放行（未扣额、不抛错，与全仓 fail-open 口径一致）', async () => {
+    const redis = { eval: vi.fn().mockRejectedValue(new Error('redis down')) }
+
+    await expect(consumeDailyQuota(redis as never, 'upload', 7, 3)).resolves.toBeUndefined()
+    expect(mockAppendErrorLog).toHaveBeenCalledWith(expect.stringContaining('未扣额放行'))
   })
 })
 
