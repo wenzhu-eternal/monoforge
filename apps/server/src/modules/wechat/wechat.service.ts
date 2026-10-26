@@ -174,11 +174,14 @@ export class WechatService {
     }
 
     const user = await this.findOrCreateUser(openId, nickname, avatar)
+    // M2：第四签发面——HTTP/WS/refresh 均按 token/DB 内 flag 实施强制改密，
+    // 微信签发漏带该字段会让"管理员重置密码后封锁至改密"对微信账号静默失灵
     const payload: TokenPayload = {
       sub: user.id,
       username: user.username,
       email: user.email,
       roleId: user.roleId,
+      mustChangePassword: user.mustChangePassword,
     }
     const tokens = await this.authService.signTokenPair(payload)
     // refreshToken 也存 Redis 便于吊销

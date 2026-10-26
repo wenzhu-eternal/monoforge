@@ -136,6 +136,34 @@ describe('WechatService', () => {
     })
   })
 
+  describe('login - M2 强制改密签发面', () => {
+    it('已绑定微信且需强制改密时，payload 携带 mustChangePassword=true', async () => {
+      const { service, httpClient, authService } = buildService(true)
+      vi.mocked(httpClient.get).mockResolvedValue({
+        openid: 'openid-1',
+        session_key: 'session-key',
+      } as never)
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 9,
+        username: 'wx_openid-1',
+        email: 'wx_openid-1@wechat.placeholder',
+        roleId: 2,
+        nickname: null,
+        avatar: null,
+        deletedAt: null,
+        status: true,
+        mustChangePassword: true,
+      } as never)
+      authService.signTokenPair.mockResolvedValue({ accessToken: 'a', refreshToken: 'r' })
+
+      await service.login('some-code', 'miniprogram')
+
+      expect(authService.signTokenPair).toHaveBeenCalledWith(
+        expect.objectContaining({ sub: 9, mustChangePassword: true }),
+      )
+    })
+  })
+
   describe('构造函数', () => {
     it('构造时创建两个 axios 实例（扫码 + 小程序）', () => {
       const { httpClient } = buildService(true)
