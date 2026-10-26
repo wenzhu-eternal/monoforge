@@ -205,6 +205,33 @@ describe('RolesService', () => {
       await expect(service.update(1, { name: 'admin' }, false)).rejects.toThrow(ForbiddenException)
     })
 
+    it('L2：内置角色改名后（name 已不是 admin）非超管改其名仍被拒（按 id 判定）', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 1,
+        name: 'renamed-admin',
+      } as never)
+
+      await expect(service.update(1, { name: 'another' }, false)).rejects.toThrow(
+        ForbiddenException,
+      )
+    })
+
+    it('L2：非内置角色改名不受超管限制（按 id 判定）', async () => {
+      vi.mocked(mockDb.query.roles.findFirst)
+        .mockResolvedValueOnce({ id: 5, name: 'editor' } as never)
+        .mockResolvedValueOnce(undefined)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 5, name: 'writer' }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.update(5, { name: 'writer' }, false)
+      expect(result).toEqual({ id: 5, name: 'writer' })
+    })
+
     it('改成已存在的其他角色名时抛 ConflictException', async () => {
       vi.mocked(mockDb.query.roles.findFirst)
         .mockResolvedValueOnce({ id: 1, name: 'admin' } as never)
@@ -223,7 +250,7 @@ describe('RolesService', () => {
 
     it('被用户引用时抛 ConflictException', async () => {
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
-        id: 1,
+        id: 5,
         name: 'editor',
       } as never)
       vi.mocked(mockDb.select).mockReturnValue({
@@ -232,7 +259,7 @@ describe('RolesService', () => {
         }),
       } as never)
 
-      await expect(service.remove(1)).rejects.toThrow(ConflictException)
+      await expect(service.remove(5)).rejects.toThrow(ConflictException)
     })
 
     it('L6：内置角色不可软删（admin 为超管判定硬依赖）', async () => {
@@ -244,9 +271,18 @@ describe('RolesService', () => {
       await expect(service.remove(1)).rejects.toThrow(ForbiddenException)
     })
 
+    it('L2：内置角色改名后仍不可软删（按 id 判定，name 已不可依赖）', async () => {
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
+        id: 1,
+        name: 'renamed-admin',
+      } as never)
+
+      await expect(service.remove(1)).rejects.toThrow(ForbiddenException)
+    })
+
     it('无引用时软删除成功', async () => {
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
-        id: 2,
+        id: 5,
         name: 'editor',
       } as never)
       vi.mocked(mockDb.select).mockReturnValue({
@@ -264,14 +300,14 @@ describe('RolesService', () => {
         where: vi.fn().mockResolvedValue(undefined),
       } as never)
 
-      const result = await service.remove(2)
-      expect(result).toEqual({ message: '角色 ID 2 已删除' })
-      expect(redisService.del).toHaveBeenCalledWith('perm:role:2')
+      const result = await service.remove(5)
+      expect(result).toEqual({ message: '角色 ID 5 已删除' })
+      expect(redisService.del).toHaveBeenCalledWith('perm:role:5')
     })
 
     it('L4：缓存失效失败不影响软删结果', async () => {
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
-        id: 2,
+        id: 5,
         name: 'editor',
       } as never)
       vi.mocked(mockDb.select).mockReturnValue({
@@ -289,7 +325,7 @@ describe('RolesService', () => {
       } as never)
       redisService.del.mockRejectedValueOnce(new Error('redis down'))
 
-      await expect(service.remove(2)).resolves.toEqual({ message: '角色 ID 2 已删除' })
+      await expect(service.remove(5)).resolves.toEqual({ message: '角色 ID 5 已删除' })
       await Promise.resolve()
     })
   })

@@ -144,6 +144,11 @@ export class PermissionsService {
       if (Object.values(PermissionCodes).some((c) => c === data.code)) {
         throw new ForbiddenException('禁止改写为系统保留权限码')
       }
+      // L3：反向同样禁止——把 'user:view' 改走会让 @Permissions 字面常量全部失配，
+      // 持码者立即 403，且"禁止改成保留码"闸把回改通道也堵死（只能直接改库）
+      if (Object.values(PermissionCodes).some((c) => c === existing.code)) {
+        throw new ForbiddenException('禁止改写系统保留权限码')
+      }
       const dup = await db.query.permissions.findFirst({
         where: and(eq(permissions.code, data.code), notDeleted(permissions.deletedAt)),
       })

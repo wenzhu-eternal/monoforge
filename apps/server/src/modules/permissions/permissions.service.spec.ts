@@ -237,6 +237,47 @@ describe('PermissionsService', () => {
 
       expect(result).toEqual(mockPermission)
     })
+
+    it('L3：禁止把保留权限码改走（反向黑名单，防持码者被锁出且回改通道自堵）', async () => {
+      vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue({
+        id: 1,
+        code: 'user:view',
+      } as never)
+
+      await expect(service.update(1, { code: 'userview' }, { isAdmin: true })).rejects.toThrow(
+        '禁止改写系统保留权限码',
+      )
+    })
+
+    it('L3：禁止把自定义码改写成保留码（正向黑名单）', async () => {
+      vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue({
+        id: 9,
+        code: 'custom:view',
+      } as never)
+
+      await expect(service.update(9, { code: 'user:view' }, { isAdmin: true })).rejects.toThrow(
+        '禁止改写为系统保留权限码',
+      )
+    })
+
+    it('L3：非保留码之间改名放行（不误伤自定义码）', async () => {
+      vi.mocked(mockDb.query.permissions.findFirst)
+        .mockResolvedValueOnce({ id: 9, code: 'custom:view' } as never)
+        .mockResolvedValueOnce(undefined)
+      const row = { id: 9, code: 'custom:read' }
+      vi.mocked(mockDb.transaction).mockImplementationOnce((async (fn: unknown) =>
+        (fn as (t: unknown) => Promise<unknown>)({
+          update: () => ({
+            set: () => ({
+              where: () => ({ returning: async () => [row] }),
+            }),
+          }),
+        })) as never)
+
+      const result = await service.update(9, { code: 'custom:read' }, { isAdmin: true })
+
+      expect(result).toEqual(row)
+    })
   })
 
   describe('remove', () => {

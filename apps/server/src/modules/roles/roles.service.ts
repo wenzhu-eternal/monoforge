@@ -31,6 +31,16 @@ export class RolesService {
       .catch((err) => this.logger.warn(`角色权限缓存失效失败: ${err}`))
   }
 
+  /**
+   * L2：内置角色按 id 判定（与 isAdminUser 同源）——按 name 判定时超管合法改名后
+   * 该角色失全部保护，且 seed/setup 复活逻辑找不到原行会新建→id 漂移→fail-fast。
+   * 环境变量在启动时已校验，ADMIN_ROLE_ID 与 DEFAULT_USER_ROLE_ID 互不相同
+   */
+  private isBuiltinRole(roleId: number): boolean {
+    const env = getEnv()
+    return roleId === env.ADMIN_ROLE_ID || roleId === env.DEFAULT_USER_ROLE_ID
+  }
+
   async findAll(page = 1, pageSize = 10, includeDeleted = false): Promise<PaginatedResponse<Role>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
@@ -118,9 +128,9 @@ export class RolesService {
     }
 
     if (data.name && data.name !== existing.name) {
-      // L2：seeded 'admin'/'user' 角色改名仅限超管，防公开注册/默认建户/微信建户
-      // 硬编码 roles.name='user' 失灵（四处硬依赖 user 角色名）
-      if (['admin', 'user'].includes(existing.name) && !callerIsAdmin) {
+      // L2：seeded 内置角色改名仅限超管，防公开注册/默认建户/微信建户硬依赖断裂；
+      // 按 id 判定，避免角色被合法改名后 name 检查失效
+      if (this.isBuiltinRole(id) && !callerIsAdmin) {
         throw new ForbiddenException('系统内置角色名仅超级管理员可改')
       }
       const dup = await db.query.roles.findFirst({
@@ -159,8 +169,9 @@ export class RolesService {
       throw new NotFoundException(`角色 ID ${id} 不存在`)
     }
 
-    // L6：内置角色（admin/user）是超管判定与默认建户的硬依赖，禁止软删
-    if (['admin', 'user'].includes(existing.name)) {
+    // L2：内置角色（按 id）是超管判定与默认建户的硬依赖，禁止软删——
+    // 按 name 判定会在超管合法改名后失锁（无用户绑定时可被软删，seed 复活即 id 漂移）
+    if (this.isBuiltinRole(id)) {
       throw new ForbiddenException('系统内置角色不可删除')
     }
 
