@@ -69,7 +69,7 @@ export class AuthService {
 - 白名单规则用**字符串包含匹配**（非正则）判断 `message` 或 `url` 字段，避免 ReDoS 风险
 - 401/403/429 安全事件与内部标记（`record({ internal: true })`：备份失败、补偿搬运失败、改密留痕等运维留痕）必须跳过白名单：否则持 `error_log:manage` 的委托管理员可用宽 pattern 整批吞掉越权探测或内部故障证据（M2/L12）
 - 白名单规则缓存在 Redis 中，TTL 60s；CRUD 操作后失效缓存
-- 白名单 CRUD 仅 admin 角色可操作
+- 白名单 CRUD 需 `error_log:manage` 权限码（默认 seed 仅 admin 持有），无额外角色硬编码
 - 白名单表格排序须稳定：`desc(createdAt), desc(id)` 作为 tie-breaker，避免操作后顺序变化
 
 ## HttpExceptionFilter（后端）

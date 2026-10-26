@@ -65,7 +65,16 @@ export const DEFAULT_PERMISSIONS: DefaultPermission[] = [
     code: PermissionCodes.PERMISSION_VIEW,
     name: '查看权限',
     description: '查看权限列表',
-    routes: ['GET /permissions', 'GET /permissions/list', 'GET /permissions/:id'],
+    routes: [
+      'GET /permissions',
+      'GET /permissions/list',
+      'GET /permissions/:id',
+      // L23：同受 PERMISSION_VIEW 保护的端点补齐——routes 是权限码不足时的兜底授权面，
+      // 漏标会让仅经 routes 授权的角色访问不了这些端点
+      'GET /role-permissions',
+      'GET /role-permissions/role/:roleId',
+      'GET /routes',
+    ],
   },
   {
     code: PermissionCodes.PERMISSION_CREATE,
@@ -77,7 +86,11 @@ export const DEFAULT_PERMISSIONS: DefaultPermission[] = [
     code: PermissionCodes.PERMISSION_UPDATE,
     name: '更新权限',
     description: '编辑权限信息',
-    routes: ['PATCH /permissions/:id'],
+    routes: [
+      'PATCH /permissions/:id',
+      // L23：角色权限洗牌端点（全仓唯一 PUT）
+      'PUT /role-permissions/role/:roleId',
+    ],
   },
   {
     code: PermissionCodes.PERMISSION_DELETE,

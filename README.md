@@ -55,10 +55,10 @@ cp .env.example .env
 pnpm dev
 
 # 只启动前端
-pnpm dev --filter=web
+pnpm --filter=web dev
 
 # 只启动后端
-pnpm dev --filter=server
+pnpm --filter=server dev
 ```
 
 ### 数据库初始化
@@ -79,8 +79,8 @@ pnpm db:seed
 ```bash
 # 开发
 pnpm dev                    # 启动所有服务
-pnpm dev --filter=web       # 只启动前端
-pnpm dev --filter=server    # 只启动后端
+pnpm --filter=web dev       # 只启动前端
+pnpm --filter=server dev    # 只启动后端
 
 # 构建
 pnpm build                  # 构建所有包

@@ -181,6 +181,8 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 2. **401 拦截器区分语义**：`api.ts` 必须在通用 401 refresh 逻辑**之前**拦截 `message === '请先修改默认密码'` 并跳 `/change-password`。此类 401 表示 token 有效但权限受限，若误走 refresh 分支，`auth.service` 同样拒绝 refresh，最终触发 `logout()` + 跳 `/login`
 3. **业务请求下沉到 Layout 内层**：受保护页面的数据 hook 必须写在 `AuthenticatedLayout` 的**子组件**里（如 `DashboardPage` 只渲染 Layout，数据请求放 `DashboardContent`）。React Hook 规则决定外层 hook 必然先于 Layout 内的重定向执行，写在外层会先打出白名单外请求拿到 401
 
+**签发面清单（四入口必须同时携带标志）**：密码登录、refresh、WebSocket 握手、微信登录（`wechat.service`）。前两者读 DB 的 `mustChangePassword`，WS 与 wechat 的 token payload 必须同样带上——任一入口漏带，管理员重置密码后的"封锁至改密"就会在该入口静默失效（M2）。
+
 ## 权限控制
 
 ### 统一使用 @Permissions + PermissionsGuard

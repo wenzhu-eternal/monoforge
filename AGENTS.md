@@ -30,8 +30,8 @@ monoforge/
 ```bash
 # 开发
 pnpm dev                    # 启动所有服务
-pnpm dev --filter=web       # 只启动前端
-pnpm dev --filter=server    # 只启动后端
+pnpm --filter=web dev       # 只启动前端
+pnpm --filter=server dev    # 只启动后端
 
 # 构建
 pnpm build                  # 构建所有包

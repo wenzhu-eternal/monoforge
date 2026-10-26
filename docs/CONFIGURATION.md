@@ -172,8 +172,10 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 | `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | createdAt 全量截断删（J1/M1=A，保留期=全量口径，未删通知不再无限堆积；M2 按 5000/批 ctid 子查询分批，避免首夜大存量超 statement_timeout） |
 | `error_logs` | ✅ 每天 1:30 cron（`dailyErrorLogsCleanup`） | 30 天 | createdAt 全量截断删（J1=A，保留期=全量口径，未删数据永不堆积） |
 | `files` trash | ✅ 每天 0:30 cron（`dailyTrashCleanup`） | 30 天 | 物理删除超期软删文件 |
-| `backups` | ✅ 每次成功备份后（`cleanOldBackups`） | 保留最新 30 份 | 按文件名字典序删除超出 `MAX_BACKUPS=30` 的旧 `backup-*.sql`；新命名零填充，字典序=时间序；旧格式混存时新格式优先删（见 schedule.service 注释） |
+| `backups` | ✅ 每次成功备份后（`cleanOldBackups`） | 保留最新 30 份 | 按文件 mtime 排序删除最旧的 `backup-*.sql`；读不到 mtime 的文件跳过不删（避免并发删除/权限异常时误删最新备份） |
 | `audit_logs` | ❌ 无自动清理 | — | 归档责任由运维承担：建议定期导出后归档/清理，不自动删除（J1=A 留档，避免误删取证痕迹） |
+
+**备份可观测性（M1）**：5 个 cron 成功执行后写 Redis `schedule:last-run:<task>`（40 天 TTL）；启动钩子与每小时孤儿清理校验"最后成功备份 > 25h"，命中即向 `error_logs` 落告警（每日去重）。备份"跑失败"仍有失败邮件 + error_logs 双留痕，此项补的是"根本没跑"（进程在备份窗口内重启/宕机时 CronJob 无 catch-up）。
 
 ## 定时任务时区说明
 
