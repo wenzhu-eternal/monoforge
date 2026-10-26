@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common'
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import { OptionalAuth } from '@/common/decorators/optional-auth.decorator'
 import { Public } from '@/common/decorators/public.decorator'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { HealthService } from './health.service'
@@ -19,6 +20,8 @@ interface AuthRequest {
 @ApiTags('Health')
 @Controller('health')
 @Public()
+// L11：公开 + 可选鉴权——无/无效 token 仍匿名可访问，有效 token 才用于裁剪详情
+@OptionalAuth()
 // L5：原 @SkipThrottle 使公开健康检查成为无限探测/放大入口；
 // 60/min 仍远高于 docker healthcheck（30s 间隔 = 2/min）
 @Throttle({ default: { limit: 60, ttl: 60_000 } })

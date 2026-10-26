@@ -151,9 +151,12 @@ echo "  → pnpm audit --prod..."
 if pnpm audit --prod > /tmp/audit.log 2>&1; then
   check_pass "无已知高危依赖漏洞"
 else
-  # 国内镜像源（npmmirror 等）不实现 audit 端点，非真实漏洞，跳过以免噪音
-  if grep -q 'ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS' /tmp/audit.log; then
-    check_pass "当前 registry 不支持 audit 端点，已跳过（如需扫描请切换至官方 registry）"
+  # 内网/镜像 registry 不实现 audit 端点（实测 501→404）：
+  # 旧 pnpm 返回 ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS，新版本返回 ERR_PNPM_AUDIT_BAD_RESPONSE——
+  # 两者都属"无法审计"而非"真有漏洞"，原先只识别前者，后者落进低/中危分支，
+  # 把检查失败包装成疑似已检查。用 warn（不阻断 gate）并明确告知无结论
+  if grep -q -E 'ERR_PNPM_AUDIT_(ENDPOINT_NOT_EXISTS|BAD_RESPONSE)' /tmp/audit.log; then
+    check_warn "当前 registry 不支持 audit 端点，依赖审计无结论（非漏洞；如需扫描请切换官方 registry）"
   elif grep -q -E '(high|critical)' /tmp/audit.log; then
     check_fail "发现高危依赖漏洞（见 /tmp/audit.log）"
     grep -E '(high|critical)' /tmp/audit.log | head -10

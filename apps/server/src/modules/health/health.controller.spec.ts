@@ -98,4 +98,9 @@ describe('HealthController', () => {
     expect(Reflect.getMetadata('THROTTLER:LIMITdefault', HealthController)).toBe(60)
     expect(Reflect.getMetadata('THROTTLER:SKIPdefault', HealthController)).toBeUndefined()
   })
+
+  it('L11：@Public 与 @OptionalAuth 并存（详情按 token 裁剪，而非对所有人不可见）', () => {
+    expect(Reflect.getMetadata('isPublic', HealthController)).toBe(true)
+    expect(Reflect.getMetadata('optionalAuth', HealthController)).toBe(true)
+  })
 })

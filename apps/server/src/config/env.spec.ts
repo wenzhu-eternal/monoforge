@@ -96,6 +96,38 @@ describe('存储目录交叉校验（M2）', () => {
     ).toBe(true)
   })
 
+  it('L8：BACKUP_DIR 等于回收站目录（UPLOAD_DIR 同前缀 -trash）时拒绝', () => {
+    const result = envSchema.safeParse({
+      ...baseEnv,
+      UPLOAD_DIR: '/data/uploads',
+      BACKUP_DIR: '/data/uploads-trash',
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(expect.objectContaining({ path: ['BACKUP_DIR'] }))
+    }
+  })
+
+  it('L8：BACKUP_DIR 位于回收站目录内时拒绝（满 30 天会被静默 unlink）', () => {
+    expect(
+      envSchema.safeParse({
+        ...baseEnv,
+        UPLOAD_DIR: '/data/uploads',
+        BACKUP_DIR: '/data/uploads-trash/db',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('L8：独立兄弟目录仍放行（不误伤正常布局）', () => {
+    expect(
+      envSchema.safeParse({
+        ...baseEnv,
+        UPLOAD_DIR: '/data/uploads',
+        BACKUP_DIR: '/data/backups',
+      }).success,
+    ).toBe(true)
+  })
+
   it.skipIf(process.platform === 'win32')('symlink 指向 UPLOAD_DIR 时同样拒绝', () => {
     const root = mkdtempSync(join(tmpdir(), 'mf-env-'))
     try {
@@ -282,10 +314,23 @@ describe('生产启动告警（L16）', () => {
       NODE_ENV: 'production',
       TRUST_PROXY: 1,
       ALLOW_THROTTLE_BYPASS: true,
+      ALLOW_INSECURE_COOKIE: false,
     })
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('ALLOW_THROTTLE_BYPASS')
     expect(warnings[0]).toContain('全站限流已旁路')
+  })
+
+  it('L9：生产开启不安全 cookie 逃生舱时输出告警', () => {
+    const warnings = collectProductionWarnings({
+      NODE_ENV: 'production',
+      TRUST_PROXY: 1,
+      ALLOW_THROTTLE_BYPASS: false,
+      ALLOW_INSECURE_COOKIE: true,
+    })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('ALLOW_INSECURE_COOKIE')
+    expect(warnings[0]).toContain('明文传输')
   })
 
   it('生产 TRUST_PROXY=false/true 沿用原有双告警', () => {
@@ -293,6 +338,7 @@ describe('生产启动告警（L16）', () => {
       NODE_ENV: 'production',
       TRUST_PROXY: false,
       ALLOW_THROTTLE_BYPASS: false,
+      ALLOW_INSECURE_COOKIE: false,
     })
     expect(none).toHaveLength(1)
     expect(none[0]).toContain('未信任任何代理')
@@ -301,6 +347,7 @@ describe('生产启动告警（L16）', () => {
       NODE_ENV: 'production',
       TRUST_PROXY: true,
       ALLOW_THROTTLE_BYPASS: false,
+      ALLOW_INSECURE_COOKIE: false,
     })
     expect(all).toHaveLength(1)
     expect(all[0]).toContain('已信任全部代理')
@@ -312,6 +359,7 @@ describe('生产启动告警（L16）', () => {
         NODE_ENV: 'test',
         TRUST_PROXY: false,
         ALLOW_THROTTLE_BYPASS: true,
+        ALLOW_INSECURE_COOKIE: true,
       }),
     ).toEqual([])
   })

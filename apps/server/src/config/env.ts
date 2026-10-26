@@ -248,7 +248,8 @@ export const envSchema = z
     // M2：备份目录不得落在上传目录内——孤儿清理每小时 unlink uploadDir 下不在 files 表中的旧文件，
     // 若 BACKUP_DIR=UPLOAD_DIR/backups，备份会在 1 小时后被静默删除。
     // L2：比较前解析 symlink；反向（UPLOAD_DIR 位于 BACKUP_DIR 内）放行——cleanOldBackups 只删 backup-*.sql
-    const uploadDir = resolveRealPath(data.UPLOAD_DIR ?? 'uploads')
+    const uploadDirRaw = data.UPLOAD_DIR ?? 'uploads'
+    const uploadDir = resolveRealPath(uploadDirRaw)
     const backupDir = resolveRealPath(data.BACKUP_DIR ?? 'backups')
     const backupRelativeToUpload = relative(uploadDir, backupDir)
     if (
@@ -259,6 +260,21 @@ export const envSchema = z
         code: 'custom',
         message:
           'BACKUP_DIR 不能等于或位于 UPLOAD_DIR 内，否则孤儿文件清理会删除备份文件；请改用独立目录',
+        path: ['BACKUP_DIR'],
+      })
+    }
+    // L8：回收站目录（UPLOAD_DIR 同前缀 -trash，见 storage-dirs.ts）同样会按
+    // "DB 无行且 mtime>30d" 静默 unlink——备份若落在这里，档期满 30 天后无声消失
+    const trashDir = resolveRealPath(`${uploadDirRaw.replace(/\/+$/, '')}-trash`)
+    const backupRelativeToTrash = relative(trashDir, backupDir)
+    if (
+      backupRelativeToTrash === '' ||
+      (!backupRelativeToTrash.startsWith('..') && !isAbsolute(backupRelativeToTrash))
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'BACKUP_DIR 不能等于或位于回收站目录（UPLOAD_DIR 同前缀 -trash）内，否则回收站孤儿清理会删除备份文件；请改用独立目录',
         path: ['BACKUP_DIR'],
       })
     }
@@ -288,7 +304,7 @@ export type Env = z.infer<typeof envSchema>
  * L16：生产启动告警——限流旁路/代理信任配置错误不会阻断启动，但必须显式暴露，避免静默塌缩。
  */
 export function collectProductionWarnings(
-  env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY' | 'ALLOW_THROTTLE_BYPASS'>,
+  env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY' | 'ALLOW_THROTTLE_BYPASS' | 'ALLOW_INSECURE_COOKIE'>,
 ): string[] {
   if (env.NODE_ENV !== 'production') return []
 
@@ -307,6 +323,13 @@ export function collectProductionWarnings(
     warnings.push(
       '[THROTTLE] 生产环境启用了 ALLOW_THROTTLE_BYPASS=true：全站限流已旁路，' +
         '仅允许临时排障使用，请立即改回 false 并重启',
+    )
+  }
+  // L9：逃生舱无告警——临时调试后忘回收时 refresh cookie 持续明文（7d 有效，截获即接管）
+  if (env.ALLOW_INSECURE_COOKIE) {
+    warnings.push(
+      '[COOKIE] 生产环境启用了 ALLOW_INSECURE_COOKIE=true：refresh cookie 以明文传输，' +
+        '仅允许 ngrok/单容器 HTTP 调试使用，请立即改回 false 并重启',
     )
   }
   return warnings

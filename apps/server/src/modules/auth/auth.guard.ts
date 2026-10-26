@@ -11,6 +11,7 @@ import { JwtService } from '@nestjs/jwt'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import { and, eq } from 'drizzle-orm'
 import type { Request } from 'express'
+import { IS_OPTIONAL_AUTH_KEY } from '@/common/decorators/optional-auth.decorator'
 import { IS_PUBLIC_KEY } from '@/common/decorators/public.decorator'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
@@ -40,7 +41,13 @@ export class AuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ])
-    if (isPublic) {
+    // L11：@OptionalAuth 的公开路由继续走解析（仅用于按身份裁剪响应），但绝不以 401 拒绝；
+    // 其余公开路由仍早退，避免为 login/register 等请求平白验签（也防旧 token 污染审计归因）
+    const isOptionalAuth = this.reflector.getAllAndOverride<boolean>(IS_OPTIONAL_AUTH_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ])
+    if (isPublic && !isOptionalAuth) {
       return true
     }
 
@@ -48,6 +55,7 @@ export class AuthGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request)
 
     if (!token) {
+      if (isOptionalAuth) return true
       throw new UnauthorizedException('缺少访问令牌')
     }
 
@@ -55,6 +63,12 @@ export class AuthGuard implements CanActivate {
       const secret = this.configService.get<string>('JWT_SECRET')
       // 显式算法白名单，防算法混淆
       const payload = await this.jwtService.verifyAsync(token, { secret, algorithms: ['HS256'] })
+
+      // 可选鉴权只信任验签结果，跳过吊销/存续/强制改密等拒绝型复检
+      if (isOptionalAuth) {
+        request.user = payload
+        return true
+      }
 
       // 检查 access token 是否已被吊销（logout/禁用/改角色/改密（含管理员重置）/删用户时 jti 进入 Redis 黑名单）
       if (payload.jti) {
@@ -95,6 +109,8 @@ export class AuthGuard implements CanActivate {
 
       request.user = payload
     } catch (err) {
+      // 可选鉴权：任何解析失败都静默降级为匿名访问，不返回 401
+      if (isOptionalAuth) return true
       if (err instanceof UnauthorizedException || err instanceof ServiceUnavailableException) {
         throw err
       }

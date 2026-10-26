@@ -86,4 +86,57 @@ describe('AuthGuard（L12 账号存续薄复检）', () => {
     await expect(guard.canActivate(makeContext())).rejects.toThrow(UnauthorizedException)
     expect(redis.set).not.toHaveBeenCalled()
   })
+
+  describe('L11 可选鉴权（health 详情按 token 裁剪）', () => {
+    function buildOptionalGuard(opts: { token?: string; verify?: () => Promise<unknown> }) {
+      const jwt = { verifyAsync: vi.fn(opts.verify ?? (async () => ({ sub: 1, roleId: 1 }))) }
+      const reflector = {
+        getAllAndOverride: vi.fn((key: string) => key === 'isPublic' || key === 'optionalAuth'),
+      }
+      const config = { get: vi.fn().mockReturnValue('secret') }
+      const optionalGuard = new AuthGuard(
+        jwt as never,
+        config as never,
+        reflector as never,
+        redis as never,
+      )
+      const request: Record<string, unknown> = {
+        headers: opts.token ? { authorization: `Bearer ${opts.token}` } : {},
+        method: 'GET',
+        path: '/api/v1/health',
+      }
+      const ctx = {
+        getHandler: () => ({}),
+        getClass: () => ({}),
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as never
+      return { optionalGuard, request, ctx }
+    }
+
+    it('有效 token → 附加 user 后放行（跳过吊销/存续复检）', async () => {
+      const { optionalGuard, request, ctx } = buildOptionalGuard({ token: 'valid' })
+
+      await expect(optionalGuard.canActivate(ctx)).resolves.toBe(true)
+      expect(request.user).toMatchObject({ sub: 1, roleId: 1 })
+      expect(db.query.users.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('无 token → 匿名放行，不抛 401', async () => {
+      const { optionalGuard, ctx } = buildOptionalGuard({})
+
+      await expect(optionalGuard.canActivate(ctx)).resolves.toBe(true)
+    })
+
+    it('无效 token → 静默降级为匿名，不抛 401', async () => {
+      const { optionalGuard, request, ctx } = buildOptionalGuard({
+        token: 'bad',
+        verify: async () => {
+          throw new Error('bad token')
+        },
+      })
+
+      await expect(optionalGuard.canActivate(ctx)).resolves.toBe(true)
+      expect(request.user).toBeUndefined()
+    })
+  })
 })
