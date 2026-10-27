@@ -4,7 +4,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import {
   Button,
   Divider,
-  Empty,
   Form,
   Input,
   Modal,
@@ -19,6 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { renderListEmpty } from '@/components/list-empty'
 import { useCan, useCurrentUser } from '@/hooks/use-auth'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { useAllRoles } from '@/hooks/use-roles'
@@ -66,7 +66,7 @@ export function UsersContent() {
   const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error, isSuccess } = useUsers({
+  const { data, isLoading, isError, error, isSuccess, refetch } = useUsers({
     page,
     pageSize,
   })
@@ -335,7 +335,9 @@ export function UsersContent() {
         dataSource={data?.list}
         rowKey="id"
         loading={isLoading}
-        locale={{ emptyText: <Empty description="暂无用户" /> }}
+        locale={{
+          emptyText: renderListEmpty({ isError, onRetry: refetch, emptyText: '暂无用户' }),
+        }}
         pagination={{
           current: page,
           pageSize,

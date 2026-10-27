@@ -6,7 +6,6 @@ import {
   Button,
   Checkbox,
   Divider,
-  Empty,
   Form,
   Input,
   Modal,
@@ -20,6 +19,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { renderListEmpty } from '@/components/list-empty'
 import { useCan } from '@/hooks/use-auth'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import type { RouteMeta } from '@/hooks/use-permissions'
@@ -64,7 +64,7 @@ export function PermissionCodesContent() {
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
   const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
 
-  const { data, isLoading, isError, error, isSuccess } = usePermissions({ page, pageSize })
+  const { data, isLoading, isError, error, isSuccess, refetch } = usePermissions({ page, pageSize })
   usePagedFallback(data?.list.length, isSuccess, page, setPage)
   const {
     data: allRoutes,
@@ -323,7 +323,9 @@ export function PermissionCodesContent() {
         dataSource={data?.list}
         rowKey="id"
         loading={isLoading}
-        locale={{ emptyText: <Empty description="暂无权限码" /> }}
+        locale={{
+          emptyText: renderListEmpty({ isError, onRetry: refetch, emptyText: '暂无权限码' }),
+        }}
         pagination={{
           current: page,
           pageSize,

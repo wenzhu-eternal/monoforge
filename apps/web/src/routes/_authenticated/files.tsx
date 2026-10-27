@@ -5,7 +5,6 @@ import {
   Alert,
   Button,
   Divider,
-  Empty,
   Image,
   message,
   Popconfirm,
@@ -18,6 +17,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { renderListEmpty } from '@/components/list-empty'
 import { useCan } from '@/hooks/use-auth'
 import {
   downloadFile,
@@ -78,7 +78,7 @@ export function FilesContent() {
   }, [])
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error, isSuccess } = useFiles({ page, pageSize })
+  const { data, isLoading, isError, error, isSuccess, refetch } = useFiles({ page, pageSize })
   usePagedFallback(data?.list.length, isSuccess, page, setPage)
   const deleteMutation = useDeleteFile()
   const restoreMutation = useRestoreFile()
@@ -356,7 +356,9 @@ export function FilesContent() {
         columns={columns}
         dataSource={data?.list ?? []}
         loading={isLoading}
-        locale={{ emptyText: <Empty description="暂无文件" /> }}
+        locale={{
+          emptyText: renderListEmpty({ isError, onRetry: refetch, emptyText: '暂无文件' }),
+        }}
         pagination={{
           current: page,
           pageSize,

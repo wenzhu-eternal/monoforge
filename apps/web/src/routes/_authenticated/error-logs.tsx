@@ -8,7 +8,6 @@ import {
   Collapse,
   Divider,
   Drawer,
-  Empty,
   Form,
   Input,
   Modal,
@@ -27,6 +26,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { renderListEmpty } from '@/components/list-empty'
 import { useCan } from '@/hooks/use-auth'
 import {
   type ErrorLog,
@@ -96,7 +96,7 @@ export function LogsTab() {
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error, isSuccess } = useErrorLogs({
+  const { data, isLoading, isError, error, isSuccess, refetch } = useErrorLogs({
     page,
     pageSize,
     keyword,
@@ -440,7 +440,9 @@ export function LogsTab() {
         columns={columns}
         dataSource={data?.list ?? []}
         loading={isLoading}
-        locale={{ emptyText: <Empty description="暂无错误日志" /> }}
+        locale={{
+          emptyText: renderListEmpty({ isError, onRetry: refetch, emptyText: '暂无错误日志' }),
+        }}
         pagination={{
           current: page,
           pageSize,
@@ -579,7 +581,7 @@ interface WhitelistFormValues {
 }
 
 export function WhitelistTab() {
-  const { data, isLoading, isError, error } = useWhitelist()
+  const { data, isLoading, isError, error, refetch } = useWhitelist()
   const createMutation = useCreateWhitelist()
   const updateMutation = useUpdateWhitelist()
   const deleteMutation = useDeleteWhitelist()
@@ -835,7 +837,9 @@ export function WhitelistTab() {
         columns={columns}
         dataSource={data ?? []}
         loading={isLoading}
-        locale={{ emptyText: <Empty description="暂无白名单规则" /> }}
+        locale={{
+          emptyText: renderListEmpty({ isError, onRetry: refetch, emptyText: '暂无白名单规则' }),
+        }}
         pagination={false}
       />
 

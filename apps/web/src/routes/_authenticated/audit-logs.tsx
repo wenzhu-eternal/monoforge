@@ -1,20 +1,9 @@
 import { DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  Button,
-  Empty,
-  Form,
-  Input,
-  message,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd'
+import { Button, Form, Input, message, Select, Space, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useState } from 'react'
+import { renderListEmpty } from '@/components/list-empty'
 import { type AuditLog, useAuditLogs } from '@/hooks/use-logs'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import { extractErrorMessage } from '@/lib/error'
@@ -98,7 +87,7 @@ function AuditLogsContent() {
   }>({})
   const [searchForm] = Form.useForm()
   const [messageApi, contextHolder] = message.useMessage()
-  const { data, isLoading, isError, error, isSuccess } = useAuditLogs({
+  const { data, isLoading, isError, error, isSuccess, refetch } = useAuditLogs({
     page,
     pageSize,
     ...filters,
@@ -262,7 +251,9 @@ function AuditLogsContent() {
         columns={columns}
         dataSource={data?.list ?? []}
         loading={isLoading}
-        locale={{ emptyText: <Empty description="暂无审计日志" /> }}
+        locale={{
+          emptyText: renderListEmpty({ isError, onRetry: refetch, emptyText: '暂无审计日志' }),
+        }}
         pagination={{
           current: page,
           pageSize,
