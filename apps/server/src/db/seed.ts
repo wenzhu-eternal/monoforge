@@ -19,7 +19,7 @@ config({ path: '../../.env' })
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? '888888'
 // L8：与 setup 对齐，seed 管理员一律首次登录强制改密——自定义密码由部署者自选，弱值即长期弱口令。
 // 本地开发想跳过改密流程可显式设 SEED_ADMIN_MUST_CHANGE_PASSWORD=false；生产不应关闭
-const mustChangePassword = process.env.SEED_ADMIN_MUST_CHANGE_PASSWORD !== 'false'
+const mustChangePassword = getEnv().SEED_ADMIN_MUST_CHANGE_PASSWORD
 
 async function seed() {
   console.log('Seeding database...')

@@ -215,7 +215,7 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - **邮件每邮箱 60s 限流**：用 `SET NX EX` 原子抢占（`mail.service`），禁止 exists 检查 + 事后标记的两步模式——并发请求会同时通过检查发出多封
 
-- **日配额（L6）**：`POST /schedule/backup` 3 次/日/用户、`POST /files/upload` 100 次/日/用户、`POST /websocket/notify` 50 次/日/用户，超限 409；`common/utils/daily-quota.ts` 按上款 Lua 原子计数（键 `quota:<action>:<uid>:<yyyymmdd>`，TTL 至当日 24:00），cron 每日备份不经此路径
+- **日配额（L6/L9）**：`POST /schedule/backup` 3 次/日/用户、`POST /files/upload` 100 次/日/用户、`POST /websocket/notify` 50 次/日/用户、`POST /users` 100 次/日/用户，超限 409；`common/utils/daily-quota.ts` 按上款 Lua 原子计数（键 `quota:<action>:<uid>:<yyyymmdd>`，TTL 至当日 24:00），cron 每日备份不经此路径
 
 - error-logs 模块查询接口（findAll/stats/grouped/whitelist）与单条详情（`@Get(':id')`）统一 `@Throttle({ default: { limit: 60, ttl: 60000 } })`（L7：原四查询端点 `@SkipThrottle` 零限流，持 `error_log:view` 者可高频打 3 个全表 count + groupBy）
 - 登录/注册/发码各为独立的 default 桶（throttler v6 key 含 class-handler-name，不共享计数），limit 读 `THROTTLE_LOGIN_LIMIT`（默认 5/分钟），避免 named 桶污染全部路由（M1/L12）

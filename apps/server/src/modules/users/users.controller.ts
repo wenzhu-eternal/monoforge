@@ -25,20 +25,28 @@ import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { consumeDailyQuota } from '@/common/utils/daily-quota'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
+import { RedisService } from '@/modules/redis/redis.service'
 
 import { ChangePasswordDto } from './dto/change-password.dto'
 import { CreateUserDto } from './dto/create-user.dto'
 import { UpdateUserDto } from './dto/update-user.dto'
 import { UsersService } from './users.service'
 
+// L9：建号日配额——仅 60/min 限流时持 user:create 的委托可 ~8.6 万行/日灌满 users 表
+const USER_CREATE_DAILY_LIMIT = 100
+
 @ApiTags('Users')
 @Controller('users')
 @UseGuards(PermissionsGuard)
 @ApiBearerAuth()
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly redisService: RedisService,
+  ) {}
 
   @Get()
   @Permissions(PermissionCodes.USER_VIEW)
@@ -88,6 +96,13 @@ export class UsersController {
   @ApiOperation({ summary: '创建用户' })
   @ZodSerializerDto(UserSchema)
   async create(@Body() createUserDto: CreateUserDto, @CurrentUser() currentUser: TokenPayload) {
+    // L9：建号日配额——防持 user:create 的委托管理员受控灌满 users 表（对照 upload/backup/notify 同族日配额）
+    await consumeDailyQuota(
+      this.redisService,
+      'userCreate',
+      currentUser.sub,
+      USER_CREATE_DAILY_LIMIT,
+    )
     // 指定角色属于敏感操作（防提权）: 仅 USER_ROLE_MANAGE 权限可指定 roleId，
     // 未指定时由 service 默认分配普通角色
     if (createUserDto.roleId !== undefined) {

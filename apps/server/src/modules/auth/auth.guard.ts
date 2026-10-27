@@ -2,6 +2,7 @@ import {
   type CanActivate,
   type ExecutionContext,
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common'
@@ -13,6 +14,7 @@ import { and, eq } from 'drizzle-orm'
 import type { Request } from 'express'
 import { IS_OPTIONAL_AUTH_KEY } from '@/common/decorators/optional-auth.decorator'
 import { IS_PUBLIC_KEY } from '@/common/decorators/public.decorator'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
 import { users } from '@/db/schema'
@@ -29,6 +31,8 @@ interface AuthenticatedRequest extends Request {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly logger = new Logger(AuthGuard.name)
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
@@ -47,6 +51,11 @@ export class AuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ])
+    // L13：@OptionalAuth 必须与 @Public 同用——组合断层时端点走完整鉴权无害但零告警，
+    // 未来误改会把"按身份裁剪"意外变成"强制登录"，此处显式告警防静默
+    if (isOptionalAuth && !isPublic) {
+      this.logger.warn('检测到 @OptionalAuth 未与 @Public 同用，请确认是否为预期组合')
+    }
     if (isPublic && !isOptionalAuth) {
       return true
     }
@@ -66,6 +75,21 @@ export class AuthGuard implements CanActivate {
 
       // 可选鉴权只信任验签结果，跳过吊销/存续/强制改密等拒绝型复检
       if (isOptionalAuth) {
+        // L10：仍需存续复检——health 按 token roleId 裁剪管理员详情，禁用/软删后旧 AT
+        // 不得继续拿到管理员视图；isAccountAlive 有 5s 正向缓存，成本可忽略
+        if (!(await this.isAccountAlive(payload.sub))) {
+          return true
+        }
+        // 超管快径复检角色——被降级（DB roleId 已变）后旧 token 仍以旧 roleId 走管理员裁剪
+        if (isAdminUser(payload)) {
+          const record = await db.query.users.findFirst({
+            where: and(eq(users.id, payload.sub), notDeleted(users.deletedAt)),
+            columns: { roleId: true },
+          })
+          if (!record || record.roleId !== payload.roleId) {
+            return true
+          }
+        }
         request.user = payload
         return true
       }

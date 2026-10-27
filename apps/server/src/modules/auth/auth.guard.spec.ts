@@ -113,12 +113,21 @@ describe('AuthGuard（L12 账号存续薄复检）', () => {
       return { optionalGuard, request, ctx }
     }
 
-    it('有效 token → 附加 user 后放行（跳过吊销/存续复检）', async () => {
+    it('L10：有效 token（存活且角色未变）→ 附加 user 后放行', async () => {
       const { optionalGuard, request, ctx } = buildOptionalGuard({ token: 'valid' })
+      // isAccountAlive 查 status + 超管角色复检查 roleId，均回滚同值
+      vi.mocked(db.query.users.findFirst).mockResolvedValue({ status: true, roleId: 1 } as never)
 
       await expect(optionalGuard.canActivate(ctx)).resolves.toBe(true)
       expect(request.user).toMatchObject({ sub: 1, roleId: 1 })
-      expect(db.query.users.findFirst).not.toHaveBeenCalled()
+    })
+
+    it('L10：超管被降级（DB roleId 已变）→ 视为匿名，不附加 user', async () => {
+      const { optionalGuard, request, ctx } = buildOptionalGuard({ token: 'valid' })
+      vi.mocked(db.query.users.findFirst).mockResolvedValue({ status: true, roleId: 2 } as never)
+
+      await expect(optionalGuard.canActivate(ctx)).resolves.toBe(true)
+      expect(request.user).toBeUndefined()
     })
 
     it('无 token → 匿名放行，不抛 401', async () => {

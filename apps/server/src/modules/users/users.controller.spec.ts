@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common'
 import { PermissionCodes } from '@shared/constants/permissions'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TokenPayload } from '@/modules/auth/auth.service'
@@ -8,6 +8,7 @@ import type { UsersService } from './users.service'
 describe('UsersController', () => {
   let controller: UsersController
   let service: UsersService
+  let redisService: { eval: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
     service = {
@@ -21,7 +22,10 @@ describe('UsersController', () => {
       hasPermission: vi.fn(),
     } as unknown as UsersService
 
-    controller = new UsersController(service)
+    // L9：create 走 consumeDailyQuota（Redis 配额），eval 返回 1 未超限
+    redisService = { eval: vi.fn().mockResolvedValue(1) }
+
+    controller = new UsersController(service, redisService as never)
   })
 
   it('should be defined', () => {
@@ -170,6 +174,14 @@ describe('UsersController', () => {
       vi.mocked(service.hasPermission).mockResolvedValue(false)
 
       await expect(controller.create(dto, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.create).not.toHaveBeenCalled()
+    })
+
+    it('L9：建号日配额超限（eval 返回 101）→ 抛 409，不落库', async () => {
+      const dto = { username: 'newuser', email: 'new@test.com', password: 'Pass1234' }
+      redisService.eval.mockResolvedValue(101)
+
+      await expect(controller.create(dto, currentUser)).rejects.toThrow(ConflictException)
       expect(service.create).not.toHaveBeenCalled()
     })
   })

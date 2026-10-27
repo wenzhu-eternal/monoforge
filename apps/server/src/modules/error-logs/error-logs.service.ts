@@ -90,8 +90,9 @@ export class ErrorLogsService {
       params.statusCode === 403 ||
       params.statusCode === 429
     if (!skipWhitelist) {
-      // url 一并传入白名单：url 类规则对后端路径生效，可按端点降噪
-      const isWhitelisted = await this.checkWhitelist(params.message, params.url)
+      // L12：url 白名单仅对前端上报（source=frontend）生效——后端 5xx 是越权探测触发的堆栈证据，
+      // 持 error_log:manage 者预置 url 规则不得吞掉；后端仅保留 message 规则降噪
+      const isWhitelisted = await this.checkWhitelist(params.message)
       if (isWhitelisted) return
     }
 

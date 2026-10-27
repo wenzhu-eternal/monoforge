@@ -167,6 +167,12 @@ export const envSchema = z
       .transform((v) => v === true || v === 'true')
       .default(false),
 
+    // seed 管理员是否强制首登改密——默认 true；生产误设 false 会让初始管理员弱口令长期存续
+    SEED_ADMIN_MUST_CHANGE_PASSWORD: z
+      .union([z.boolean(), z.string()])
+      .transform((v) => !(v === false || v === 'false'))
+      .default(true),
+
     // admin 角色 ID（permissions.guard 根据此值判断超级管理员，默认 1）
     ADMIN_ROLE_ID: z.coerce.number().int().positive().default(1),
 
@@ -304,7 +310,16 @@ export type Env = z.infer<typeof envSchema>
  * L16：生产启动告警——限流旁路/代理信任配置错误不会阻断启动，但必须显式暴露，避免静默塌缩。
  */
 export function collectProductionWarnings(
-  env: Pick<Env, 'NODE_ENV' | 'TRUST_PROXY' | 'ALLOW_THROTTLE_BYPASS' | 'ALLOW_INSECURE_COOKIE'>,
+  env: Pick<
+    Env,
+    | 'NODE_ENV'
+    | 'TRUST_PROXY'
+    | 'ALLOW_THROTTLE_BYPASS'
+    | 'ALLOW_INSECURE_COOKIE'
+    | 'ALLOW_SETUP'
+    | 'ALLOW_REGISTER'
+    | 'SEED_ADMIN_MUST_CHANGE_PASSWORD'
+  >,
 ): string[] {
   if (env.NODE_ENV !== 'production') return []
 
@@ -330,6 +345,25 @@ export function collectProductionWarnings(
     warnings.push(
       '[COOKIE] 生产环境启用了 ALLOW_INSECURE_COOKIE=true：refresh cookie 以明文传输，' +
         '仅允许 ngrok/单容器 HTTP 调试使用，请立即改回 false 并重启',
+    )
+  }
+  // L11：逃生舱告警补口——ALLOW_SETUP/ALLOW_REGISTER 忘回收即公开入口长期开放
+  if (env.ALLOW_SETUP) {
+    warnings.push(
+      '[SETUP] 生产环境启用了 ALLOW_SETUP=true：任何人可重新初始化管理员账号，' +
+        '请确认首次部署已完成并立即改回 false 并重启',
+    )
+  }
+  if (env.ALLOW_REGISTER) {
+    warnings.push(
+      '[REGISTER] 生产环境启用了 ALLOW_REGISTER=true：公开注册长期开放，' +
+        '请确认是否为预期开放注册，否则立即改回 false 并重启',
+    )
+  }
+  if (!env.SEED_ADMIN_MUST_CHANGE_PASSWORD) {
+    warnings.push(
+      '[SEED] SEED_ADMIN_MUST_CHANGE_PASSWORD=false：仅在 seed 时点生效，' +
+        '初始管理员将不强制首登改密，弱口令会长期存续',
     )
   }
   return warnings

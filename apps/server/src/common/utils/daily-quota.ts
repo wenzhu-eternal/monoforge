@@ -6,6 +6,8 @@ import type { RedisService } from '@/modules/redis/redis.service'
 const FAIL_OPEN_LOG_INTERVAL_MS = 60_000
 let lastFailOpenLogAt = 0
 
+export type QuotaAction = 'backup' | 'upload' | 'notify' | 'userCreate'
+
 /**
  * L6：按用户+动作的日配额（Redis 计数，TTL 到当日 24:00）——
  * 收口 schedule:backup / file:upload 持有者无频控滥用（已授权功能的纵深项）。
@@ -14,7 +16,7 @@ let lastFailOpenLogAt = 0
  */
 export async function consumeDailyQuota(
   redis: RedisService,
-  action: 'backup' | 'upload' | 'notify',
+  action: QuotaAction,
   userId: number,
   limit: number,
 ): Promise<boolean> {
@@ -50,7 +52,14 @@ export async function consumeDailyQuota(
   const used = Number(raw)
 
   if (used > limit) {
-    const label = action === 'backup' ? '备份' : action === 'upload' ? '上传' : '通知'
+    const label =
+      action === 'backup'
+        ? '备份'
+        : action === 'upload'
+          ? '上传'
+          : action === 'notify'
+            ? '通知'
+            : '创建用户'
     throw new ConflictException(`今日${label}次数已达上限（${limit} 次），请明日再试`)
   }
   return true
@@ -62,7 +71,7 @@ export async function consumeDailyQuota(
  */
 export async function rollbackDailyQuota(
   redis: RedisService,
-  action: 'backup' | 'upload' | 'notify',
+  action: QuotaAction,
   userId: number,
 ): Promise<void> {
   await redis.eval(
@@ -74,11 +83,7 @@ export async function rollbackDailyQuota(
   )
 }
 
-function quotaKey(
-  action: 'backup' | 'upload' | 'notify',
-  userId: number,
-  now: Date = new Date(),
-): string {
+function quotaKey(action: QuotaAction, userId: number, now: Date = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
   return `quota:${action}:${userId}:${date}`

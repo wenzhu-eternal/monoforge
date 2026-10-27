@@ -315,6 +315,9 @@ describe('生产启动告警（L16）', () => {
       TRUST_PROXY: 1,
       ALLOW_THROTTLE_BYPASS: true,
       ALLOW_INSECURE_COOKIE: false,
+      ALLOW_SETUP: false,
+      ALLOW_REGISTER: false,
+      SEED_ADMIN_MUST_CHANGE_PASSWORD: true,
     })
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('ALLOW_THROTTLE_BYPASS')
@@ -327,6 +330,9 @@ describe('生产启动告警（L16）', () => {
       TRUST_PROXY: 1,
       ALLOW_THROTTLE_BYPASS: false,
       ALLOW_INSECURE_COOKIE: true,
+      ALLOW_SETUP: false,
+      ALLOW_REGISTER: false,
+      SEED_ADMIN_MUST_CHANGE_PASSWORD: true,
     })
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('ALLOW_INSECURE_COOKIE')
@@ -339,6 +345,9 @@ describe('生产启动告警（L16）', () => {
       TRUST_PROXY: false,
       ALLOW_THROTTLE_BYPASS: false,
       ALLOW_INSECURE_COOKIE: false,
+      ALLOW_SETUP: false,
+      ALLOW_REGISTER: false,
+      SEED_ADMIN_MUST_CHANGE_PASSWORD: true,
     })
     expect(none).toHaveLength(1)
     expect(none[0]).toContain('未信任任何代理')
@@ -348,6 +357,9 @@ describe('生产启动告警（L16）', () => {
       TRUST_PROXY: true,
       ALLOW_THROTTLE_BYPASS: false,
       ALLOW_INSECURE_COOKIE: false,
+      ALLOW_SETUP: false,
+      ALLOW_REGISTER: false,
+      SEED_ADMIN_MUST_CHANGE_PASSWORD: true,
     })
     expect(all).toHaveLength(1)
     expect(all[0]).toContain('已信任全部代理')
@@ -360,7 +372,39 @@ describe('生产启动告警（L16）', () => {
         TRUST_PROXY: false,
         ALLOW_THROTTLE_BYPASS: true,
         ALLOW_INSECURE_COOKIE: true,
+        ALLOW_SETUP: true,
+        ALLOW_REGISTER: true,
+        SEED_ADMIN_MUST_CHANGE_PASSWORD: false,
       }),
     ).toEqual([])
+  })
+
+  it('L11：生产开启 ALLOW_SETUP/ALLOW_REGISTER 逃生舱时输出告警', () => {
+    const warnings = collectProductionWarnings({
+      NODE_ENV: 'production',
+      TRUST_PROXY: 1,
+      ALLOW_THROTTLE_BYPASS: false,
+      ALLOW_INSECURE_COOKIE: false,
+      ALLOW_SETUP: true,
+      ALLOW_REGISTER: true,
+      SEED_ADMIN_MUST_CHANGE_PASSWORD: true,
+    })
+    expect(warnings.some((w) => w.includes('[SETUP]'))).toBe(true)
+    expect(warnings.some((w) => w.includes('[REGISTER]'))).toBe(true)
+  })
+
+  it('L11：SEED_ADMIN_MUST_CHANGE_PASSWORD=false 时输出告警（注明仅 seed 生效）', () => {
+    const warnings = collectProductionWarnings({
+      NODE_ENV: 'production',
+      TRUST_PROXY: 1,
+      ALLOW_THROTTLE_BYPASS: false,
+      ALLOW_INSECURE_COOKIE: false,
+      ALLOW_SETUP: false,
+      ALLOW_REGISTER: false,
+      SEED_ADMIN_MUST_CHANGE_PASSWORD: false,
+    })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('SEED_ADMIN_MUST_CHANGE_PASSWORD')
+    expect(warnings[0]).toContain('seed 时点')
   })
 })
