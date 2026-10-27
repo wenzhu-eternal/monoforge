@@ -216,6 +216,8 @@ export class UsersService {
       status?: boolean
       password?: string
       roleId?: number | null
+      // M1：受控强制改密标记（显式 false 供管理端解锁微信死锁；置 true 与重置密码同效）
+      mustChangePassword?: boolean
     },
     caller?: { roleId?: number | null },
   ): Promise<Omit<User, 'password'>> {

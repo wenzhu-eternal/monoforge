@@ -108,6 +108,9 @@ export const UpdateUserSchema = z.object({
   password: PasswordSchema.optional(),
   // J5：roleId 开放置空（解绑角色；service/DB 已支持 null，`if (data.roleId)` 天然跳过校验与吊销链）
   roleId: z.number().int().positive().nullable().optional(),
+  // M1：受控解锁字段——管理员重置密码会把微信账号置 mustChangePassword=true，但其占位密码不可验证、
+  // 用户无法走 /me/password 完成改密即死锁；开放管理端显式清 flag（controller 限 USER_ROLE_MANAGE 可写）
+  mustChangePassword: z.boolean().optional(),
 })
 
 // 修改自己密码：必须验证旧密码，防止 token 泄露后被改密码锁账号

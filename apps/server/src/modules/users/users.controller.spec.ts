@@ -249,6 +249,26 @@ describe('UsersController', () => {
       expect(result).toEqual({ id: 2, status: false })
       expect(service.update).toHaveBeenCalledWith(2, dto, currentUser)
     })
+
+    it('M1：改 mustChangePassword 且有 USER_ROLE_MANAGE → 成功（微信死锁解锁通道）', async () => {
+      const dto = { mustChangePassword: false }
+      vi.mocked(service.hasPermission).mockResolvedValue(true)
+      vi.mocked(service.update).mockResolvedValue({ id: 2, mustChangePassword: false } as never)
+
+      const result = await controller.update(2, dto, currentUser)
+
+      expect(result).toEqual({ id: 2, mustChangePassword: false })
+      expect(service.hasPermission).toHaveBeenCalledWith(1, PermissionCodes.USER_ROLE_MANAGE)
+      expect(service.update).toHaveBeenCalledWith(2, dto, currentUser)
+    })
+
+    it('M1：改 mustChangePassword 但无 USER_ROLE_MANAGE → 抛 ForbiddenException（防篡改封锁态）', async () => {
+      const dto = { mustChangePassword: false }
+      vi.mocked(service.hasPermission).mockResolvedValue(false)
+
+      await expect(controller.update(2, dto, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.update).not.toHaveBeenCalled()
+    })
   })
 
   describe('remove', () => {

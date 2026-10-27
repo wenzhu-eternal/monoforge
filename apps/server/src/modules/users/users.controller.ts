@@ -157,6 +157,17 @@ export class UsersController {
         throw new ForbiddenException('请使用修改密码接口更改自己的密码')
       }
     }
+    // M1：受控解锁通道——管理员重置密码会把微信账号置 mustChangePassword=true 但占位密码不可验证，
+    // 用户被锁死在强制改密环节；开放管理端显式清 flag（仅 USER_ROLE_MANAGE，防低权限篡改封锁态）
+    if (updateUserDto.mustChangePassword !== undefined) {
+      const canManage = await this.usersService.hasPermission(
+        currentUser.sub,
+        PermissionCodes.USER_ROLE_MANAGE,
+      )
+      if (!canManage) {
+        throw new ForbiddenException('修改强制改密标记需要更高权限')
+      }
+    }
     return this.usersService.update(id, updateUserDto, currentUser)
   }
 

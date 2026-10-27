@@ -533,6 +533,30 @@ describe('UsersService', () => {
       expect(result.id).toBe(2)
       expect(mockDb.select).not.toHaveBeenCalled()
     })
+
+    it('M1: 仅清 mustChangePassword（不重置密码）写入 DB，解锁微信死锁', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      const setSpy = vi.fn()
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: setSpy.mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi
+              .fn()
+              .mockResolvedValue([{ id: 2, email: 'b@b.com', mustChangePassword: false }]),
+          }),
+        }),
+      } as never)
+
+      await service.update(2, { mustChangePassword: false }, { roleId: 1 })
+
+      expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ mustChangePassword: false }))
+      // 不触发密码重置的 token 吊销链
+      expect(mockRedisService.deleteByPattern).not.toHaveBeenCalled()
+    })
   })
 
   describe('changePassword', () => {
