@@ -65,7 +65,12 @@ export class WebsocketController {
     // M13：日配额统一走 consumeDailyQuota——键口径 quota:notify:<uid>:<yyyymmdd> 与
     // SECURITY.md 承诺一致，超限抛 409（与 backup/upload 同族）；原手写实现键用连字符
     // 日期且抛 404，运维按文档查不到、配额触顶零观测
-    await consumeDailyQuota(this.redisService, 'notify', user.sub, NOTIFY_DAILY_LIMIT)
+    const quotaConsumed = await consumeDailyQuota(
+      this.redisService,
+      'notify',
+      user.sub,
+      NOTIFY_DAILY_LIMIT,
+    )
     const created = await this.notificationsService
       .create({
         userId: dto.userId,
@@ -74,8 +79,11 @@ export class WebsocketController {
         content: dto.content,
       })
       .catch(async (err: unknown) => {
-        // M13：create 失败退额——DB 抖动期重试否则可烧穿 50/日（对齐 manualBackup rollback）
-        await rollbackDailyQuota(this.redisService, 'notify', user.sub).catch(() => {})
+        // M13：create 失败退额——DB 抖动期重试否则可烧穿 50/日（对齐 manualBackup rollback）；
+        // Q3：据 consume 返回值判定实扣才退（fail-open 未扣额时退额会抹掉并发正常计数）
+        if (quotaConsumed) {
+          await rollbackDailyQuota(this.redisService, 'notify', user.sub).catch(() => {})
+        }
         throw err
       })
     // L6：isUserOnline 抛 Redis 错误不应让已发送的通知变 500 且不退额

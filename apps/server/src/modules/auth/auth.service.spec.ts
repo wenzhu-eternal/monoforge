@@ -132,6 +132,12 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     expect(redisService.deleteByPattern).toHaveBeenCalledWith('refresh:7:*')
   })
 
+  it('L3：Redis 抖动下 logout 降级放行，仍回 200 不抛 500', async () => {
+    redisService.set.mockRejectedValueOnce(new Error('redis down'))
+
+    await expect(service.logout(7)).resolves.toEqual({ message: '退出登录成功' })
+  })
+
   describe('getProfile（L19 /auth/me 配置派生字段）', () => {
     function stubProfileDeps() {
       vi.spyOn(service as never, 'getPermissionsByUserId' as never).mockResolvedValue([

@@ -178,7 +178,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
           this.broadcastPresence('presence:update', { userId, online: false })
         }
       })
-      .catch((err) => this.logger.warn(`清除 Redis 在线状态失败: ${(err as Error).message}`))
+      .catch((err) => {
+        this.logger.warn(`清除 Redis 在线状态失败: ${(err as Error).message}`)
+        // L6：SREM 失败仍广播 offline——离线下线多报无害（60s 重校验+TTL 已防虚假在线），
+        // 若跳过则观察者视角该用户永久在线，直到 TTL 300s 过期才自愈
+        this.broadcastPresence('presence:update', { userId, online: false })
+      })
 
     this.logger.log(`用户 ${userId} 已断开 (socket: ${client.id})`)
   }

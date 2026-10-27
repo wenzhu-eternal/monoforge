@@ -98,8 +98,13 @@ export class FilesService {
       }
       // 全部校验通过后才扣日配额
       if (uploadedBy !== undefined) {
-        await consumeDailyQuota(this.redisService, 'upload', uploadedBy, UPLOAD_DAILY_LIMIT)
-        quotaConsumed = true
+        // Q3：据 consume 返回值判断是否实扣——fail-open（Redis 降级未扣）时回滚不得 DECR
+        quotaConsumed = await consumeDailyQuota(
+          this.redisService,
+          'upload',
+          uploadedBy,
+          UPLOAD_DAILY_LIMIT,
+        )
       }
     } catch (err) {
       // M4：仅已扣额才 rollback（consumeDailyQuota 抛 409 时未扣额，误退即旁路）

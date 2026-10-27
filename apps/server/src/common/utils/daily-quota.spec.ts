@@ -16,7 +16,7 @@ describe('consumeDailyQuota（L6 日配额）', () => {
   it('配额内放行；键含动作/用户/当日日期，Lua 原子 INCR+首置 EXPIRE 到次日零点', async () => {
     const redis = mockRedis(3)
 
-    await expect(consumeDailyQuota(redis as never, 'backup', 7, 5)).resolves.toBeUndefined()
+    await expect(consumeDailyQuota(redis as never, 'backup', 7, 5)).resolves.toBe(true)
 
     const [script, keys, args] = redis.eval.mock.calls[0] as [string, string[], number[]]
     expect(script).toContain('INCR')
@@ -38,7 +38,8 @@ describe('consumeDailyQuota（L6 日配额）', () => {
   it('L4：Redis 故障降级放行（未扣额、不抛错，与全仓 fail-open 口径一致）', async () => {
     const redis = { eval: vi.fn().mockRejectedValue(new Error('redis down')) }
 
-    await expect(consumeDailyQuota(redis as never, 'upload', 7, 3)).resolves.toBeUndefined()
+    // Q3：fail-open 返回 false 标记未实扣
+    await expect(consumeDailyQuota(redis as never, 'upload', 7, 3)).resolves.toBe(false)
     expect(mockAppendErrorLog).toHaveBeenCalledWith(expect.stringContaining('未扣额放行'))
   })
 })

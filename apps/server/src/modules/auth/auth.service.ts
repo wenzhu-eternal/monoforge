@@ -232,14 +232,22 @@ export class AuthService {
     // L7：先落登出失效时间戳——refresh 的 getdel 若先于 deleteByPattern 完成，竞态设备
     // 会在清理之后签发存活 7d 的新令牌；时间戳供 refresh 早退 + 签发后复检判定作废。
     // TTL 盖过 refresh 存续期（7d + 1d 余量）
-    await this.redisService.set(
-      `logout:at:${userId}`,
-      String(Date.now()),
-      REFRESH_TOKEN_TTL + 86400,
-    )
-    await this.redisService.deleteByPattern(`refresh:${userId}:*`)
-    // 批量吊销全部活跃 access token（多设备/refresh 轮换后遗留的旧 token 一并拉黑，TTL=15min 与 token 有效期一致）
-    await this.revokeAllAccessTokens(userId)
+    // L3：Redis 抖动下三段吊销降级放行——客户端已清 cookie，服务端缺口由 logout:at/TTL 兜底，
+    // 不能因 Redis 瞬时故障让"登出"反报 500（口径与 users.service 吊销链降级一致）
+    try {
+      await this.redisService.set(
+        `logout:at:${userId}`,
+        String(Date.now()),
+        REFRESH_TOKEN_TTL + 86400,
+      )
+      await this.redisService.deleteByPattern(`refresh:${userId}:*`)
+      // 批量吊销全部活跃 access token（多设备/refresh 轮换后遗留的旧 token 一并拉黑，TTL=15min 与 token 有效期一致）
+      await this.revokeAllAccessTokens(userId)
+    } catch (err) {
+      this.logger.warn(
+        `退出登录部分吊销失败（已降级放行）: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
 
     return { message: '退出登录成功' }
   }

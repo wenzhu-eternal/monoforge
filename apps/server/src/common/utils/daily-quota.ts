@@ -17,7 +17,7 @@ export async function consumeDailyQuota(
   action: 'backup' | 'upload' | 'notify',
   userId: number,
   limit: number,
-): Promise<void> {
+): Promise<boolean> {
   const now = new Date()
   const midnight = new Date(now)
   midnight.setHours(24, 0, 0, 0)
@@ -43,7 +43,9 @@ export async function consumeDailyQuota(
         `[Quota] Redis 配额存储异常，本次 ${action} 未扣额放行: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
-    return
+    // Q3：返回 false 标记未实扣，调用方据此决定是否回滚——否则降级放行的 A 失败回滚
+    // 会把并发正常 B 的 INCR 一并 DECR 清零
+    return false
   }
   const used = Number(raw)
 
@@ -51,6 +53,7 @@ export async function consumeDailyQuota(
     const label = action === 'backup' ? '备份' : action === 'upload' ? '上传' : '通知'
     throw new ConflictException(`今日${label}次数已达上限（${limit} 次），请明日再试`)
   }
+  return true
 }
 
 /**

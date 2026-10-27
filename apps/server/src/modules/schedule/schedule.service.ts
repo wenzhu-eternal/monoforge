@@ -165,13 +165,20 @@ export class ScheduleService implements OnApplicationBootstrap {
    */
   async manualBackup(userId?: number) {
     // L6：手动备份日配额——防持有者无频控制造整库 dump；未传 userId 的内部调用不受限
+    // Q3：据 consume 返回值判断是否实扣，fail-open 时回滚不得 DECR
+    let quotaConsumed = false
     if (userId !== undefined) {
-      await consumeDailyQuota(this.redisService, 'backup', userId, MANUAL_BACKUP_DAILY_LIMIT)
+      quotaConsumed = await consumeDailyQuota(
+        this.redisService,
+        'backup',
+        userId,
+        MANUAL_BACKUP_DAILY_LIMIT,
+      )
     }
-    const result = await this.doBackup(userId)
+    const result = await this.doBackup()
     if (result.status === 'busy') {
       // L1：锁忙未实际执行 → 退还刚扣的配额，防连点把 3 次额度耗在 409 上、真需备份时被拒
-      if (userId !== undefined) {
+      if (quotaConsumed && userId !== undefined) {
         try {
           await rollbackDailyQuota(this.redisService, 'backup', userId)
         } catch (err) {
@@ -184,6 +191,16 @@ export class ScheduleService implements OnApplicationBootstrap {
     // 避免"手动备份失败仍回成功"的操作者视角静默
     // L5：500 只带通用文案——pg_dump 原始 stderr 常含 DB host/端口/库名，详情已留 error_logs/文件日志
     if (result.status === 'failed') {
+      // 手动触发失败统一退还配额（原 doBackup 内退还，Q3 后移到调用方按实扣判定）
+      if (quotaConsumed && userId !== undefined) {
+        try {
+          await rollbackDailyQuota(this.redisService, 'backup', userId)
+        } catch (rollbackErr) {
+          this.logger.warn(
+            `备份配额退还失败: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+          )
+        }
+      }
       throw new InternalServerErrorException('数据库备份执行失败，详情见 error_logs')
     }
     // L1：手动备份记独立键，与 cron 的 dailyBackup 心跳分账
@@ -349,7 +366,7 @@ export class ScheduleService implements OnApplicationBootstrap {
    * L7：返回细化状态——'busy'（未抢到锁）/ 'failed'（执行失败）/ 'ok'，
    * 让手动触发能把失败暴露为 5xx，而非恒回"已执行"
    */
-  private async doBackup(userId?: number): Promise<BackupResult> {
+  private async doBackup(): Promise<BackupResult> {
     // M13：SETNX 互斥锁——cron 与手动触发（或连发）并发时两个 pg_dump 交叉截断写同一文件，
     // 产物静默损坏且邮件照报成功。Redis 异常时降级无锁执行（备份可用性优先，锁仅为并发防御）
     let locked = true
@@ -451,17 +468,7 @@ export class ScheduleService implements OnApplicationBootstrap {
           `备份失败通知邮件发送失败: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`,
         )
       }
-      // L11/L9：filepath 在一切检查前赋值，走到 catch 即已经扣额（手动触发）且备份未成功，
-      // 统一退还配额；失败原因随返回值上抛，由 manualBackup 转 5xx（邮件/入库已在此完成）
-      if (filepath && userId !== undefined) {
-        try {
-          await rollbackDailyQuota(this.redisService, 'backup', userId)
-        } catch (rollbackErr) {
-          this.logger.warn(
-            `备份配额退还失败: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
-          )
-        }
-      }
+      // Q3：配额退还已上移到 manualBackup（按实扣判定），doBackup 不再据 userId 内退还
       return { status: 'failed', error: errorMsg }
     } finally {
       // 释放失败仅告警：锁有 TTL 兜底，不会永久卡死后续备份
