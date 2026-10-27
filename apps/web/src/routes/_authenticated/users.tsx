@@ -126,7 +126,7 @@ export function UsersContent() {
         const isDeleted = !!record.deletedAt
         return (
           <span className={isDeleted ? 'text-red-500' : 'text-green-500'}>
-            {isDeleted ? '已禁用' : '正常'}
+            {isDeleted ? '已停用' : '正常'}
           </span>
         )
       },

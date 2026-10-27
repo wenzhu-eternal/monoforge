@@ -44,6 +44,12 @@ function DashboardContent() {
           status="403"
           title="无查看统计权限"
           subTitle="当前账号没有仪表盘统计权限，可使用左侧菜单的其他功能"
+        />
+      ) : isError ? (
+        <Result
+          status="error"
+          title="加载失败"
+          subTitle="统计数据加载失败，请稍后重试"
           extra={
             <Button type="primary" onClick={() => refetch()}>
               重试

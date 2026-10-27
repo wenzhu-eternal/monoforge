@@ -59,6 +59,8 @@ const ACTION_COLORS: Record<string, string> = {
   改密: 'orange',
   处理: 'geekblue',
   批量处理: 'geekblue',
+  标记已读: 'geekblue',
+  全部标记已读: 'geekblue',
   恢复: 'cyan',
   触发备份: 'volcano',
   发送通知: 'purple',

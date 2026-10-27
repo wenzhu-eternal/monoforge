@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
     isFetching: true,
     isError: false,
   },
+  allRolePerms: [] as Array<{ roleId: number; permission: string }>,
+  allRolePermsError: false,
   deleteCalls: [] as { id: number; resolve: () => void }[],
 }))
 
@@ -73,6 +75,10 @@ vi.mock('@/hooks/use-permissions', () => ({
     isLoading: false,
   }),
   useRolePermissions: () => state.permsQuery,
+  useAllRolePermissions: () => ({
+    data: state.allRolePerms,
+    isError: state.allRolePermsError,
+  }),
   useUpdateRolePermissions: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
@@ -165,7 +171,8 @@ describe('L6：角色行级并发', () => {
 
 describe('L19：权限标签失败态可辨', () => {
   it('请求失败显示「加载失败」，不再与"确无权限"的 - 混淆', async () => {
-    state.permsQuery = { data: undefined, isFetching: false, isError: true }
+    state.allRolePermsError = true
+    state.allRolePerms = []
 
     render(
       <ConfigProvider locale={zhCN}>

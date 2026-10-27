@@ -3,6 +3,7 @@ import type {
   CreatePermission,
   PaginatedResponse,
   Permission,
+  RolePermission,
   RouteMeta,
   UpdatePermission,
 } from '@shared'
@@ -117,6 +118,19 @@ export function useRolePermissions(roleId: number) {
       return res.data.data
     },
     enabled: roleId > 0 && can(PermissionCodes.PERMISSION_VIEW),
+  })
+}
+
+// L21：一次性拉取全量角色权限关联，供 roles 列表行内聚合——避免每行一个 GET 的 N+1
+export function useAllRolePermissions() {
+  const can = useCan()
+  return useQuery({
+    queryKey: ['role-permissions', 'all'],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<RolePermission[]>>('/api/v1/role-permissions')
+      return res.data.data
+    },
+    enabled: can(PermissionCodes.PERMISSION_VIEW),
   })
 }
 

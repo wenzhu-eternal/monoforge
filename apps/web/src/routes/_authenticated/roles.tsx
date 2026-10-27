@@ -24,6 +24,7 @@ import { useCan } from '@/hooks/use-auth'
 import { usePagedFallback } from '@/hooks/use-paged-fallback'
 import {
   useAllPermissions,
+  useAllRolePermissions,
   useRolePermissions,
   useUpdateRolePermissions,
 } from '@/hooks/use-permissions'
@@ -46,7 +47,8 @@ export const Route = createFileRoute('/_authenticated/roles')({
 
 function RolePermissionCodes({ roleId }: { roleId: number }) {
   const can = useCan()
-  const { data: permissions, isError } = useRolePermissions(roleId)
+  // L21：一次性拉全量角色权限关联做行内聚合，避免每行一个 useRolePermissions 的 N+1
+  const { data: allRolePermissions, isError } = useAllRolePermissions()
   const { data: allPermissions } = useAllPermissions()
 
   // M5：查询按 permission:view 门控，无权限时显式占位区分"没权限"与"没有权限项"
@@ -58,6 +60,10 @@ function RolePermissionCodes({ roleId }: { roleId: number }) {
   if (isError) {
     return <span className="text-gray-400">加载失败</span>
   }
+
+  const permissions = allRolePermissions
+    ?.filter((rp) => rp.roleId === roleId)
+    .map((rp) => rp.permission)
 
   if (!permissions || permissions.length === 0) {
     return <span className="text-gray-400">-</span>

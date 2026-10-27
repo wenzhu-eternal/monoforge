@@ -261,7 +261,9 @@ export function PermissionCodesContent() {
   const handleSubmit = async (values: { code: string; name: string; description?: string }) => {
     try {
       if (editingPermission) {
-        await updatePermission.mutateAsync({ id: editingPermission.id, data: values })
+        // L22：编辑时 code 不可改（后端一旦收紧即 400），仅提交允许字段（对齐 users 编辑仅提交 schema 字段）
+        const { code: _code, ...rest } = values
+        await updatePermission.mutateAsync({ id: editingPermission.id, data: rest })
         messageApi.success('更新成功')
       } else {
         await createPermission.mutateAsync(values)
