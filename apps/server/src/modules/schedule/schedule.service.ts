@@ -54,6 +54,8 @@ type ScheduleTask =
   | 'dailyTrashCleanup'
   | 'dailyNotificationCleanup'
   | 'dailyErrorLogsCleanup'
+  // L1：手动备份独立键——与 cron 的 dailyBackup 分账，仅有 cron 键参与新鲜度校验
+  | 'manualBackup'
 
 type BackupResult = { status: 'ok' } | { status: 'busy' } | { status: 'failed'; error: string }
 
@@ -91,6 +93,19 @@ export class ScheduleService implements OnApplicationBootstrap {
     }
   }
 
+  /** L4：清理任务失败需入库留痕——Nest logger 容器重建即失；自身失败兜底降级不反抛 */
+  private async recordCleanupFailure(label: string, err: unknown): Promise<void> {
+    const message = `${label}: ${err instanceof Error ? err.message : String(err)}`
+    this.logger.error(message)
+    try {
+      await this.errorLogsService.record({ message, internal: true })
+    } catch (recordErr) {
+      this.logger.warn(
+        `${label} 留痕写入失败: ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`,
+      )
+    }
+  }
+
   /**
    * M1：备份新鲜度校验——最后成功备份超过 25h（日备份 + 1h 余量）即入库告警。
    * 备份"跑失败"已有邮件 + error_logs 双留痕，但"根本没跑"原先零痕迹，最长 30 天无人发现。
@@ -110,8 +125,9 @@ export class ScheduleService implements OnApplicationBootstrap {
       const now = new Date()
       const pad = (n: number) => String(n).padStart(2, '0')
       const alertKey = `${BACKUP_MISSING_ALERT_KEY_PREFIX}${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
-      if (await this.redisService.exists(alertKey)) return
-      await this.redisService.set(alertKey, '1', 24 * 60 * 60)
+      // L2：exists→set 两步 check-then-act 非原子，多实例并发可重复入库；改用 SETNX，抢到才告警
+      const didClaim = await this.redisService.setNx(alertKey, '1', 24 * 60 * 60)
+      if (!didClaim) return
 
       this.logger.error(
         `定时备份已 ${hours.toFixed(1)} 小时未成功执行（最后成功: ${raw}），请检查进程是否在备份窗口内重启`,
@@ -137,7 +153,11 @@ export class ScheduleService implements OnApplicationBootstrap {
       this.logger.log('数据库备份未启用（ENABLE_BACKUP != true），跳过定时备份')
       return
     }
-    await this.doBackup()
+    const result = await this.doBackup()
+    // L1：仅 cron 路径写 dailyBackup 心跳——手动备份成功不得计入，否则掩盖"定时备份停摆"
+    if (result.status === 'ok') {
+      await this.recordLastRun('dailyBackup')
+    }
   }
 
   /**
@@ -162,9 +182,12 @@ export class ScheduleService implements OnApplicationBootstrap {
     }
     // L7：失败已在 doBackup 内入库 + 发失败邮件；此处让调用者看到非 200，
     // 避免"手动备份失败仍回成功"的操作者视角静默
+    // L5：500 只带通用文案——pg_dump 原始 stderr 常含 DB host/端口/库名，详情已留 error_logs/文件日志
     if (result.status === 'failed') {
-      throw new InternalServerErrorException(`数据库备份执行失败: ${result.error}`)
+      throw new InternalServerErrorException('数据库备份执行失败，详情见 error_logs')
     }
+    // L1：手动备份记独立键，与 cron 的 dailyBackup 心跳分账
+    await this.recordLastRun('manualBackup')
   }
 
   /**
@@ -248,7 +271,7 @@ export class ScheduleService implements OnApplicationBootstrap {
       }
       await this.recordLastRun('dailyTrashCleanup')
     } catch (err) {
-      this.logger.error(`回收站清理失败: ${err instanceof Error ? err.message : String(err)}`)
+      await this.recordCleanupFailure('回收站清理失败', err)
     }
   }
 
@@ -291,7 +314,7 @@ export class ScheduleService implements OnApplicationBootstrap {
       )
       await this.recordLastRun('dailyNotificationCleanup')
     } catch (err) {
-      this.logger.error(`通知清理失败: ${err instanceof Error ? err.message : String(err)}`)
+      await this.recordCleanupFailure('通知清理失败', err)
     }
   }
 
@@ -317,7 +340,7 @@ export class ScheduleService implements OnApplicationBootstrap {
       )
       await this.recordLastRun('dailyErrorLogsCleanup')
     } catch (err) {
-      this.logger.error(`error_logs 清理失败: ${err instanceof Error ? err.message : String(err)}`)
+      await this.recordCleanupFailure('error_logs 清理失败', err)
     }
   }
 
@@ -400,8 +423,7 @@ export class ScheduleService implements OnApplicationBootstrap {
           `备份成功但通知邮件发送失败: ${mailErr instanceof Error ? mailErr.message : String(mailErr)}`,
         )
       }
-      // M1：备份产物已落盘即记为成功——邮件失败不影响"备份可用"这一事实
-      await this.recordLastRun('dailyBackup')
+      // M1：备份产物已落盘即成功；心跳由调用方（cron/manual）各自记账，避免手动成功掩盖 cron 停摆
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       this.logger.error(`数据库备份失败: ${errorMsg}`)
