@@ -71,7 +71,15 @@ describe('ErrorLogsController', () => {
       const result = await controller.findAll('1', '10', 'keyword', 'backend', 'false', adminUser)
 
       expect(result).toEqual(mockResult)
-      expect(service.findAll).toHaveBeenCalledWith(1, 10, 'keyword', 'backend', 'false')
+      // L8：isResolved 经 parseBoolQuery 转 boolean（'false' → false）
+      expect(service.findAll).toHaveBeenCalledWith(1, 10, 'keyword', 'backend', false)
+    })
+
+    it('L8：isResolved 非法值（如 1）→ 抛 BadRequestException 指路', async () => {
+      await expect(
+        controller.findAll('1', '10', undefined, undefined, '1', adminUser),
+      ).rejects.toThrow(BadRequestException)
+      expect(service.findAll).not.toHaveBeenCalled()
     })
 
     it('未传参时使用默认值', async () => {
