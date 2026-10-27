@@ -81,6 +81,7 @@ services:
       - '9000:9000'
     environment:
       - NODE_ENV=production
+      - TZ=${TZ:-Asia/Shanghai}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-monoforge_user}:${POSTGRES_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-monoforge_database}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?required}@redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:?required}

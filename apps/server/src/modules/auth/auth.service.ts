@@ -398,6 +398,8 @@ export class AuthService {
     email: string,
     password: string,
     code: string,
+    // Q9：透传注册来源 IP 给内部 login，失败计数键按 ip+username 收敛（不退回全局 username 键）
+    ip?: string,
   ): Promise<TokenPair & { user: Omit<User, 'password'> }> {
     const storedCode = await this.redisService.get(`register:code:${email}`)
     if (!storedCode || storedCode !== code) {
@@ -434,7 +436,7 @@ export class AuthService {
       throw err
     }
 
-    return this.login(username, password)
+    return this.login(username, password, ip)
   }
 
   /**

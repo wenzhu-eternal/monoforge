@@ -94,7 +94,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户注册' })
   @ZodSerializerDto(AuthResponseSchema)
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) response: Response) {
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) response: Response,
+    @Ip() ip?: string,
+  ) {
     if (!getEnv().ALLOW_REGISTER) {
       throw new NotFoundException()
     }
@@ -103,6 +107,7 @@ export class AuthController {
       dto.email,
       dto.password,
       dto.code,
+      ip,
     )
 
     response.cookie(

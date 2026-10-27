@@ -1,6 +1,6 @@
 import { exec, spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { mkdir, readdir, stat, unlink } from 'node:fs/promises'
+import { mkdir, readdir, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
@@ -386,11 +386,10 @@ export class ScheduleService implements OnApplicationBootstrap {
       return { status: 'busy' }
     }
 
-    // M5：失败时清理半截产物——pg_dump 中途失败/超时会留下截断的 .sql，
-    // 后续恢复误用即数据缺失；cleanOldBackups 也会把它当合法备份计数。
-    // dump 已完成（如后续 stat/邮件环节）则不删——那是完好产物
+    // Q1：pg_dump 先写 .sql.tmp、成功后 rename 定稿——SIGKILL/OOM 硬杀只会留 .tmp，
+    // 不会再有"半截 .sql"被 cleanOldBackups 当合法备份、恢复误用即数据缺失
     let filepath: string | undefined
-    let dumpCompleted = false
+    let tmpFilepath: string | undefined
     try {
       this.logger.log('开始执行数据库备份...')
       // M13：本地时间到秒（同日多次备份各写独立文件，原按日命名 + 截断写必然互相覆盖）
@@ -399,6 +398,7 @@ export class ScheduleService implements OnApplicationBootstrap {
       const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
       const filename = `backup-${timestamp}.sql`
       filepath = join(BACKUP_DIR, filename)
+      tmpFilepath = `${filepath}.tmp`
 
       await mkdir(BACKUP_DIR, { recursive: true })
 
@@ -408,8 +408,8 @@ export class ScheduleService implements OnApplicationBootstrap {
         // 自定义命令保留 exec（可能含重定向如 docker exec … > {filepath}）；已在 env 层做白名单校验，
         // 此处再加超时防 cron 挂死，并告警提示审计
         this.logger.warn('使用自定义 BACKUP_CMD 执行备份，请确保该命令来源可信')
-        const safeFilepath = `'${filepath.replace(/'/g, "'\\''")}'`
-        await execAsync(env.BACKUP_CMD.replaceAll('{filepath}', safeFilepath), {
+        const safeTmpFilepath = `'${tmpFilepath.replace(/'/g, "'\\''")}'`
+        await execAsync(env.BACKUP_CMD.replaceAll('{filepath}', safeTmpFilepath), {
           timeout: 300_000,
           // L2：exec 子进程同样只给最小 env（PATH/LANG），不继承全量 process.env（含 JWT/MAIL 密钥）
           env: { PATH: process.env.PATH, LANG: process.env.LANG },
@@ -419,9 +419,10 @@ export class ScheduleService implements OnApplicationBootstrap {
           throw new Error('DATABASE_URL 未配置')
         }
         // pg_dump 用 spawn 参数数组，避免 shell 注入
-        await this.spawnPgDump(env.DATABASE_URL, filepath)
+        await this.spawnPgDump(env.DATABASE_URL, tmpFilepath)
       }
-      dumpCompleted = true
+      // Q1：写流完整落盘后才 rename 定稿（.tmp → .sql）
+      await rename(tmpFilepath, filepath)
 
       const stats = await stat(filepath)
       this.logger.log(`数据库备份成功: ${filename} (${(stats.size / 1024).toFixed(2)} KB)`)
@@ -444,9 +445,10 @@ export class ScheduleService implements OnApplicationBootstrap {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       this.logger.error(`数据库备份失败: ${errorMsg}`)
-      // M5：清理失败残留的半截备份文件（文件不存在/删失败均忽略，不影响错误上报链路）
-      if (filepath && !dumpCompleted) {
-        await unlink(filepath).catch(() => null)
+      // Q1：失败路径只清 .tmp（半截或 rename 失败遗留的完整 tmp）；.sql 仅在 rename 成功后才存在，
+      // 不会再出现"半截 .sql"（文件不存在/删失败均忽略，不影响错误上报链路）
+      if (tmpFilepath) {
+        await unlink(tmpFilepath).catch(() => null)
       }
       // 入库记录异常（兜底 try-catch，避免异常记录本身失败时变成未处理 rejection）
       try {

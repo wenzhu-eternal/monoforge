@@ -6,11 +6,13 @@ const mockMkdir = vi.fn()
 const mockStat = vi.fn()
 const mockReaddir = vi.fn()
 const mockUnlink = vi.fn()
+const mockRename = vi.fn()
 vi.mock('node:fs/promises', () => ({
   mkdir: (...args: unknown[]) => mockMkdir(...(args as Parameters<typeof mockMkdir>)),
   stat: (...args: unknown[]) => mockStat(...(args as Parameters<typeof mockStat>)),
   readdir: (...args: unknown[]) => mockReaddir(...(args as Parameters<typeof mockReaddir>)),
   unlink: (...args: unknown[]) => mockUnlink(...(args as Parameters<typeof mockUnlink>)),
+  rename: (...args: unknown[]) => mockRename(...(args as Parameters<typeof mockRename>)),
 }))
 
 // createWriteStream mock（避免真实写文件）
@@ -58,6 +60,7 @@ describe('ScheduleService', () => {
     mockStat.mockClear().mockResolvedValue({ size: 1024 })
     mockReaddir.mockClear().mockResolvedValue([])
     mockUnlink.mockClear().mockResolvedValue(undefined)
+    mockRename.mockClear().mockResolvedValue(undefined)
     mockGetEnv.mockReset()
 
     mailService = { sendBackupNotification: vi.fn().mockResolvedValue(undefined) }

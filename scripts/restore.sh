@@ -22,6 +22,13 @@ DB_NAME="${POSTGRES_DB:-$(env_value POSTGRES_DB)}"
 : "${CONTAINER:=mf-postgres}"
 : "${DB_USER:=monoforge_user}"
 : "${DB_NAME:=monoforge_database}"
+
+# Q10：库名只允许字母/数字/下划线——下方原样内插 psql 命令行，非法字符会破坏/注入 SQL
+if [[ ! "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "❌ 非法数据库名: $DB_NAME（仅允许字母/数字/下划线）"
+  exit 1
+fi
+
 echo "目标: 容器=$CONTAINER 用户=$DB_USER 数据库=$DB_NAME"
 
 BACKUP_DIR="$(resolve_backup_dir)"
