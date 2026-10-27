@@ -78,6 +78,11 @@ export default defineConfig({
         THROTTLE_LOGIN_LIMIT: '1000',
         // M7：webServer 内会重跑 db:seed，默认密码强制首登改密会踢飞 e2e 会话——显式豁免
         SEED_ADMIN_MUST_CHANGE_PASSWORD: 'false',
+        // L23：显式置空 MAIL_HOST 固定"邮件未配置"确定态——避免灰环境兜底读到 dev .env 的
+        // SMTP 配置，导致 mail 用例对 example.com 拒信/超时 flaky
+        MAIL_HOST: '',
+        // L25：显式关闭公开注册（dev .env 可能残留 ALLOW_REGISTER=true），固定 404 负路径确定态
+        ALLOW_REGISTER: 'false',
       },
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,

@@ -102,6 +102,8 @@ test.describe('错误日志（admin 视角）', () => {
     // 点"标记已处理"
     await row.getByRole('button', { name: '标记已处理' }).click()
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
+    // L24：锁定行内 Tag 实际从"未处理"翻转为"已处理"（仅断言 toast 时行渲染坏仍会绿）
+    await expect(row.getByText('已处理', { exact: true })).toBeVisible({ timeout: 5000 })
   })
 
   test('白名单 Tab - 新增 + 禁用白名单规则', async ({ page }) => {
