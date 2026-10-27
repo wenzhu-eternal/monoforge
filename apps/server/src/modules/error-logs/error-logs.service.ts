@@ -193,7 +193,7 @@ export class ErrorLogsService {
     pageSize = 10,
     keyword?: string,
     source?: string,
-    isResolved?: string,
+    isResolved?: boolean,
     includeDeleted = false,
   ): Promise<PaginatedResponse<ErrorLog>> {
     const safePage = Math.max(1, page)
@@ -211,7 +211,7 @@ export class ErrorLogsService {
       conditions.push(eq(errorLogs.source, source))
     }
     if (isResolved !== undefined) {
-      conditions.push(eq(errorLogs.isResolved, isResolved === 'true'))
+      conditions.push(eq(errorLogs.isResolved, isResolved))
     }
     const where = and(...conditions)
 

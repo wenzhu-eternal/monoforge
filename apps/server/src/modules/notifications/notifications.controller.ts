@@ -16,6 +16,7 @@ import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { parseBoolQuery } from '@/common/utils/parse-bool-query'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { NotificationsService } from './notifications.service'
 
@@ -48,7 +49,13 @@ export class NotificationsController {
     }
     // L14：个人通知资源不套"管理员全局视图"——隐式 includeDeleted 会让管理员
     // 删除自己的通知后 refetch 仍看到该条；固定 false，无全局视图语义
-    return this.notificationsService.list(user.sub, pageNum, size, unreadOnly === 'true', false)
+    return this.notificationsService.list(
+      user.sub,
+      pageNum,
+      size,
+      parseBoolQuery(unreadOnly, false),
+      false,
+    )
   }
 
   @Get('unread-count')

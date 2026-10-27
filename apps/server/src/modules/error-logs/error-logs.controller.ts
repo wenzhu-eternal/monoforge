@@ -32,6 +32,7 @@ import { Permissions } from '@/common/decorators/permissions.decorator'
 import { Public } from '@/common/decorators/public.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { parseBoolQuery } from '@/common/utils/parse-bool-query'
 import { BatchResolveDto } from './dto/batch-resolve.dto'
 import { CreateWhitelistDto } from './dto/create-whitelist.dto'
 import { ReportErrorDto } from './dto/report-error.dto'
@@ -84,7 +85,9 @@ export class ErrorLogsController {
     if (Number.isNaN(size) || size < 1) {
       throw new BadRequestException('pageSize 必须为正整数')
     }
-    return this.errorLogsService.findAll(pageNum, size, keyword, source, isResolved)
+    // L8：isResolved 非法值（1/True/yes 等）显式 400，不静默折叠为 false
+    const isResolvedParsed = isResolved === undefined ? undefined : parseBoolQuery(isResolved)
+    return this.errorLogsService.findAll(pageNum, size, keyword, source, isResolvedParsed)
   }
 
   @Get('stats')

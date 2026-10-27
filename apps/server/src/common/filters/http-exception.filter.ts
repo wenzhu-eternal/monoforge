@@ -30,8 +30,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // M3：MulterError extends Error 而非 HttpException（实读 multer 源码），判定必须在
     // HttpException 分支之外——原嵌套在其内为永不可达死代码，超限上传仍 500 入库
     if (exception instanceof multer.MulterError) {
-      status = HttpStatus.PAYLOAD_TOO_LARGE // 413
-      message = '文件过大，请上传 10MB 以内的文件'
+      if (exception.code === 'LIMIT_FILE_SIZE') {
+        status = HttpStatus.PAYLOAD_TOO_LARGE // 413
+        message = '文件过大，请上传 10MB 以内的文件'
+      } else {
+        // L14：字段名错（LIMIT_UNEXPECTED_FILE）/文件数超限等与真超限同文案同码 413 会误导；
+        // 其余 Multer 错误回 400 + 原始 code，不复用"文件过大"语义
+        status = HttpStatus.BAD_REQUEST
+        message = `文件上传参数错误: ${exception.code}`
+      }
       shouldRecordToDb = false
     } else if (exception instanceof HttpException) {
       status = exception.getStatus()

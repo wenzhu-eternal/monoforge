@@ -162,8 +162,8 @@ export class FilesController {
         stream.pipe(response)
         return
       }
-      // M3：多区间请求本服务不支持，按 RFC 9110 忽略 Range 走下方 200 全量；
-      // 仅单区间越界（start >= size）返回 416
+      // M3/L15：多区间与语法非法 Range 均返回 'ignore' 走下方 200 全量；
+      // 仅单区间语义越界（start >= size）返回 null 触发 416
       if (parsed !== 'ignore') {
         response.status(416).setHeader('Content-Range', `bytes */${statResult.size}`).end()
         return
@@ -255,35 +255,43 @@ export class FilesController {
 }
 
 /**
- * M3：RFC 9110 语义——end 越界截断为 size-1（206）；start 越界才 416；
- * 多区间（本服务不支持）返回 'ignore' 由调用方忽略 Range 返回 200 全量。
+ * M3/RFC 9110 语义——end 越界截断为 size-1（206）；start 越界才 416；
+ * 多区间（本服务不支持）与语法非法 Range 头（如 bytes=abc/bytes=-0/bytes=5-3）返回 'ignore'
+ * 由调用方忽略 Range 回 200 全量，仅"语义越界（start >= size）"返回 null 触发 416。
  */
 function parseRange(range: string, size: number): { start: number; end: number } | 'ignore' | null {
   // 多区间直接忽略（不支持 multipart/byteranges）
   if (range.includes(',')) return 'ignore'
   const match = range.trim().match(/^bytes=(\d*)-(\d*)$/)
-  if (!match) return null
+  // 语法非法：整段不匹配（bytes=abc / bytes= / bytes=1-2-3）→ 忽略
+  if (!match) return 'ignore'
   const startStr = match[1] ?? ''
   const endStr = match[2] ?? ''
-  if (startStr === '' && endStr === '') return null
+  // 语法非法：两端皆空（bytes=-）→ 忽略
+  if (startStr === '' && endStr === '') return 'ignore'
   if (startStr === '') {
     const suffix = Number(endStr)
-    if (!Number.isFinite(suffix) || suffix <= 0) return null
+    // 语法非法：后缀长度非正数/非数字（bytes=-0 / bytes=-abc）→ 忽略
+    if (!Number.isFinite(suffix) || suffix <= 0) return 'ignore'
     const start = Math.max(0, size - suffix)
     const end = size - 1
+    // 语义越界：空文件任何 Range 都无区间 → 416
     if (start >= size) return null
     return { start, end }
   }
   const start = Number.parseInt(startStr, 10)
-  if (!Number.isFinite(start) || start < 0) return null
+  // 语法非法：start 非数字/负数（bytes=abc-）→ 忽略
+  if (!Number.isFinite(start) || start < 0) return 'ignore'
   if (endStr === '') {
     const end = size - 1
+    // 语义越界：start >= size → 416
     if (start >= size) return null
     return { start, end }
   }
   const endRaw = Number.parseInt(endStr, 10)
-  if (!Number.isFinite(endRaw) || endRaw < start) return null
-  // end 越界截断（播放器常发 bytes=0-999999），start 越界才 416
+  // 语法非法：end 非数字或 end < start（bytes=0-abc / bytes=5-3）→ 忽略
+  if (!Number.isFinite(endRaw) || endRaw < start) return 'ignore'
+  // end 越界截断（播放器常发 bytes=0-999999）；start 越界才 416
   if (start >= size) return null
   return { start, end: Math.min(endRaw, size - 1) }
 }

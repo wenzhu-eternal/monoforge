@@ -55,6 +55,21 @@ describe('HttpExceptionFilter', () => {
     expect(appendErrorLog).not.toHaveBeenCalled()
   })
 
+  it('L14：非 LIMIT_FILE_SIZE 的 MulterError（字段名错等）→ 400 + 原始 code，不复用 413', () => {
+    const err = new multer.MulterError('LIMIT_UNEXPECTED_FILE')
+    const { host, res } = createHost({ ...baseRequest, body: {} })
+
+    filter.catch(err, host)
+
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.json).toHaveBeenCalledWith({
+      code: 400,
+      message: '文件上传参数错误: LIMIT_UNEXPECTED_FILE',
+      data: null,
+    })
+    expect(errorLogsService.record).not.toHaveBeenCalled()
+  })
+
   it('HttpException 400 → 透传状态与消息，不入库（其余 4xx 不记）', () => {
     const { host, res } = createHost({ ...baseRequest, body: {} })
 
