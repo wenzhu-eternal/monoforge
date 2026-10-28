@@ -25,7 +25,7 @@ import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
-import { consumeDailyQuota } from '@/common/utils/daily-quota'
+import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -97,24 +97,34 @@ export class UsersController {
   @ZodSerializerDto(UserSchema)
   async create(@Body() createUserDto: CreateUserDto, @CurrentUser() currentUser: TokenPayload) {
     // L9：建号日配额——防持 user:create 的委托管理员受控灌满 users 表（对照 upload/backup/notify 同族日配额）
-    await consumeDailyQuota(
+    // L2：日键随扣额返回，失败退额不会跨零点落到新日键
+    const quota = await consumeDailyQuota(
       this.redisService,
       'userCreate',
       currentUser.sub,
       USER_CREATE_DAILY_LIMIT,
     )
-    // 指定角色属于敏感操作（防提权）: 仅 USER_ROLE_MANAGE 权限可指定 roleId，
-    // 未指定时由 service 默认分配普通角色
-    if (createUserDto.roleId !== undefined) {
-      const canManage = await this.usersService.hasPermission(
-        currentUser.sub,
-        PermissionCodes.USER_ROLE_MANAGE,
-      )
-      if (!canManage) {
-        throw new ForbiddenException('指定角色需要更高权限')
+    try {
+      // 指定角色属于敏感操作（防提权）: 仅 USER_ROLE_MANAGE 权限可指定 roleId，
+      // 未指定时由 service 默认分配普通角色
+      if (createUserDto.roleId !== undefined) {
+        const canManage = await this.usersService.hasPermission(
+          currentUser.sub,
+          PermissionCodes.USER_ROLE_MANAGE,
+        )
+        if (!canManage) {
+          throw new ForbiddenException('指定角色需要更高权限')
+        }
       }
+      return await this.usersService.create(createUserDto, currentUser)
+    } catch (err) {
+      // L1：建号失败（403 越权/409 重复等）退还配额——原实现只扣不退，
+      // 连续失败即静默耗干当日 100 额度且审计不可辨（对齐 upload/backup 失败即退口径）
+      if (quota.consumed) {
+        await rollbackDailyQuota(this.redisService, quota.key).catch(() => {})
+      }
+      throw err
     }
-    return this.usersService.create(createUserDto, currentUser)
   }
 
   @Patch(':id')

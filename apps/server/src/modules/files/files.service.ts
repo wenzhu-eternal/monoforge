@@ -24,7 +24,11 @@ import {
   validateMimeType,
 } from '@/common/file-validator'
 import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-batch'
-import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
+import {
+  consumeDailyQuota,
+  type DailyQuotaConsume,
+  rollbackDailyQuota,
+} from '@/common/utils/daily-quota'
 import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
@@ -76,7 +80,8 @@ export class FilesService {
     // M4：quotaConsumed 标志——仅在扣额成功后置 true，catch 只对真正扣过额的请求
     // rollback。原无条件 rollback 使"校验注定失败"的请求也退一次额，与成功上传交替
     // 即可无限刷配额（100/日等效无上限）
-    let quotaConsumed = false
+    // L2：连扣额日键一起持有，跨零点回滚才退到正确的那一天
+    let quota: DailyQuotaConsume | null = null
     try {
       validateFilename(file.originalname)
       validateFileSize(file.size)
@@ -99,17 +104,12 @@ export class FilesService {
       // 全部校验通过后才扣日配额
       if (uploadedBy !== undefined) {
         // Q3：据 consume 返回值判断是否实扣——fail-open（Redis 降级未扣）时回滚不得 DECR
-        quotaConsumed = await consumeDailyQuota(
-          this.redisService,
-          'upload',
-          uploadedBy,
-          UPLOAD_DAILY_LIMIT,
-        )
+        quota = await consumeDailyQuota(this.redisService, 'upload', uploadedBy, UPLOAD_DAILY_LIMIT)
       }
     } catch (err) {
       // M4：仅已扣额才 rollback（consumeDailyQuota 抛 409 时未扣额，误退即旁路）
-      if (uploadedBy !== undefined && quotaConsumed) {
-        await rollbackDailyQuota(this.redisService, 'upload', uploadedBy)
+      if (quota?.consumed) {
+        await rollbackDailyQuota(this.redisService, quota.key)
       }
       await unlink(file.path).catch(() => {})
       throw err
@@ -135,8 +135,8 @@ export class FilesService {
     } catch (e) {
       await unlink(file.path).catch(() => {})
       // L6：DB insert 失败后退额（quotaConsumed 已在 consume 前置 true）
-      if (quotaConsumed && uploadedBy !== undefined) {
-        await rollbackDailyQuota(this.redisService, 'upload', uploadedBy)
+      if (quota?.consumed) {
+        await rollbackDailyQuota(this.redisService, quota.key)
       }
       throw e
     }

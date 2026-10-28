@@ -184,6 +184,42 @@ describe('UsersController', () => {
       await expect(controller.create(dto, currentUser)).rejects.toThrow(ConflictException)
       expect(service.create).not.toHaveBeenCalled()
     })
+
+    it('L1：403（越权指定角色）失败退额——否则连续失败静默耗干当日额度', async () => {
+      const dto = { username: 'newuser', email: 'new@test.com', password: 'Pass1234', roleId: 1 }
+      vi.mocked(service.hasPermission).mockResolvedValue(false)
+
+      await expect(controller.create(dto, currentUser)).rejects.toThrow(ForbiddenException)
+
+      // call[0]=INCR 扣额，call[1]=DECR 退额，且两处日键一致
+      expect(redisService.eval).toHaveBeenCalledTimes(2)
+      const [, incrKeys] = redisService.eval.mock.calls[0] as [string, string[], number[]]
+      const [decrScript, decrKeys] = redisService.eval.mock.calls[1] as [
+        string,
+        string[],
+        unknown[],
+      ]
+      expect(decrScript).toContain('DECR')
+      expect(incrKeys[0]).toMatch(/^quota:userCreate:1:\d{8}$/)
+      expect(decrKeys[0]).toBe(incrKeys[0])
+    })
+
+    it('L1：409（用户名/邮箱重复）失败同样退额', async () => {
+      const dto = { username: 'dup', email: 'dup@test.com', password: 'Pass1234' }
+      vi.mocked(service.create).mockRejectedValue(new ConflictException('用户名或邮箱已存在'))
+
+      await expect(controller.create(dto, currentUser)).rejects.toThrow(ConflictException)
+      expect(redisService.eval).toHaveBeenCalledTimes(2)
+    })
+
+    it('L1：成功建号不退额（INCR 之后不再 DECR）', async () => {
+      const dto = { username: 'ok', email: 'ok@test.com', password: 'Pass1234' }
+      vi.mocked(service.create).mockResolvedValue({ id: 9 } as never)
+
+      await controller.create(dto, currentUser)
+
+      expect(redisService.eval).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('update', () => {

@@ -13,7 +13,11 @@ import {
 import { Cron } from '@nestjs/schedule'
 import { isNotNull, lt, sql } from 'drizzle-orm'
 import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-batch'
-import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
+import {
+  consumeDailyQuota,
+  type DailyQuotaConsume,
+  rollbackDailyQuota,
+} from '@/common/utils/daily-quota'
 import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
@@ -166,9 +170,10 @@ export class ScheduleService implements OnApplicationBootstrap {
   async manualBackup(userId?: number) {
     // L6：手动备份日配额——防持有者无频控制造整库 dump；未传 userId 的内部调用不受限
     // Q3：据 consume 返回值判断是否实扣，fail-open 时回滚不得 DECR
-    let quotaConsumed = false
+    // L2：日键随扣额返回，跨零点回滚不会退到新日键
+    let quota: DailyQuotaConsume | null = null
     if (userId !== undefined) {
-      quotaConsumed = await consumeDailyQuota(
+      quota = await consumeDailyQuota(
         this.redisService,
         'backup',
         userId,
@@ -178,9 +183,9 @@ export class ScheduleService implements OnApplicationBootstrap {
     const result = await this.doBackup()
     if (result.status === 'busy') {
       // L1：锁忙未实际执行 → 退还刚扣的配额，防连点把 3 次额度耗在 409 上、真需备份时被拒
-      if (quotaConsumed && userId !== undefined) {
+      if (quota?.consumed) {
         try {
-          await rollbackDailyQuota(this.redisService, 'backup', userId)
+          await rollbackDailyQuota(this.redisService, quota.key)
         } catch (err) {
           this.logger.warn(`备份配额回滚失败: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -192,9 +197,9 @@ export class ScheduleService implements OnApplicationBootstrap {
     // L5：500 只带通用文案——pg_dump 原始 stderr 常含 DB host/端口/库名，详情已留 error_logs/文件日志
     if (result.status === 'failed') {
       // 手动触发失败统一退还配额（原 doBackup 内退还，Q3 后移到调用方按实扣判定）
-      if (quotaConsumed && userId !== undefined) {
+      if (quota?.consumed) {
         try {
-          await rollbackDailyQuota(this.redisService, 'backup', userId)
+          await rollbackDailyQuota(this.redisService, quota.key)
         } catch (rollbackErr) {
           this.logger.warn(
             `备份配额退还失败: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
