@@ -11,7 +11,7 @@ import {
   type OnApplicationBootstrap,
 } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
-import { isNotNull, lt, sql } from 'drizzle-orm'
+import { inArray, isNotNull, lt, sql } from 'drizzle-orm'
 import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-batch'
 import {
   consumeDailyQuota,
@@ -51,6 +51,11 @@ const LAST_RUN_KEY_PREFIX = 'schedule:last-run:'
 const LAST_RUN_TTL = 40 * 24 * 60 * 60
 const BACKUP_FRESHNESS_MAX_HOURS = 25
 const BACKUP_MISSING_ALERT_KEY_PREFIX = 'schedule:backup:missing-alert:'
+// L3：SIGKILL/OOM 硬杀残留的 backup-*.sql.tmp 兜底清理阈值——正常备份 5min 内即定稿，
+// 超 24h 仍是 .tmp 说明那轮已被硬杀、doBackup 的异常分支没机会跑
+const STALE_BACKUP_TMP_MAX_AGE_MS = 24 * 60 * 60 * 1000
+// L10：孤儿候选按批查 path，避免每小时把 files 全表拉进内存
+const ORPHAN_PATH_QUERY_BATCH = 500
 
 type ScheduleTask =
   | 'dailyBackup'
@@ -119,8 +124,26 @@ export class ScheduleService implements OnApplicationBootstrap {
     if (!getEnv().ENABLE_BACKUP) return
     try {
       const raw = await this.redisService.get(`${LAST_RUN_KEY_PREFIX}dailyBackup`)
-      // 无基线（首次部署/Redis 被清）无法判定，不告警——避免新装即噪声
-      if (!raw) return
+      // L5：无基线原先直接静默返回——新部署在首个 cron 前反复重启/预热错过时，
+      // 心跳键永远为空，缺备份多日都无法自察。改为记一次低等级告警（每日去重），
+      // 文案点明"新部署未到窗口"与"心跳键丢失"两种可能
+      if (!raw) {
+        const now = new Date()
+        const pad = (n: number) => String(n).padStart(2, '0')
+        const key = `${BACKUP_MISSING_ALERT_KEY_PREFIX}${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}:nobaseline`
+        if (await this.redisService.setNx(key, '1', 24 * 60 * 60)) {
+          this.logger.warn(
+            'ENABLE_BACKUP=true 但没有任何定时备份成功记录（新部署尚未到备份窗口，或心跳键丢失）',
+          )
+          await this.errorLogsService.record({
+            message:
+              '定时备份无成功基线：ENABLE_BACKUP=true 但未记录过任何成功备份，请确认是新部署尚未到窗口，还是心跳键丢失',
+            context: { task: 'backupFreshness', reason: 'noBaseline' },
+            internal: true,
+          })
+        }
+        return
+      }
       const lastRun = Date.parse(raw)
       if (Number.isNaN(lastRun)) return
       const hours = (Date.now() - lastRun) / 3_600_000
@@ -226,16 +249,29 @@ export class ScheduleService implements OnApplicationBootstrap {
       const entries = await readdir(uploadDir).catch(() => [] as string[])
       // L1：uploads 为空是常见稳态，不能提前 return——否则下方 trash 孤儿清扫整轮跳过
       if (entries.length > 0) {
-        const known = await db.select({ path: files.path }).from(files)
-        const knownSet = new Set(known.map((r) => r.path))
         const cutoff = Date.now() - 3_600_000
-        let removed = 0
+        // L10：先按 mtime 筛出候选，再按批定点查询这些 path 是否在库里——
+        // 原实现每小时 `select path` 全表拉取 + JS Set 构建，10 万行级即是常态化负载
+        const candidates: string[] = []
         for (const name of entries) {
           const full = join(uploadDir, name)
           const st = await stat(full).catch(() => null)
-          if (!st || !st.isFile() || st.mtimeMs > cutoff || knownSet.has(full)) continue
-          await unlink(full).catch(() => null)
-          removed += 1
+          if (!st || !st.isFile() || st.mtimeMs > cutoff) continue
+          candidates.push(full)
+        }
+        let removed = 0
+        for (let i = 0; i < candidates.length; i += ORPHAN_PATH_QUERY_BATCH) {
+          const chunk = candidates.slice(i, i + ORPHAN_PATH_QUERY_BATCH)
+          const known = await db
+            .select({ path: files.path })
+            .from(files)
+            .where(inArray(files.path, chunk))
+          const knownSet = new Set(known.map((r) => r.path))
+          for (const full of chunk) {
+            if (knownSet.has(full)) continue
+            await unlink(full).catch(() => null)
+            removed += 1
+          }
         }
         if (removed > 0) {
           this.logger.log(`清理 uploads 孤儿文件 ${removed} 个`)
@@ -426,6 +462,15 @@ export class ScheduleService implements OnApplicationBootstrap {
         // pg_dump 用 spawn 参数数组，避免 shell 注入
         await this.spawnPgDump(env.DATABASE_URL, tmpFilepath)
       }
+      // L26：定稿前校验产物大小——自定义 BACKUP_CMD 退出码 0 但重定向截断/空产物时，
+      // 原实现直接 rename 定稿并邮件报"备份成功"，恢复时才发现不可用；
+      // 校验失败抛错走异常分支，.tmp 被清掉，不会留下误导性的 .sql
+      const tmpStats = await stat(tmpFilepath)
+      if (tmpStats.size < env.BACKUP_MIN_BYTES) {
+        throw new Error(
+          `备份产物过小：${tmpStats.size} B < 下限 ${env.BACKUP_MIN_BYTES} B，疑似截断或空产物`,
+        )
+      }
       // Q1：写流完整落盘后才 rename 定稿（.tmp → .sql）
       await rename(tmpFilepath, filepath)
 
@@ -574,6 +619,23 @@ export class ScheduleService implements OnApplicationBootstrap {
   private async cleanOldBackups(): Promise<void> {
     try {
       const files = await readdir(BACKUP_DIR)
+
+      // L3：顺带清理被硬杀（SIGKILL/OOM）遗留的 backup-*.sql.tmp——doBackup 的异常分支
+      // 没有机会执行时，这些半截产物会逐年堆积且无从辨别；早于阈值的一律清掉
+      const nowMs = Date.now()
+      for (const name of files.filter((f) => f.startsWith('backup-') && f.endsWith('.sql.tmp'))) {
+        const st = await stat(join(BACKUP_DIR, name)).catch(() => null)
+        if (!st || nowMs - st.mtimeMs < STALE_BACKUP_TMP_MAX_AGE_MS) continue
+        try {
+          await unlink(join(BACKUP_DIR, name))
+          this.logger.log(`已清理残留备份临时文件: ${name}`)
+        } catch (err) {
+          this.logger.warn(
+            `残留备份临时文件删除失败，跳过: ${name} (${err instanceof Error ? err.message : String(err)})`,
+          )
+        }
+      }
+
       const backups = files.filter((f) => f.startsWith('backup-') && f.endsWith('.sql'))
 
       if (backups.length <= MAX_BACKUPS) {

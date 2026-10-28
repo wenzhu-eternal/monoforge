@@ -105,6 +105,32 @@ describe('ScheduleService', () => {
       expect(mockUnlink).toHaveBeenCalledTimes(1)
       expect(String(mockUnlink.mock.calls[0][0])).toContain('orphan.sql')
     })
+
+    it('L10：按候选批定点查 path，不再整表 select（10 万行级不再每小时全量拉取）', async () => {
+      mockReaddir.mockImplementation((dir: string) =>
+        Promise.resolve(dir.endsWith('uploads-trash') ? [] : ['orphan.png', 'fresh.png']),
+      )
+      const staleMs = Date.now() - 2 * 60 * 60 * 1000
+      mockStat.mockImplementation((p: string) =>
+        Promise.resolve({
+          isFile: () => true,
+          mtimeMs: p.includes('fresh.png') ? Date.now() : staleMs,
+        }),
+      )
+      const whereSpy = vi.fn().mockResolvedValue([])
+      const selectSpy = vi.fn().mockReturnValue({ from: () => ({ where: whereSpy }) })
+      mockSelect.mockImplementation(selectSpy)
+
+      await service.cleanOrphanUploads()
+
+      // 仅一次定点查询（候选 batch），且 where 收到 inArray 条件而非无条件整表
+      expect(selectSpy).toHaveBeenCalledTimes(1)
+      expect(whereSpy).toHaveBeenCalledTimes(1)
+      expect(whereSpy.mock.calls[0][0]).toBeDefined()
+      // 只有超期且不在库内的候选被删；fresh.png 未过 mtime 阈值不进候选
+      expect(mockUnlink).toHaveBeenCalledTimes(1)
+      expect(String(mockUnlink.mock.calls[0][0])).toContain('orphan.png')
+    })
   })
 
   describe('cleanOldBackups（L5 按 mtime 保留最新）', () => {
@@ -152,6 +178,26 @@ describe('ScheduleService', () => {
       // 跳过不可读文件后仍删除次旧的 backup-20260103
       expect(mockUnlink).toHaveBeenCalledTimes(1)
       expect(String(mockUnlink.mock.calls[0][0])).toContain('backup-20260103-000000.sql')
+    })
+
+    it('L3：硬杀残留的超期 .sql.tmp 顺带清理，未超期与正常 .sql 不动', async () => {
+      const staleTmp = 'backup-20260101-000000.sql.tmp'
+      const freshTmp = 'backup-20260102-000000.sql.tmp'
+      const normal = 'backup-20260101.sql'
+      mockReaddir.mockResolvedValue([staleTmp, freshTmp, normal])
+      const staleMs = Date.now() - 25 * 60 * 60 * 1000
+      mockStat.mockImplementation((p: string) =>
+        Promise.resolve({
+          isFile: () => true,
+          size: 1024,
+          mtimeMs: p.endsWith(staleTmp) ? staleMs : Date.now(),
+        }),
+      )
+
+      await (service as unknown as { cleanOldBackups: () => Promise<void> }).cleanOldBackups()
+
+      expect(mockUnlink).toHaveBeenCalledTimes(1)
+      expect(String(mockUnlink.mock.calls[0][0])).toContain(staleTmp)
     })
   })
 
@@ -415,6 +461,27 @@ describe('ScheduleService', () => {
       )
     })
 
+    it('L26：产物小于下限 → 按失败处理（不 rename 定稿、清 .tmp、发失败邮件）', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+        BACKUP_MIN_BYTES: 1024,
+      })
+      mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
+      // 退出码 0 但重定向截断/空产物
+      mockStat.mockResolvedValue({ size: 12 })
+
+      await expect(service.manualBackup()).rejects.toThrow(InternalServerErrorException)
+
+      expect(mockRename).not.toHaveBeenCalled()
+      expect(mockUnlink).toHaveBeenCalled()
+      expect(String(mockUnlink.mock.calls[0][0])).toContain('.sql.tmp')
+      expect(mailService.sendBackupNotification).toHaveBeenCalledWith(
+        false,
+        expect.stringContaining('产物过小'),
+      )
+    })
+
     it('spawnPgDump reject（pg_dump 退出码非 0） → 入库 + 发送失败邮件 + L7 手动触发回 5xx', async () => {
       mockGetEnv.mockReturnValue({
         BACKUP_CMD: undefined,
@@ -599,12 +666,28 @@ describe('ScheduleService', () => {
       expect(errorLogsService.record).not.toHaveBeenCalled()
     })
 
-    it('无基线（首次部署/Redis 被清）→ 不告警', async () => {
+    it('L5：无基线（新部署/心跳键丢失）→ 记一次低等级告警，当日去重', async () => {
       mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
       redisService.get.mockResolvedValue(null)
 
       await service.checkBackupFreshness()
 
+      expect(errorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('无成功基线'),
+          internal: true,
+        }),
+      )
+      expect(redisService.setNx).toHaveBeenCalledWith(
+        expect.stringContaining(':nobaseline'),
+        '1',
+        24 * 60 * 60,
+      )
+
+      // 当日已告警（SETNX 抢锁失败）→ 不重复入库
+      errorLogsService.record.mockClear()
+      redisService.setNx.mockResolvedValue(false)
+      await service.checkBackupFreshness()
       expect(errorLogsService.record).not.toHaveBeenCalled()
     })
 

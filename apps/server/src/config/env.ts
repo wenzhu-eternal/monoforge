@@ -205,6 +205,10 @@ export const envSchema = z
       .transform((v) => v === true || v === 'true')
       .default(false),
 
+    // L26：备份产物大小下限（字节）——自定义 BACKUP_CMD 退出码 0 但重定向截断/空产物时，
+    // 过小一律按失败处理（正常空库 pg_dump 也有数 KB）；设 0 可关闭该校验
+    BACKUP_MIN_BYTES: z.coerce.number().int().min(0).default(1024),
+
     // 自定义备份命令（本机无 pg_dump 时用 docker exec 调用容器内的；{filepath} 为占位符）
     // 安全约束：必须含 {filepath}、长度 ≤500；禁止换行/命令拼接（;/&/&&/||)/管道/变量展开/反引号，
     // 与文案一致：如需管道请改走默认 pg_dump（仅允许 `>` 重定向给 docker exec 用法）

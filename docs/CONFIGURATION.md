@@ -37,6 +37,7 @@
 | `BACKUP_DIR` | 备份目录（默认 `<cwd>/backups`）。**不得等于或位于 `UPLOAD_DIR` 内**（比较前会解析 symlink，否则孤儿清理会删掉备份）。手动 `pnpm db:backup` / `pnpm db:restore` 读取同一变量，相对路径按后端 cwd（`apps/server`）解析；容器部署时确认已挂载持久卷 | `<cwd>/backups` |
 | `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制）。备份经 Redis SETNX 互斥锁串行执行（进行中再触发返回 409；Redis 异常时降级无锁执行），产物按 `backup-YYYYMMDD-HHmmss.sql` 秒级命名防同日覆盖。成败通知发给 `ADMIN_ROLE_ID` 角色下第一个启用用户的邮箱（即初始化管理员），查不到时回退 `MAIL_FROM` | `false` |
 | `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，需做 shell 单引号转义防注入）。注：生产镜像已内置 `postgresql16-client`，默认 pg_dump 链路开箱即用，仅在特殊场景（如走代理导出）才需配置此项 | - |
+| `BACKUP_MIN_BYTES` | 备份产物大小下限（字节，L26）：产物小于该值视为截断/空产物，按失败处理（不 rename 定稿、不入库 .sql，只清 .tmp 并告警）。正常空库 pg_dump 也有数 KB，设 `0` 关闭校验 | `1024` |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
 | `THROTTLE_LIMIT` | 时间窗口内最大请求数（生产 60；e2e 由 `playwright.config.ts` 的 webServer.env 覆盖为 1000） | `60` |
 | `THROTTLE_LOGIN_LIMIT` | 登录/注册/发码各自独立 default 桶的请求上限（每端点 5；e2e 覆盖为 1000 避免频繁登录触 429）。`@Throttle` 覆盖的是 default 桶，不引入 named 桶 | `5` |
