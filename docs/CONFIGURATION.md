@@ -61,6 +61,16 @@
 
 > 注意：本项目用 `MAIL_PASSWORD`（不是 `MAIL_PASS`）。
 
+### 微信登录变量
+
+| 变量 | 说明 | 示例 |
+|---|---|---|
+| `WEAPP_APPID` | 微信小程序 AppID | `your-weapp-appid` |
+| `WEAPP_SECRET` | 微信小程序 AppSecret（服务端换取 openid，勿下发前端） | `your-weapp-secret` |
+| `WECHAT_REDIRECT_URI` | 微信授权回调完整地址（须与小程序后台配置一致） | `https://your-domain.com/auth/wechat/callback` |
+
+> 三个键全部缺失或为空时，微信登录接口返回 503（未配置即关闭），不影响其它登录方式；行为细节见 DEPLOYMENT.md。
+
 ## 配置陷阱
 
 ### `ConfigService.get<T>()` 类型陷阱
@@ -181,7 +191,7 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 
 ## 定时任务时区说明
 
-- `@Cron` 未传 `timeZone` 时，按容器本地时区执行（容器默认 `UTC`）。配置文件中未单独声明 `TZ` 环境变量时，表中"每天 0:30/1:30"等表述指 **UTC 0:30/1:30**，非本地北京时间。生产部署如需按北京时间执行，需在容器内设 `TZ=Asia/Shanghai` 或在 `@Cron('...', { timeZone: 'Asia/Shanghai' })` 中显式指定。
+- `@Cron` 未传 `timeZone` 时按容器本地时区执行。`docker-compose.yml` 已为 `postgres`/`redis`/`e2e-postgres`/`app` 四个容器默认注入 `TZ=${TZ:-Asia/Shanghai}`（可用根 `.env` 的 `TZ` 覆盖），因此 compose 部署下表中"每天 0:30/1:30"等窗口**按北京时间**执行；仅裸 `docker run`/主机直跑且未透传 `TZ` 时，才按容器/系统默认（多为 UTC）理解，或改用 `@Cron('...', { timeZone: 'Asia/Shanghai' })` 显式指定。
 
 ## 测试环境限流说明
 

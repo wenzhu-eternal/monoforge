@@ -30,8 +30,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter=@monoforge/shared exec tsc --noEmit
-      - run: pnpm --filter=server exec tsc --noEmit
-      - run: pnpm --filter=web exec tsc --noEmit
+      - run: pnpm --filter=@monoforge/server exec tsc --noEmit
+      - run: pnpm --filter=@monoforge/web exec tsc --noEmit
       - run: pnpm --filter=@monoforge/e2e exec tsc --noEmit
 
   security:
@@ -90,9 +90,9 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter=server db:migrate
-      - run: pnpm --filter=server db:seed
-      - run: pnpm --filter=server test:e2e:ci
+      - run: pnpm --filter=@monoforge/server db:migrate
+      - run: pnpm --filter=@monoforge/server db:seed
+      - run: pnpm --filter=@monoforge/server test:e2e:ci
 
   # Playwright 全链路 e2e：真实 DB + 浏览器，验证前端 UI + 后端 API 全链路
   e2e-test:
@@ -132,8 +132,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter=@monoforge/e2e exec playwright install --with-deps chromium
-      - run: pnpm --filter=server db:migrate
-      - run: pnpm --filter=server db:seed
+      - run: pnpm --filter=@monoforge/server db:migrate
+      - run: pnpm --filter=@monoforge/server db:seed
       - run: pnpm test:e2e
 
   build:

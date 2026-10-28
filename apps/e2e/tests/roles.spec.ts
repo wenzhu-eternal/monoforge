@@ -79,7 +79,7 @@ test.describe('角色管理（admin 视角）', () => {
     await targetRow.getByRole('button', { name: '编辑' }).click()
     await expect(page.getByRole('dialog', { name: '编辑角色' })).toBeVisible()
 
-    // 改描述（角色名在编辑时 disabled，不能改）
+    // 改描述（角色名可改——roles.service 允许改名并做保留名/冲突校验，此处只覆盖描述路径）
     const descInput = page.locator('.ant-modal').getByLabel('描述')
     await descInput.clear()
     await descInput.fill('e2e 改后的描述')

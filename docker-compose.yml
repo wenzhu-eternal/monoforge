@@ -16,6 +16,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-monoforge_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required, set it in .env}
       POSTGRES_DB: ${POSTGRES_DB:-monoforge_database}
+      # L23：与 app 统一时区口径（psql 内日期函数/日志时间戳可读性）
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -32,6 +34,9 @@ services:
     expose:
       - '6379'
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required, set it in .env}
+    environment:
+      # L23：与 app 统一时区口径（日志时间戳可读性）
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - redis_data:/data
     healthcheck:
@@ -57,6 +62,8 @@ services:
       POSTGRES_USER: ${E2E_POSTGRES_USER:-e2e_user}
       POSTGRES_PASSWORD: ${E2E_POSTGRES_PASSWORD:-e2e_password}
       POSTGRES_DB: ${E2E_POSTGRES_DB:-monoforge_e2e_db}
+      # L23：与 app 统一时区口径（psql 内日期函数/日志时间戳可读性）
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - e2e_postgres_data:/var/lib/postgresql/data
     healthcheck:
