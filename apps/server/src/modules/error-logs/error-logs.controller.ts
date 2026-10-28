@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import { AUDIT_ACTIONS } from '@shared/constants'
 import { PermissionCodes } from '@shared/constants/permissions'
 import {
   ErrorLogGroupSchema,
@@ -32,6 +33,7 @@ import { Permissions } from '@/common/decorators/permissions.decorator'
 import { Public } from '@/common/decorators/public.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { parsePagination, parseQueryText } from '@/common/utils/pagination'
 import { parseBoolQuery } from '@/common/utils/parse-bool-query'
 import { BatchResolveDto } from './dto/batch-resolve.dto'
 import { CreateWhitelistDto } from './dto/create-whitelist.dto'
@@ -77,17 +79,13 @@ export class ErrorLogsController {
     @Query('isResolved') isResolved?: string,
     @CurrentUser() currentUser?: { username: string; roleId?: number | null },
   ) {
-    const pageNum = page ? Number.parseInt(page, 10) : 1
-    const size = pageSize ? Number.parseInt(pageSize, 10) : 10
-    if (Number.isNaN(pageNum) || pageNum < 1) {
-      throw new BadRequestException('page 必须为正整数')
-    }
-    if (Number.isNaN(size) || size < 1) {
-      throw new BadRequestException('pageSize 必须为正整数')
-    }
+    // L15：分页契约统一走 @shared 桥接；文本筛选加长度上限，超长直接 400
+    const { page: pageNum, pageSize: size } = parsePagination(page, pageSize)
+    const safeKeyword = parseQueryText(keyword, 'keyword')
+    const safeSource = parseQueryText(source, 'source')
     // L8：isResolved 非法值（1/True/yes 等）显式 400，不静默折叠为 false
     const isResolvedParsed = isResolved === undefined ? undefined : parseBoolQuery(isResolved)
-    return this.errorLogsService.findAll(pageNum, size, keyword, source, isResolvedParsed)
+    return this.errorLogsService.findAll(pageNum, size, safeKeyword, safeSource, isResolvedParsed)
   }
 
   @Get('stats')
@@ -146,7 +144,7 @@ export class ErrorLogsController {
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '标记错误已处理' })
-  @AuditAction('处理')
+  @AuditAction(AUDIT_ACTIONS.PROCESS)
   async resolve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: { sub: number }) {
     return this.errorLogsService.resolve(id, user.sub)
   }
@@ -157,7 +155,7 @@ export class ErrorLogsController {
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '批量标记相同报错已处理' })
-  @AuditAction('批量处理')
+  @AuditAction(AUDIT_ACTIONS.BATCH_PROCESS)
   async batchResolve(@Body() dto: BatchResolveDto, @CurrentUser() user: { sub: number }) {
     return this.errorLogsService.batchResolve(dto.message, dto.source, user.sub)
   }

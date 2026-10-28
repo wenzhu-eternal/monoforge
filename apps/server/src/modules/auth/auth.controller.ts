@@ -14,6 +14,7 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import { AUDIT_ACTIONS } from '@shared/constants'
 import { AuthResponseSchema, RefreshTokenResponseSchema } from '@shared/schemas/auth'
 import { UserSchema } from '@shared/schemas/user'
 import type { Request, Response } from 'express'
@@ -38,7 +39,7 @@ export class AuthController {
 
   @Post('login')
   @Public()
-  @AuditAction('登录')
+  @AuditAction(AUDIT_ACTIONS.LOGIN)
   // M1：login/register/send-register-code 各为独立的 default 桶（throttler v6 的 key 含 class-handler-name），
   // 不共享计数；limit 读 THROTTLE_LOGIN_LIMIT，避免 named 桶污染全部路由
   @Throttle({
@@ -69,7 +70,7 @@ export class AuthController {
 
   @Post('send-register-code')
   @Public()
-  @AuditAction('发送验证码')
+  @AuditAction(AUDIT_ACTIONS.SEND_CODE)
   // M6：本端点独立的 default 桶，limit 读 THROTTLE_LOGIN_LIMIT
   @Throttle({
     default: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 },
@@ -86,7 +87,7 @@ export class AuthController {
 
   @Post('register')
   @Public()
-  @AuditAction('注册')
+  @AuditAction(AUDIT_ACTIONS.REGISTER)
   // M6：本端点独立的 default 桶，limit 读 THROTTLE_LOGIN_LIMIT
   @Throttle({
     default: { limit: getEnv().THROTTLE_LOGIN_LIMIT, ttl: getEnv().THROTTLE_TTL * 1000 },
@@ -124,7 +125,7 @@ export class AuthController {
 
   @Post('refresh')
   @Public()
-  @AuditAction('刷新令牌')
+  @AuditAction(AUDIT_ACTIONS.REFRESH_TOKEN)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '刷新访问令牌' })
@@ -151,7 +152,7 @@ export class AuthController {
 
   @Post('logout')
   @ApiBearerAuth()
-  @AuditAction('登出')
+  @AuditAction(AUDIT_ACTIONS.LOGOUT)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '用户登出' })
   async logout(@CurrentUser() user: TokenPayload, @Res({ passthrough: true }) response: Response) {

@@ -1,4 +1,4 @@
-import { DEFAULT_PAGE_SIZE } from '@shared'
+import { AUDIT_ACTION_NAMES, AUDIT_ACTIONS, type AuditActionName, DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import { Button, Form, Input, message, Select, Space, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
@@ -46,26 +46,27 @@ function formatValue(v: unknown): string {
   return String(v)
 }
 
-// L25：动作色卡与筛选下拉共用同一词表（后端 ACTION_MAP + HANDLER_ACTION_MAP + @AuditAction 全集），防两处漂移
-const ACTION_COLORS: Record<string, string> = {
-  创建: 'green',
-  更新: 'blue',
-  删除: 'red',
-  登录: 'cyan',
-  注册: 'green',
-  登出: 'default',
-  刷新令牌: 'blue',
-  发送验证码: 'purple',
-  改密: 'orange',
-  处理: 'geekblue',
-  批量处理: 'geekblue',
-  标记已读: 'geekblue',
-  全部标记已读: 'geekblue',
-  恢复: 'cyan',
-  触发备份: 'volcano',
-  发送通知: 'purple',
-  发送欢迎邮件: 'purple',
-  发送测试邮件: 'purple',
+// Q7：动作名唯一来源在 @shared/constants（AUDIT_ACTIONS）——此处只维护"名 → 色"，
+// 后端新增动作时词表一处改动，前端下拉与色卡自动跟随（Record 类型保证不漏键）
+const ACTION_COLORS: Record<AuditActionName, string> = {
+  [AUDIT_ACTIONS.CREATE]: 'green',
+  [AUDIT_ACTIONS.UPDATE]: 'blue',
+  [AUDIT_ACTIONS.DELETE]: 'red',
+  [AUDIT_ACTIONS.LOGIN]: 'cyan',
+  [AUDIT_ACTIONS.REGISTER]: 'green',
+  [AUDIT_ACTIONS.LOGOUT]: 'default',
+  [AUDIT_ACTIONS.REFRESH_TOKEN]: 'blue',
+  [AUDIT_ACTIONS.SEND_CODE]: 'purple',
+  [AUDIT_ACTIONS.CHANGE_PASSWORD]: 'orange',
+  [AUDIT_ACTIONS.PROCESS]: 'geekblue',
+  [AUDIT_ACTIONS.BATCH_PROCESS]: 'geekblue',
+  [AUDIT_ACTIONS.MARK_READ]: 'geekblue',
+  [AUDIT_ACTIONS.MARK_ALL_READ]: 'geekblue',
+  [AUDIT_ACTIONS.RESTORE]: 'cyan',
+  [AUDIT_ACTIONS.TRIGGER_BACKUP]: 'volcano',
+  [AUDIT_ACTIONS.SEND_NOTIFICATION]: 'purple',
+  [AUDIT_ACTIONS.SEND_WELCOME_MAIL]: 'purple',
+  [AUDIT_ACTIONS.SEND_TEST_MAIL]: 'purple',
 }
 
 /**
@@ -150,7 +151,7 @@ function AuditLogsContent() {
       dataIndex: 'action',
       width: 100,
       render: (v: string) => {
-        return <Tag color={ACTION_COLORS[v] ?? 'default'}>{v}</Tag>
+        return <Tag color={ACTION_COLORS[v as AuditActionName] ?? 'default'}>{v}</Tag>
       },
     },
     { title: '资源', dataIndex: 'resource', width: 100 },
@@ -228,7 +229,7 @@ function AuditLogsContent() {
             placeholder="全部"
             style={{ width: 120 }}
             allowClear
-            options={Object.keys(ACTION_COLORS).map((a) => ({ label: a, value: a }))}
+            options={AUDIT_ACTION_NAMES.map((a) => ({ label: a, value: a }))}
           />
         </Form.Item>
         <Form.Item name="resource" label="资源">

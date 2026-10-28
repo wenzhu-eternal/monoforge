@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -11,11 +10,13 @@ import {
   Query,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
+import { AUDIT_ACTIONS } from '@shared/constants'
 import { NotificationSchema } from '@shared/schemas/notification'
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
+import { parsePagination } from '@/common/utils/pagination'
 import { parseBoolQuery } from '@/common/utils/parse-bool-query'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { NotificationsService } from './notifications.service'
@@ -38,15 +39,8 @@ export class NotificationsController {
     @Query('pageSize') pageSize?: string,
     @Query('unreadOnly') unreadOnly?: string,
   ) {
-    // 防御 NaN: 非数字字符串 parseInt 后为 NaN，直接抛 400 错误（与 users.controller 同款）
-    const pageNum = page ? Number.parseInt(page, 10) : 1
-    const size = pageSize ? Number.parseInt(pageSize, 10) : 10
-    if (Number.isNaN(pageNum) || pageNum < 1) {
-      throw new BadRequestException('page 必须为正整数')
-    }
-    if (Number.isNaN(size) || size < 1) {
-      throw new BadRequestException('pageSize 必须为正整数')
-    }
+    // L15：分页契约与 400 文案统一走 @shared 桥接
+    const { page: pageNum, pageSize: size } = parsePagination(page, pageSize)
     // L14：个人通知资源不套"管理员全局视图"——隐式 includeDeleted 会让管理员
     // 删除自己的通知后 refetch 仍看到该条；固定 false，无全局视图语义
     return this.notificationsService.list(
@@ -66,7 +60,7 @@ export class NotificationsController {
 
   @Post(':id/read')
   @HttpCode(HttpStatus.OK)
-  @AuditAction('标记已读')
+  @AuditAction(AUDIT_ACTIONS.MARK_READ)
   @ApiOperation({ summary: '标记单条已读' })
   @ZodSerializerDto(NotificationSchema)
   markAsRead(@CurrentUser() user: TokenPayload, @Param('id', ParseIntPipe) id: number) {
@@ -75,7 +69,7 @@ export class NotificationsController {
 
   @Post('read-all')
   @HttpCode(HttpStatus.OK)
-  @AuditAction('全部标记已读')
+  @AuditAction(AUDIT_ACTIONS.MARK_ALL_READ)
   @ApiOperation({ summary: '标记全部已读' })
   markAllRead(@CurrentUser() user: TokenPayload) {
     return this.notificationsService.markAllRead(user.sub)

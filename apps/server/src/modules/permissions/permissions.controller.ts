@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -24,6 +23,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { parsePagination } from '@/common/utils/pagination'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { CreatePermissionDto, UpdatePermissionDto } from './dto/permission.dto'
 import { PermissionsService } from './permissions.service'
@@ -46,15 +46,8 @@ export class PermissionsController {
     @Query('pageSize') pageSize?: string,
     @CurrentUser() currentUser?: TokenPayload,
   ) {
-    const pageNum = page ? Number.parseInt(page, 10) : 1
-    const size = pageSize ? Number.parseInt(pageSize, 10) : 10
-    // 防御 NaN: 非数字字符串 parseInt 后为 NaN，直接抛 400 错误
-    if (Number.isNaN(pageNum) || pageNum < 1) {
-      throw new BadRequestException('page 必须为正整数')
-    }
-    if (Number.isNaN(size) || size < 1) {
-      throw new BadRequestException('pageSize 必须为正整数')
-    }
+    // L15：分页契约与 400 文案统一走 @shared 桥接
+    const { page: pageNum, pageSize: size } = parsePagination(page, pageSize)
     const isAdmin = isAdminUser(currentUser)
     return this.permissionsService.findAll(pageNum, size, isAdmin)
   }

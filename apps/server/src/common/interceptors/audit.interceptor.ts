@@ -6,6 +6,7 @@ import {
   type NestInterceptor,
 } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
+import { AUDIT_ACTIONS } from '@shared/constants'
 import { and, eq, isNull, type Table } from 'drizzle-orm'
 import type { Observable } from 'rxjs'
 import { from, tap } from 'rxjs'
@@ -27,19 +28,20 @@ export const AUDIT_ACTION_KEY = 'audit_action'
 export const AUDIT_RESOURCE_KEY = 'audit_resource'
 export const SKIP_AUDIT_KEY = 'audit_skip'
 
+// Q7：动作词表唯一来源在 @shared/constants（AUDIT_ACTIONS），与前端审计页共用
 const ACTION_MAP: Record<string, string> = {
-  POST: '创建',
-  PATCH: '更新',
-  PUT: '更新',
-  DELETE: '删除',
+  POST: AUDIT_ACTIONS.CREATE,
+  PATCH: AUDIT_ACTIONS.UPDATE,
+  PUT: AUDIT_ACTIONS.UPDATE,
+  DELETE: AUDIT_ACTIONS.DELETE,
 }
 
 // L8：非 CRUD 的 POST 一律记"创建"是错的（如恢复记成创建）。handler 名映射兜底——
 // 显式 @AuditAction 优先，其次按名，最后才按方法。新增恢复类端点自动归位，无需逐个标注。
 const HANDLER_ACTION_MAP: Record<string, string> = {
-  restore: '恢复',
-  restoreWhitelist: '恢复',
-  triggerBackup: '触发备份',
+  restore: AUDIT_ACTIONS.RESTORE,
+  restoreWhitelist: AUDIT_ACTIONS.RESTORE,
+  triggerBackup: AUDIT_ACTIONS.TRIGGER_BACKUP,
 }
 
 const RESOURCE_MAP: Record<string, string> = {

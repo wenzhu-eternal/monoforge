@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
+import { AUDIT_ACTIONS } from '@shared/constants'
 import { PermissionCodes } from '@shared/constants/permissions'
 import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
@@ -55,7 +56,7 @@ export class WebsocketController {
   @Post('notify')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '发送测试通知（持久化 + 在线推送）' })
-  @AuditAction('发送通知')
+  @AuditAction(AUDIT_ACTIONS.SEND_NOTIFICATION)
   // L4：通知日配额——防止登录用户以 ~1.4 万行/日可控灌满通知表
   async notify(@Body() dto: NotifyDto, @CurrentUser() user: TokenPayload) {
     // 自我校验：只能给自己发通知

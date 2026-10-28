@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import { AUDIT_ACTIONS } from '@shared/constants'
 import { PermissionCodes } from '@shared/constants/permissions'
 import { DashboardStatsSchema } from '@shared/schemas/dashboard'
 import { PaginatedResponseSchema } from '@shared/schemas/pagination'
@@ -27,6 +28,7 @@ import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { parsePagination } from '@/common/utils/pagination'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { RedisService } from '@/modules/redis/redis.service'
 
@@ -59,15 +61,8 @@ export class UsersController {
     @Query('pageSize') pageSize?: string,
     @CurrentUser() currentUser?: TokenPayload,
   ) {
-    // 防御 NaN: 非数字字符串 parseInt 后为 NaN，直接抛 400 错误
-    const pageNum = page ? Number.parseInt(page, 10) : 1
-    const size = pageSize ? Number.parseInt(pageSize, 10) : 10
-    if (Number.isNaN(pageNum) || pageNum < 1) {
-      throw new BadRequestException('page 必须为正整数')
-    }
-    if (Number.isNaN(size) || size < 1) {
-      throw new BadRequestException('pageSize 必须为正整数')
-    }
+    // L15：分页契约与 400 文案统一走 @shared 桥接
+    const { page: pageNum, pageSize: size } = parsePagination(page, pageSize)
     const isAdmin = isAdminUser(currentUser)
     return this.usersService.findAll(pageNum, size, isAdmin)
   }
@@ -200,7 +195,7 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '修改自己的密码（需验证旧密码）' })
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @AuditAction('改密')
+  @AuditAction(AUDIT_ACTIONS.CHANGE_PASSWORD)
   async changePassword(@CurrentUser() currentUser: TokenPayload, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword(currentUser.sub, dto.oldPassword, dto.newPassword)
   }

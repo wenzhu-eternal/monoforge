@@ -15,6 +15,7 @@ import { PaginatedResponseSchema } from '@shared/schemas/pagination'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
+import { parsePagination, parseQueryText } from '@/common/utils/pagination'
 import { AuditService } from './audit.service'
 
 @ApiTags('Audit')
@@ -42,14 +43,8 @@ export class AuditController {
     @Query('resource') resource?: string,
     @Query('keyword') keyword?: string,
   ) {
-    const pageNum = page ? Number.parseInt(page, 10) : 1
-    const size = pageSize ? Number.parseInt(pageSize, 10) : 10
-    if (Number.isNaN(pageNum) || pageNum < 1) {
-      throw new BadRequestException('page 必须为正整数')
-    }
-    if (Number.isNaN(size) || size < 1) {
-      throw new BadRequestException('pageSize 必须为正整数')
-    }
+    // L15：分页契约统一走 @shared 桥接；文本筛选加长度上限，超长直接 400
+    const { page: pageNum, pageSize: size } = parsePagination(page, pageSize)
     const parsedUserId = userId ? Number.parseInt(userId, 10) : undefined
     // L24：显传非法 userId 直接 400（原 NaN 静默透传，查空结果且 0 永不可过滤）
     if (userId && Number.isNaN(parsedUserId)) {
@@ -57,9 +52,9 @@ export class AuditController {
     }
     const filter = {
       userId: parsedUserId,
-      action,
-      resource,
-      keyword,
+      action: parseQueryText(action, 'action'),
+      resource: parseQueryText(resource, 'resource'),
+      keyword: parseQueryText(keyword, 'keyword'),
     }
     return this.auditService.findAll(pageNum, size, filter)
   }

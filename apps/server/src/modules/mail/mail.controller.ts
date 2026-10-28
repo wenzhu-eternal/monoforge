@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
+import { AUDIT_ACTIONS } from '@shared/constants'
 import { PermissionCodes } from '@shared/constants/permissions'
 import { AuditAction } from '@/common/decorators/audit.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
@@ -29,7 +30,7 @@ export class MailController {
   @Post('welcome')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '发送欢迎邮件' })
-  @AuditAction('发送欢迎邮件')
+  @AuditAction(AUDIT_ACTIONS.SEND_WELCOME_MAIL)
   async sendWelcome(@Body() dto: SendWelcomeMailDto) {
     if (!this.mailService.isConfigured()) {
       throw new BadRequestException('邮件服务未配置（缺少 MAIL_HOST/PORT/USER/PASSWORD），无法发送')
@@ -41,7 +42,7 @@ export class MailController {
   @Post('verification-code')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '发送测试邮件' })
-  @AuditAction('发送测试邮件')
+  @AuditAction(AUDIT_ACTIONS.SEND_TEST_MAIL)
   async sendVerificationCode(@Body() dto: SendVerificationCodeMailDto) {
     if (!this.mailService.isConfigured()) {
       throw new BadRequestException('邮件服务未配置（缺少 MAIL_HOST/PORT/USER/PASSWORD），无法发送')

@@ -134,7 +134,9 @@ describe('M2：自改不上送 roleId/status（后端对自改 roleId 一律 403
     fireEvent.change(screen.getByLabelText('昵称'), { target: { value: nickname } })
     fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
     await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
-    return state.updatePayloads[0].data
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    return payload.data
   }
 
   it('编辑自己只改昵称 → payload 不含 roleId/status', async () => {

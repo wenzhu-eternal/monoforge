@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { PaginatedResponseSchema } from './pagination'
+import { PaginatedResponseSchema, PaginationQuerySchema } from './pagination'
+
+describe('PaginationQuerySchema（L15 分页入参契约）', () => {
+  it('缺省时回落到 page=1/pageSize=10', () => {
+    expect(PaginationQuerySchema.parse({})).toEqual({ page: 1, pageSize: 10 })
+  })
+
+  it('page<1 / pageSize<1 / 非整数 均失败，且文案可直接透给用户', () => {
+    const page = PaginationQuerySchema.safeParse({ page: 0 })
+    expect(page.success).toBe(false)
+    expect(page.error?.issues[0]?.message).toBe('page 必须为正整数')
+
+    const size = PaginationQuerySchema.safeParse({ pageSize: 0 })
+    expect(size.success).toBe(false)
+    expect(size.error?.issues[0]?.message).toBe('pageSize 必须为正整数')
+
+    expect(PaginationQuerySchema.safeParse({ page: 1.5 }).success).toBe(false)
+  })
+
+  it('pageSize 上限 100（与 service 侧截断口径一致）', () => {
+    expect(PaginationQuerySchema.safeParse({ pageSize: 100 }).success).toBe(true)
+    expect(PaginationQuerySchema.safeParse({ pageSize: 101 }).success).toBe(false)
+  })
+})
 
 describe('PaginatedResponseSchema', () => {
   const ItemSchema = z.object({ id: z.number() })

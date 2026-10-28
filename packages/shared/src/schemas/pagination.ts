@@ -1,5 +1,22 @@
 import { z } from 'zod'
 
+/**
+ * L15：列表分页查询入参契约（唯一来源）——controller 经 server 侧 parsePagination 桥接，
+ * 取代各模块手写 Number.parseInt + NaN 400；pageSize 上限与 service 侧截断口径一致（100）
+ */
+export const PaginationQuerySchema = z.object({
+  page: z.number().int('page 必须为正整数').min(1, 'page 必须为正整数').default(1),
+  pageSize: z
+    .number()
+    .int('pageSize 必须为正整数')
+    .min(1, 'pageSize 必须为正整数')
+    .max(100, 'pageSize 不能超过 100')
+    .default(10),
+})
+
+/** L15：文本型列表筛选（keyword/action/resource 等）的最大长度，超长直接 400 不进 ilike */
+export const QUERY_TEXT_MAX_LENGTH = 200
+
 export const PaginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =>
   z.object({
     list: z.array(itemSchema),
@@ -11,11 +28,7 @@ export const PaginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =
     totalPages: z.number().int().min(0),
   })
 
-export type PaginationQuery = {
-  page: number
-  pageSize: number
-  // L26：后端列表固定倒序（sort/order 从未生效），契约删除两字段防误导，前端不再发送
-}
+export type PaginationQuery = z.infer<typeof PaginationQuerySchema>
 export type PaginatedResponse<T> = {
   list: T[]
   total: number
