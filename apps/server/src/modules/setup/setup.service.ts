@@ -27,14 +27,16 @@ export class SetupService {
       return { initialized: true }
     }
 
-    const [userCountResult] = await db
+    // L25：已初始化判定改为"存在超管角色的活跃用户"，与 seed 同口径——
+    // 原"存在任意用户即已初始化"会被抢先注册的普通用户永久堵死 setup（ALLOW_SETUP +
+    // ALLOW_REGISTER 同开的部署窗口内，攻击者先 register 即令初始化通道 409 永拒）
+    const [adminCountResult] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(users)
-      .where(notDeleted(users.deletedAt))
+      .where(and(notDeleted(users.deletedAt), eq(users.roleId, getEnv().ADMIN_ROLE_ID)))
 
-    // 已初始化判定: 存在任意用户即视为已初始化（避免重复创建 admin）
     // 不返回计数，避免 /status 公开接口泄露用户/角色规模
-    return { initialized: (userCountResult?.count ?? 0) > 0 }
+    return { initialized: (adminCountResult?.count ?? 0) > 0 }
   }
 
   async initialize(input: {
@@ -60,11 +62,12 @@ export class SetupService {
         // 事务级锁：随事务提交/回滚自动释放，避免 session-level 锁泄露到连接池
         await tx.execute(sql`SELECT pg_advisory_xact_lock(1234567890)`)
 
-        // 与 getStatus 同口径: 仅统计未软删用户（全部用户被软删时允许重新初始化）
+        // 与 getStatus 同口径（L25）：仅"存在超管角色的活跃用户"才算已初始化——
+        // 抢先注册的普通用户不再堵死初始化通道；全部超管被软删时允许重新初始化
         const [existing] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(users)
-          .where(notDeleted(users.deletedAt))
+          .where(and(notDeleted(users.deletedAt), eq(users.roleId, getEnv().ADMIN_ROLE_ID)))
         if (!existing || existing.count > 0) {
           throw new ConflictException(ErrorMessages[ErrorCodes.SETUP_ALREADY_INITIALIZED])
         }

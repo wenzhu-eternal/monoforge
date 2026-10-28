@@ -227,6 +227,8 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 - 登录/注册/发码各为独立的 default 桶（throttler v6 key 含 class-handler-name，不共享计数），limit 读 `THROTTLE_LOGIN_LIMIT`（默认 5/分钟），避免 named 桶污染全部路由（M1/L12）
 - **限流旁路必须显式**：仅 e2e/vitest 由测试 setup 设 `ALLOW_THROTTLE_BYPASS=true`，禁止在生产/预发开启（L15：原 `NODE_ENV=test` 隐式旁路已移除）
 
+- **Redis 降级口径与观测（Q4）**：jti 黑名单 / 日配额 / 限流存储 / 账号存续复检在 Redis 故障时一律 **fail-open**（可用性优先，属有意取舍，不改 fail-closed）；降级持续超过 5 分钟由 `common/utils/redis-degradation` 升级为 error_logs 聚合告警（同一窗口至多一条），恢复即清零——防止"降级一小时"与"抖一下"在监控上不可辨
+
 ### 登录失败锁定（J2=A）
 
 - 锁定键为 `login:fail:<ip>:<username>`（取不到 IP 时退化为 `login:fail:<username>`），15 分钟内失败 10 次锁定（`auth.service`）

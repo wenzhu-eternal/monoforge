@@ -15,6 +15,7 @@ import type { Request } from 'express'
 import { IS_OPTIONAL_AUTH_KEY } from '@/common/decorators/optional-auth.decorator'
 import { IS_PUBLIC_KEY } from '@/common/decorators/public.decorator'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { noteRedisDegraded } from '@/common/utils/redis-degradation'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
 import { users } from '@/db/schema'
@@ -102,6 +103,8 @@ export class AuthGuard implements CanActivate {
           revoked = await this.redisService.get(`access:${payload.sub}:${payload.jti}`)
         } catch {
           // 继续，视为未吊销
+          // Q4：降级持续超阈值升级告警（黑名单失效窗口不再只是一行零星日志）
+          noteRedisDegraded('auth:jti')
         }
         if (revoked === '1') {
           throw new UnauthorizedException('访问令牌已吊销')
@@ -153,6 +156,7 @@ export class AuthGuard implements CanActivate {
       cached = await this.redisService.get(cacheKey)
     } catch {
       // 继续查 DB
+      noteRedisDegraded('auth:alive')
     }
     if (cached === '1') {
       return true

@@ -17,6 +17,12 @@ describe('CreateRoleSchema', () => {
   it('name 超过 50 字符失败', () => {
     expect(CreateRoleSchema.safeParse({ name: 'a'.repeat(51) }).success).toBe(false)
   })
+
+  it('L24：多余字段（permissionIds）被拒 400，不再静默 strip 成假成功', () => {
+    const result = CreateRoleSchema.safeParse({ name: 'ops', permissionIds: [1, 2] })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.code).toBe('unrecognized_keys')
+  })
 })
 
 describe('UpdateRoleSchema', () => {
@@ -30,6 +36,10 @@ describe('UpdateRoleSchema', () => {
 
   it('name 为空字符串失败', () => {
     expect(UpdateRoleSchema.safeParse({ name: '' }).success).toBe(false)
+  })
+
+  it('L24：多余字段被拒，配权须走专用接口', () => {
+    expect(UpdateRoleSchema.safeParse({ description: 'x', permissionIds: [1] }).success).toBe(false)
   })
 })
 

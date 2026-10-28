@@ -40,7 +40,7 @@ describe('SetupService', () => {
   })
 
   describe('getStatus', () => {
-    it('无用户时返回未初始化状态', async () => {
+    it('无超管活跃用户时返回未初始化（L25：抢先注册的普通用户不再堵死 setup）', async () => {
       vi.mocked(mockDb.select).mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ count: 0 }]),
@@ -51,7 +51,7 @@ describe('SetupService', () => {
       expect(result).toEqual({ initialized: false })
     })
 
-    it('有用户时返回已初始化状态', async () => {
+    it('存在超管活跃用户时返回已初始化（判定口径改为 ADMIN_ROLE_ID 用户）', async () => {
       vi.mocked(mockDb.select).mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ count: 1 }]),

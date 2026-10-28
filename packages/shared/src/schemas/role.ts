@@ -15,12 +15,17 @@ export const RoleBriefSchema = z.object({
   description: z.string().nullable().optional(),
 })
 
-export const CreateRoleSchema = z.object({
+/**
+ * L24：strictObject——配权只能走 PUT /role-permissions/role/:roleId。
+ * 原普通 object 会把调用方顺带传的 permissionIds 静默 strip，建/改角色 200 假成功但零关联，
+ * 这里改为 400 明示"多余字段不被接受"，避免 RESTful 直觉写入静默失配
+ */
+export const CreateRoleSchema = z.strictObject({
   name: z.string().min(1).max(50),
   description: z.string().optional(),
 })
 
-export const UpdateRoleSchema = z.object({
+export const UpdateRoleSchema = z.strictObject({
   name: z.string().min(1).max(50).optional(),
   description: z.string().optional(),
 })

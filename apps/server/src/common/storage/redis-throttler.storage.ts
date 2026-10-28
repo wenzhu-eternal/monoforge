@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import type { ThrottlerStorage } from '@nestjs/throttler'
 import { appendErrorLog } from '@/common/logger'
+import { noteRedisDegraded, noteRedisRecovered } from '@/common/utils/redis-degradation'
 import { RedisService } from '@/modules/redis/redis.service'
 
 // L16：fail-open 告警按分钟限频——Redis 故障 + 公开端点被刷时，日志量不随 QPS 线性放大
@@ -61,6 +62,8 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
 
       const totalHits = result[0]
       const isBlocked = result[1] === 1
+      // Q4：限流存储恢复正常，重置降级计时
+      noteRedisRecovered()
 
       // 用 TTL 命令取真实剩余时间（毫秒），让 429 的 Retry-After 头反映实际等待秒数；
       // 异常值（-1 永久/-2 不存在）回退到入参 ttl。blocked 时脚本已把 key TTL 改为 blockDuration，剩余即 block 剩余
@@ -84,6 +87,8 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
           `[Throttler] Redis 限流存储异常，本次请求 fail-open 放行: ${err instanceof Error ? err.message : String(err)}`,
         )
       }
+      // Q4：持续降级超阈值升级为聚合告警
+      noteRedisDegraded('throttler')
       return {
         totalHits: 1,
         timeToExpire: ttl,

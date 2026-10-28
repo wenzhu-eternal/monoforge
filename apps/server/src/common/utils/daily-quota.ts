@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common'
 import { appendErrorLog } from '@/common/logger'
+import { noteRedisDegraded, noteRedisRecovered } from '@/common/utils/redis-degradation'
 import type { RedisService } from '@/modules/redis/redis.service'
 
 // L4：降级告警每分钟至多一条，防上传高峰时日志线性放大（与限流存储 fail-open 同口径）
@@ -57,9 +58,13 @@ export async function consumeDailyQuota(
     }
     // Q3：返回 consumed=false 标记未实扣，调用方据此决定是否回滚——否则降级放行的 A 失败回滚
     // 会把并发正常 B 的 INCR 一并 DECR 清零
+    // Q4：持续降级超阈值升级为聚合告警
+    noteRedisDegraded(`quota:${action}`)
     return { consumed: false, key }
   }
   const used = Number(raw)
+  // Q4：配额存储恢复正常，重置降级计时
+  noteRedisRecovered()
 
   if (used > limit) {
     const label =

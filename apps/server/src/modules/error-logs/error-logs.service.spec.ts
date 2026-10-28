@@ -257,11 +257,16 @@ describe('ErrorLogsService', () => {
       expect(mockDb.insert).toHaveBeenCalled()
     })
 
-    it('M2：500 仍走白名单检查（业务错误可降噪）', async () => {
+    it('L27：500 同样跳过白名单（崩溃/越权探测堆栈是不可消音取证签名）', async () => {
       redisServiceMock.get.mockResolvedValue(
         JSON.stringify([{ pattern: 'ECONNRESET', matchType: 'message', isActive: true }]),
       )
       vi.mocked(mockDb.insert).mockClear()
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 8 }]),
+        }),
+      } as never)
 
       await service.record({
         message: 'ECONNRESET timeout',
@@ -269,7 +274,8 @@ describe('ErrorLogsService', () => {
         url: '/api/v1/files/upload',
       })
 
-      expect(mockDb.insert).not.toHaveBeenCalled()
+      // 修复前 message 规则会吞掉该 5xx；现在必须入库
+      expect(mockDb.insert).toHaveBeenCalled()
     })
   })
 

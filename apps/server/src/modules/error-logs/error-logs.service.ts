@@ -84,8 +84,12 @@ export class ErrorLogsService {
   private async recordInternal(params: RecordErrorParams): Promise<void> {
     // M2：401/403/429 属于安全事件（认证/授权/限流），白名单只能降噪 5xx 与业务报错；
     // 否则持 error_log:manage 的委托管理员可用 pattern="权限不足" 整批吞掉越权探测日志
+    // L27：5xx 同样是取证签名——原 message 规则仍可覆盖后端崩溃/越权探测堆栈，
+    // 持 error_log:manage 者可预置宽 pattern 掩盖非认证类崩溃证据，故一并豁免 message 白名单
+    const isServerError = params.statusCode !== undefined && params.statusCode >= 500
     const skipWhitelist =
       params.internal === true ||
+      isServerError ||
       params.statusCode === 401 ||
       params.statusCode === 403 ||
       params.statusCode === 429
