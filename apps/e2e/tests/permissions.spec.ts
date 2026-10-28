@@ -80,6 +80,8 @@ test.describe('权限管理（admin 视角）', () => {
     await page.locator('.ant-modal-footer').getByRole('button', { name: '确 定' }).click()
 
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
+    // L16：锁定行内描述已更新，避免只有 toast 的假绿
+    await expect(row).toContainText('e2e 改后的描述', { timeout: 10_000 })
   })
 
   test('配置权限路由 → 成功', async ({ page }) => {
@@ -112,6 +114,16 @@ test.describe('权限管理（admin 视角）', () => {
 
     await page.locator('.ant-modal-footer').getByRole('button', { name: '确 定' }).click()
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
+
+    // L16：重新打开弹窗确认勾选已持久化（原仅 toast，路由未保存也过）
+    if (checkboxCount > 0) {
+      await row.getByRole('button', { name: '配置路由' }).click()
+      await expect(page.getByRole('dialog', { name: '配置路由' })).toBeVisible({ timeout: 5000 })
+      await expect(
+        page.locator('.ant-modal .ant-checkbox-wrapper').first().locator('input'),
+      ).toBeChecked()
+      await page.locator('.ant-modal-footer').getByRole('button', { name: '取 消' }).click()
+    }
   })
 
   test('禁用权限 → 成功', async ({ page }) => {

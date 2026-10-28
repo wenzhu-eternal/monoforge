@@ -135,4 +135,36 @@ test.describe('错误日志（admin 视角）', () => {
     await expect(row.getByText('已禁用')).toBeVisible({ timeout: 5000 })
     await expect(row.getByRole('button', { name: '禁用' })).toBeDisabled()
   })
+
+  test('L17：白名单编辑弹窗 + 启用开关 → 行内回显', async ({ page }) => {
+    const pattern = `e2e-wl-edit-${Date.now()}`
+    await apiClient.post(
+      '/error-logs/whitelist',
+      { pattern, matchType: 'message', description: '编辑前', isActive: true },
+      201,
+    )
+
+    await page.goto('/error-logs')
+    await page.getByRole('tab', { name: '白名单规则' }).click()
+
+    const row = page.locator('.ant-table-row').filter({ hasText: pattern })
+    await expect(row).toBeVisible({ timeout: 10_000 })
+
+    // 编辑说明
+    await row.getByRole('button', { name: '编辑' }).click()
+    await expect(page.getByRole('dialog', { name: '编辑白名单' })).toBeVisible()
+    const descInput = page.locator('.ant-modal').getByLabel('说明')
+    await descInput.clear()
+    await descInput.fill('e2e 编辑后说明')
+    await page.locator('.ant-modal-footer').getByRole('button', { name: '确 定' }).click()
+    await expect(page.locator('.ant-message-success').first()).toBeVisible({ timeout: 10_000 })
+    await expect(row).toContainText('e2e 编辑后说明', { timeout: 10_000 })
+
+    // 行内启用开关翻转（create 时为 true → 关闭）
+    const statusSwitch = row.locator('.ant-switch')
+    await expect(statusSwitch).toHaveClass(/ant-switch-checked/)
+    await statusSwitch.click()
+    await expect(page.locator('.ant-message-success').first()).toBeVisible({ timeout: 10_000 })
+    await expect(statusSwitch).not.toHaveClass(/ant-switch-checked/, { timeout: 10_000 })
+  })
 })

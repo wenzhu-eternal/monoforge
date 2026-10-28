@@ -16,7 +16,7 @@ export const Route = createFileRoute('/change-password')({
   component: ChangePasswordPage,
 })
 
-function ChangePasswordPage() {
+export function ChangePasswordPage() {
   const navigate = useNavigate()
   const changePasswordMutation = useChangePassword()
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)

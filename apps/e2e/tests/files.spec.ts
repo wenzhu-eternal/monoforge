@@ -27,7 +27,8 @@ test.describe('文件上传 + 软删', () => {
     await page.goto('/files')
     await expect(page.getByRole('heading', { name: '文件管理' })).toBeVisible()
 
-    const filePath = makePngFile(`e2e-upload-${Date.now()}.png`)
+    const filename = `e2e-upload-${Date.now()}.png`
+    const filePath = makePngFile(filename)
 
     // antd Upload 通过 file input 接收文件
     const fileInput = page.locator('input[type="file"]')
@@ -36,8 +37,10 @@ test.describe('文件上传 + 软删', () => {
     // 上传成功提示
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 10_000 })
 
-    // 列表应显示上传的文件名
-    await expect(page.locator('.ant-table-row').first()).toBeVisible({ timeout: 10_000 })
+    // L16：锁定本次新上传的文件行（原断言任意旧行即过，invalidate 漏掉仍假绿）
+    await expect(page.locator('.ant-table-row').filter({ hasText: filename })).toBeVisible({
+      timeout: 10_000,
+    })
   })
 
   test('admin 禁用自己上传的文件 → 成功 + 状态变更', async ({ page }) => {

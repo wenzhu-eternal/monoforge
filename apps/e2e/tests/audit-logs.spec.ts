@@ -47,10 +47,17 @@ test.describe('审计日志（admin 视角）', () => {
     await page.goto('/audit-logs')
     await expect(page.getByRole('heading', { name: '审计日志' })).toBeVisible()
 
-    // 表格中应有「创建」动作的记录
-    await expect(page.locator('.ant-table-row').filter({ hasText: '创建' }).first()).toBeVisible({
-      timeout: 10_000,
-    })
+    // L16：用动作筛选锁定"创建"，避免只断言首页（首页常被后续登录/删除记录挤出）
+    await page.locator('.ant-form-item').filter({ hasText: '动作' }).locator('.ant-select').click()
+    await page
+      .locator('.ant-select-item')
+      .filter({ hasText: /^创建$/ })
+      .first()
+      .click()
+    await page.getByRole('button', { name: /搜\s*索/ }).click()
+
+    await expect(page.locator('.ant-table-row').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.ant-table-row').first()).toContainText('创建')
 
     // 清理临时用户
     const { data: userList } = await apiClient.get<{
