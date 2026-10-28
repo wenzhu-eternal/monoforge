@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import {
+  ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -20,6 +21,11 @@ import { RedisService } from '@/modules/redis/redis.service'
 
 // 单用户最大 WS 连接数，防 DoS
 const MAX_CONNECTIONS_PER_USER = 5
+
+// L8：消息级频控——持有效 token 者可无上限 emit，ping 1:1 回显即放大；
+// 每连接按 1s 滑窗计数，超限只回 error 不处理（业务消息本身无写操作）
+const WS_MESSAGE_WINDOW_MS = 1000
+const WS_MESSAGE_MAX_PER_WINDOW = 20
 
 // presence 事件接收方 room：持 notification:view 权限（或 admin）的连接加入；
 // 广播走 server.to(room)，经 Redis adapter 跨实例投递，替代原"遍历本实例连接"的单实例过滤
@@ -74,6 +80,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const { userId, jti, exp } = auth
 
+    // L4：先落最小身份字段再走后续 await——原赋值在 SADD 之后、DB 加载之前，
+    // 该窗口内断开时 handleDisconnect 读到 userId===undefined 直接早退，
+    // SREM 不执行，Redis Set 残留虚在线 socket 直到 TTL 300s
+    client.data.userId = userId
+    client.data.jti = jti
+
     // 原子登记（Lua 保证 SCARD 判断 + SADD + TTL 续期无竞态）:
     // 返回 -1 表示连接数超限；否则返回登记后的全局连接数（含本次）
     let connCount: number
@@ -102,8 +114,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // 登记前数量为 0 说明之前全局不在线（用原子脚本返回值推导，消除原 wasOnline 查询竞态）
     const wasOnline = connCount > 1
 
-    client.data.userId = userId
-    client.data.jti = jti
     // 加载权限与角色到 socket（并按权限加入 presence room；同时校验用户状态，禁用/软删则拒绝连接）
     const ok = await this.loadUserPermissions(client, userId)
     if (!ok) {
@@ -189,7 +199,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('ping')
-  handlePing(@MessageBody() data: unknown): { event: string; data: unknown } {
+  handlePing(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: unknown,
+  ): { event: string; data: unknown } | undefined {
+    if (!this.consumeMessageBudget(client)) return
     return { event: 'pong', data }
   }
 
@@ -197,12 +211,32 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * 通知已读 ack（客户端 emit 'notification:read' { id }，实际持久化由 NotificationsService 负责）
    */
   @SubscribeMessage('notification:read')
-  handleNotificationRead(@MessageBody() data: { id?: number }): {
-    event: string
-    data: { ok: boolean }
-  } {
+  handleNotificationRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { id?: number },
+  ): { event: string; data: { ok: boolean } } | undefined {
+    if (!this.consumeMessageBudget(client)) return
     // 实际持久化由 NotificationsService 负责（前端通过 HTTP 调用）
     return { event: 'notification:read:ack', data: { ok: !!data?.id } }
+  }
+
+  /**
+   * L8：每连接 1s 窗口内最多处理 WS_MESSAGE_MAX_PER_WINDOW 条消息——
+   * 握手数与 5 连接/用户只防连接面，持有效 token 者仍可无上限 emit 触发 1:1 回显放大
+   */
+  private consumeMessageBudget(client: Socket): boolean {
+    const now = Date.now()
+    const state = client.data as { msgWindowStart?: number; msgCount?: number }
+    if (!state.msgWindowStart || now - state.msgWindowStart >= WS_MESSAGE_WINDOW_MS) {
+      state.msgWindowStart = now
+      state.msgCount = 0
+    }
+    state.msgCount = (state.msgCount ?? 0) + 1
+    if (state.msgCount > WS_MESSAGE_MAX_PER_WINDOW) {
+      client.emit('error', { message: '消息发送过于频繁，请稍后再试' })
+      return false
+    }
+    return true
   }
 
   /**

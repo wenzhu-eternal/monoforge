@@ -167,6 +167,12 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 - **登出即断**：登出仅吊销 HTTP token 不够，WS 侧靠 jti 黑名单重校验兜底断连
 
+- **身份字段先落位（L4）**：SADD 之前必须先把 `userId`/`jti` 写入 `client.data`——登记 await 窗口内断开时，`handleDisconnect` 读不到 userId 会直接早退，SREM 不执行，Redis Set 会残留虚在线 socket 至 TTL 300s（虚占 5 连接/用户配额）
+
+- **每连接消息频控（L8）**：消息面（`ping`/`notification:read`）必须按连接做窗口限流（1s / 20 条），超限只回 `error` 不处理业务——握手数与 5 连接/用户只防连接面，持有效 token 者仍可无上限 emit 触发 1:1 回显放大
+
+- **握手 IP 维度频率闸（Q6 取舍，留档）**：网关不做 IP 维度握手限流——垃圾 token 在 `verifyAsync` 即断，单次成本为一次验签；针对高频繁发方的 CPU 放大交由边缘层（nginx `limit_conn`/`limit_req`）兜底，属"应用层只管语义、边缘层管速率"的有意分层，不是遗漏
+
 - **适配器清理**：`redis-io.adapter` 必须实现 `close()` 断开 pub/sub 连接，避免应用关闭时连接泄漏
 
 ### 前端路由守卫
