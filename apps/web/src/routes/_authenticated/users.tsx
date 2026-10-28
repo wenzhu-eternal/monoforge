@@ -262,6 +262,10 @@ export function UsersContent() {
         // 邮箱/角色/状态变更后端要求 USER_ROLE_MANAGE，无权限时不提交避免 403
         if (canManageRole) {
           updateData.email = values.email
+        }
+        // M2：自改 roleId/status 后端一律 403（不比对是否同值），isSelf 时不提交——
+        // 否则编辑弹窗整功能失效（哪怕只改昵称也会被"不能修改自己的角色"打回）
+        if (canManageRole && !isSelf) {
           // J5：编辑时清空角色选择 = 解绑角色（显式 null）；undefined=未改动不提交。
           // 初值有角色而提交为 undefined，说明用户点了清除
           updateData.roleId =

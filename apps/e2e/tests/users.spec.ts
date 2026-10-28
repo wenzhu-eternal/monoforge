@@ -53,6 +53,27 @@ test.describe('用户管理（admin 视角）', () => {
     })
   })
 
+  test('M2：admin 编辑自己只改昵称 → 成功（不再被"不能修改自己的角色"403 打回）', async ({
+    page,
+  }) => {
+    await page.goto('/users')
+    const ownRow = page.locator('.ant-table-row').filter({ hasText: adminEmail })
+    await expect(ownRow).toBeVisible({ timeout: 10_000 })
+
+    await ownRow.getByRole('button', { name: '编辑' }).click()
+    await expect(page.getByRole('dialog', { name: '编辑用户' })).toBeVisible()
+
+    const nicknameInput = page.locator('.ant-modal').getByLabel('昵称')
+    await nicknameInput.clear()
+    await nicknameInput.fill('e2e-admin昵称')
+
+    await page.locator('.ant-modal-footer').getByRole('button', { name: '确 定' }).click()
+
+    // 修复前此处必出 `.ant-message-error`（403 不能修改自己的角色）
+    await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('.ant-message-error')).toHaveCount(0)
+  })
+
   test('改用户资料（nickname）→ 成功', async ({ page }) => {
     await page.goto('/users')
     await expect(

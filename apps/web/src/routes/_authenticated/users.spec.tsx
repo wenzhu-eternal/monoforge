@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   // /auth/me 回显（L8 自改判定 + 行级 admin 展示）
   me: { id: 7, adminRoleId: 1 } as { id: number; adminRoleId: number },
   deleteCalls: [] as { id: number; resolve: () => void }[],
+  // M2：update 提交 payload 捕获
+  updatePayloads: [] as { id: number; data: Record<string, unknown> }[],
 }))
 
 vi.mock('antd', async (importOriginal) => {
@@ -69,7 +71,12 @@ vi.mock('@/hooks/use-users', () => {
       isSuccess: true,
     }),
     useCreateUser: () => ({ mutateAsync: vi.fn(), isPending: false }),
-    useUpdateUser: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useUpdateUser: () => ({
+      mutateAsync: async (args: { id: number; data: Record<string, unknown> }) => {
+        state.updatePayloads.push(args)
+      },
+      isPending: false,
+    }),
     useDeleteUser: () => ({ mutateAsync: pendingDelete, isPending: false }),
     useRestoreUser: () => ({ mutateAsync: vi.fn(), isPending: false }),
   }
@@ -112,6 +119,41 @@ describe('L8：编辑弹窗新密码输入框按后端 403 条件禁用', () => 
 
     const input = await openEditModal(1)
     expect(input).toBeDisabled()
+  })
+})
+
+describe('M2：自改不上送 roleId/status（后端对自改 roleId 一律 403，带上即整弹窗失效）', () => {
+  beforeEach(() => {
+    state.granted = [PermissionCodes.USER_UPDATE, PermissionCodes.USER_ROLE_MANAGE]
+    state.me = { id: 7, adminRoleId: 1 }
+    state.updatePayloads = []
+  })
+
+  async function submitNickname(rowIndex: number, nickname: string) {
+    await openEditModal(rowIndex)
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: nickname } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    return state.updatePayloads[0].data
+  }
+
+  it('编辑自己只改昵称 → payload 不含 roleId/status', async () => {
+    render(<UsersContent />)
+
+    const data = await submitNickname(1, '新昵称')
+
+    expect(data.nickname).toBe('新昵称')
+    expect(data).not.toHaveProperty('roleId')
+    expect(data).not.toHaveProperty('status')
+  })
+
+  it('编辑他人仍上送 roleId/status（回归锁，避免豁免范围过头）', async () => {
+    render(<UsersContent />)
+
+    const data = await submitNickname(0, '他人昵称')
+
+    expect(data.roleId).toBe(2)
+    expect(data.status).toBe(true)
   })
 })
 

@@ -447,6 +447,42 @@ describe('UsersService', () => {
       )
     })
 
+    it('M1: 非超管对超管施加/解除强制改密标记均被拒（上轮 M1 修复自身的缺口）', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        email: 'root@b.com',
+        roleId: 1,
+      } as never)
+
+      await expect(service.update(1, { mustChangePassword: true }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+      await expect(service.update(1, { mustChangePassword: false }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+    })
+
+    it('M1: 超管对超管清 mustChangePassword 放行（解锁通道保留）', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        email: 'root@b.com',
+        roleId: 1,
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi
+              .fn()
+              .mockResolvedValue([{ id: 1, email: 'root@b.com', mustChangePassword: false }]),
+          }),
+        }),
+      } as never)
+
+      await expect(
+        service.update(1, { mustChangePassword: false }, { roleId: 1 }),
+      ).resolves.toEqual(expect.objectContaining({ id: 1 }))
+    })
+
     it('H1 扩展: 非超管改超管非敏感字段（nickname）不过闸、正常走更新', async () => {
       vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
         id: 1,

@@ -1,6 +1,7 @@
 import { adminUser, normalUser, targetUser } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
 import { cleanupAll, fetchAllPages } from '@e2e/helpers/cleanup'
+import { E2E_MARKER } from './e2e-marker'
 
 /**
  * Playwright 全局 setup：在所有测试前准备测试数据
@@ -85,9 +86,39 @@ async function ensureUser(
   }
 }
 
+/**
+ * M3：校验 9000 端口上的 server 就是本次 e2e 启动的实例。
+ *
+ * reuseExistingServer 只做健康探测——端口已被 dev server 占用时，webServer 整段 env
+ * （E2E_DATABASE_URL / ALLOW_REGISTER=false / MAIL_HOST='' / THROTTLE_* 等环境钉子）
+ * 与 db:push+seed 都会被静默跳过，用例要么打 dirty 库要么假红假绿。
+ * 指纹不符直接 fail-fast，把"必须停 dev"从口头约定变成硬校验。
+ */
+async function assertE2EEnvironment() {
+  const res = await fetch('http://localhost:9000/api/v1/health', {
+    signal: AbortSignal.timeout(2000),
+  })
+  // 全局 ResponseInterceptor 把响应包成 { code, message, data }，marker 在 data 内
+  const body = (await res.json().catch(() => null)) as {
+    data?: { e2eMarker?: string }
+    e2eMarker?: string
+  } | null
+  const actual = body?.data?.e2eMarker ?? body?.e2eMarker
+  if (actual !== E2E_MARKER) {
+    throw new Error(
+      `[global-setup] 9000 端口的 server 不是本次 e2e 实例（e2eMarker=${actual ?? '缺失'}）：\n` +
+        '  reuseExistingServer 复用了已有进程，全部环境钉子（库地址/注册开关/邮件/限流）与 db:push+seed 均已失效。\n' +
+        '  请先停掉 dev server（pnpm dev 的 server 进程）后重跑 pnpm test:e2e。',
+    )
+  }
+}
+
 export default async function globalSetup() {
   console.log('[global-setup] 等待 server 就绪...')
   await waitForServer()
+
+  console.log('[global-setup] 校验 e2e 环境指纹...')
+  await assertE2EEnvironment()
 
   console.log('[global-setup] admin 登录...')
   await apiClient.login(adminUser.username, adminUser.password)

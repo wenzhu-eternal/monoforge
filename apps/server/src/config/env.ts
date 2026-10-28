@@ -154,6 +154,14 @@ export const envSchema = z
 
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
+    // M3：e2e 运行环境指纹——仅 test:e2e 的 webServer 注入，health 公开回显供 global-setup 校验，
+    // 防止 9000 端口悬挂的 dev server 让 reuseExistingServer 静默吞掉全部环境钉子
+    E2E_MARKER: z
+      .string()
+      .max(64)
+      .optional()
+      .transform((v) => (v ? v : undefined)),
+
     // 初始化开关：默认关闭，仅首次部署显式打开
     ALLOW_SETUP: z
       .union([z.boolean(), z.string()])

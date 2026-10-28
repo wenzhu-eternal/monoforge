@@ -247,9 +247,14 @@ export class UsersService {
       (existingUser.roleId === adminRoleId &&
         data.roleId !== undefined &&
         data.roleId !== adminRoleId)
+    // M1：mustChangePassword 同属敏感变更——非超管可对超管施加/解除强制改密，
+    // 等同把超管锁进改密环节或解锁未改密的管理员，因此与本段其它三个字段同闸
     const editsAdminSensitive =
       existingUser.roleId === adminRoleId &&
-      (data.password !== undefined || data.status !== undefined || data.email !== undefined)
+      (data.password !== undefined ||
+        data.status !== undefined ||
+        data.email !== undefined ||
+        data.mustChangePassword !== undefined)
     if ((touchesAdminRole || editsAdminSensitive) && !isAdminUser(caller)) {
       throw new ForbiddenException('仅超级管理员可变更超管账号的敏感信息')
     }

@@ -11,6 +11,7 @@ import { Throttle } from '@nestjs/throttler'
 import { OptionalAuth } from '@/common/decorators/optional-auth.decorator'
 import { Public } from '@/common/decorators/public.decorator'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { getEnv } from '@/config/env'
 import { HealthService } from './health.service'
 
 interface AuthRequest {
@@ -41,7 +42,14 @@ export class HealthController {
     // L34：DB/Redis 连接细节（延迟/版本）是内部信息，仅超管可见——
     // 未认证与普通登录用户只返回基础状态（原先是"登录即可看全部"）
     if (!isAdminUser(req.user)) {
-      return { status: result.status, timestamp: result.timestamp }
+      // M3：e2e 指纹随基础状态一并匿名回显（仅显式注入时才出现），
+      // 供 e2e global-setup 判定 9000 端口是否为本次测试实例
+      const e2eMarker = getEnv().E2E_MARKER
+      return {
+        status: result.status,
+        timestamp: result.timestamp,
+        ...(e2eMarker ? { e2eMarker } : {}),
+      }
     }
     return result
   }

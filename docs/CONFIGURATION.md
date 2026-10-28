@@ -26,6 +26,7 @@
 | `APP_NAME` | 应用名（Swagger 标题、邮件主题、邮件模板均引用，新项目通过 .env 配置） | `MonoForge` |
 | `ALLOW_ORIGIN` | CORS 白名单（逗号分隔多源）。**生产环境必填，未配启动失败**（M3 前默认值 `http://localhost:3000` 会静默收缩导致前端全量被 CORS 拒）；docker compose 已移除 localhost 默认透传，避免绕过该强检 | `http://localhost:3000`（仅开发） |
 | `NODE_ENV` | 环境 | `development` / `production` |
+| `E2E_MARKER` | e2e 运行环境指纹（M3）：仅 `pnpm test:e2e` 的 Playwright webServer 自动注入，`GET /health` 匿名回显 `e2eMarker` 字段，global-setup 比对不符即 fail-fast——`reuseExistingServer` 复用到 9000 端口上悬挂的 dev server 时，全部环境钉子（库地址/注册开关/邮件/限流）会被静默吞掉。本地直跑/容器部署留空即关闭，无需在 `docker-compose.yml` 透传 | 空（仅 e2e 注入 `monoforge-e2e`） |
 | `COOKIE_SECURE` | refresh token cookie 的 secure 标志（HTTP=false，HTTPS=true；compose 缺省 `true` fail-secure，HTTP 调试显式设 false 或 `ALLOW_INSECURE_COOKIE=true`） | `false`（compose 缺省 `true`） |
 | `ALLOW_INSECURE_COOKIE` | 生产环境允许非 secure cookie（ngrok/单容器 HTTP 调试场景；生产强制 COOKIE_SECURE 除非此项为 true） | `false` |
 | `ALLOW_SETUP` | 首次部署初始化开关（true 时允许调用 /setup 接口创建管理员；初始化事务内同步灌入 `@shared` 的 `DEFAULT_PERMISSIONS` 并绑定 admin 角色，与 `db:seed` 同源；初始化后建议设为 false）。**M3：未初始化窗口内 /setup 先到先得，务必仅在受控网络（本机/VPN/内网）完成初始化后再对外暴露，初始化完成后立即改回 false** | `false` |

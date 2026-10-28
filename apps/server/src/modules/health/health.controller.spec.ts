@@ -2,8 +2,10 @@ import { ServiceUnavailableException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // L34：isAdminUser 依赖 getEnv().ADMIN_ROLE_ID，mock 固定为 1 保证单测不随 .env 漂移
+// M3：E2E_MARKER 由用例按需注入，验证匿名回显口径
+const envState = vi.hoisted(() => ({ E2E_MARKER: undefined as string | undefined }))
 vi.mock('@/config/env', () => ({
-  getEnv: () => ({ ADMIN_ROLE_ID: 1 }),
+  getEnv: () => ({ ADMIN_ROLE_ID: 1, E2E_MARKER: envState.E2E_MARKER }),
 }))
 
 import { HealthController } from './health.controller'
@@ -74,6 +76,28 @@ describe('HealthController', () => {
 
       expect(result).toEqual(mockResult)
       expect(service.check).toHaveBeenCalledOnce()
+    })
+
+    it('M3：注入 E2E_MARKER 时匿名回显指纹，未注入时字段不出现', async () => {
+      vi.mocked(service.check).mockResolvedValue({
+        status: 'ok',
+        timestamp: '2026-10-28T00:00:00.000Z',
+        database: 'ok',
+        redis: 'ok',
+      })
+
+      const anonymous = await controller.check({} as never)
+      expect(anonymous).not.toHaveProperty('e2eMarker')
+
+      envState.E2E_MARKER = 'monoforge-e2e'
+      const withMarker = await controller.check({} as never)
+      expect(withMarker).toEqual({
+        status: 'ok',
+        timestamp: '2026-10-28T00:00:00.000Z',
+        e2eMarker: 'monoforge-e2e',
+      })
+
+      envState.E2E_MARKER = undefined
     })
 
     it('should throw 503 when database error', async () => {
