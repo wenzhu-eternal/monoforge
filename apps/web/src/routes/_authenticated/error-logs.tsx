@@ -2,6 +2,7 @@ import type { WhitelistMatchType } from '@shared'
 import { CreateErrorWhitelistSchema, DEFAULT_PAGE_SIZE } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -104,8 +105,8 @@ export function LogsTab() {
     isResolved: resolvedFilter,
   })
   usePagedFallback(data?.list.length, isSuccess, page, setPage)
-  const { data: stats } = useErrorStats()
-  const { data: grouped } = useErrorLogsGrouped(10)
+  const { data: stats, isError: statsError, refetch: refetchStats } = useErrorStats()
+  const { data: grouped, isError: groupedError, refetch: refetchGrouped } = useErrorLogsGrouped(10)
   const deleteMutation = useDeleteErrorLog()
   const resolveMutation = useResolveErrorLog()
   const batchResolveMutation = useBatchResolveErrorLog()
@@ -288,6 +289,20 @@ export function LogsTab() {
       {contextHolder}
 
       {/* 统计面板 - 紧凑横排 */}
+      {/* L21：独立查询失败不得静默消失（与"0 错误"不可辨），降级为带重试的横幅 */}
+      {statsError && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="统计面板加载失败"
+          action={
+            <Button size="small" onClick={() => refetchStats()}>
+              重试
+            </Button>
+          }
+        />
+      )}
       {stats && (
         <Card size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
@@ -320,6 +335,20 @@ export function LogsTab() {
       )}
 
       {/* 相同报错聚合 Top 10 - 可折叠 */}
+      {/* L21：聚合查询失败同样可辨，不与"无聚合"混淆 */}
+      {groupedError && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="相似错误聚合加载失败"
+          action={
+            <Button size="small" onClick={() => refetchGrouped()}>
+              重试
+            </Button>
+          }
+        />
+      )}
       {grouped && grouped.length > 0 && (
         <Collapse
           size="small"

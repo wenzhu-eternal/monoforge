@@ -6,7 +6,7 @@ import type {
   Role,
   UpdateRole,
 } from '@shared'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCan } from '@/hooks/use-auth'
 import { api } from '@/lib/api'
 import { PermissionCodes } from '@/lib/permissions'
@@ -20,6 +20,8 @@ export const useRoles = (params: PaginationQuery) => {
       })
       return response.data.data!
     },
+    // L20：翻页时保留上一页数据，避免表格闪空
+    placeholderData: keepPreviousData,
   })
 }
 

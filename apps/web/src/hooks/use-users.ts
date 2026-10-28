@@ -6,7 +6,7 @@ import type {
   UpdateUser,
   User,
 } from '@shared'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
 export const useUsers = (params: PaginationQuery) => {
@@ -18,6 +18,8 @@ export const useUsers = (params: PaginationQuery) => {
       })
       return response.data.data!
     },
+    // L20：翻页/筛选时保留上一页数据，避免 data 瞬时 undefined 导致表格闪空
+    placeholderData: keepPreviousData,
   })
 }
 

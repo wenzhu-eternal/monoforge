@@ -1,5 +1,5 @@
 import type { ApiResponse, FileItem, PaginatedResponse, UploadResult } from '@shared'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
 export type { FileItem, UploadResult }
@@ -18,6 +18,8 @@ export const useFiles = (params: FileQuery) => {
       })
       return response.data.data!
     },
+    // L20：翻页时保留上一页数据，避免表格闪空
+    placeholderData: keepPreviousData,
   })
 }
 

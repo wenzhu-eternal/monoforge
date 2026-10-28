@@ -7,7 +7,7 @@ import type {
   RouteMeta,
   UpdatePermission,
 } from '@shared'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCan } from '@/hooks/use-auth'
 import { api } from '@/lib/api'
 import { PermissionCodes } from '@/lib/permissions'
@@ -29,6 +29,8 @@ export function usePermissions(params: UsePermissionsParams = {}) {
       })
       return res.data.data
     },
+    // L20：翻页时保留上一页数据，避免表格闪空
+    placeholderData: keepPreviousData,
   })
 }
 

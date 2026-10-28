@@ -9,7 +9,7 @@ import type {
   PaginatedResponse,
   UpdateErrorWhitelist,
 } from '@shared'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
 export type { AuditLog, ErrorLog, ErrorLogGroup, ErrorWhitelist }
@@ -34,6 +34,8 @@ export const useAuditLogs = (params: LogQuery) => {
       )
       return response.data.data!
     },
+    // L20：翻页/筛选时保留上一页数据，避免表格闪空
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -52,6 +54,8 @@ export const useErrorLogs = (params: ErrorLogQuery) => {
       )
       return response.data.data!
     },
+    // L20：翻页/筛选时保留上一页数据，避免表格闪空
+    placeholderData: keepPreviousData,
   })
 }
 
