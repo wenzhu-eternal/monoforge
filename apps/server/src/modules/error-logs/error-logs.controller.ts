@@ -35,6 +35,7 @@ import { PermissionsGuard } from '@/common/guards/permissions.guard'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { parsePagination, parseQueryText } from '@/common/utils/pagination'
 import { parseBoolQuery } from '@/common/utils/parse-bool-query'
+import type { TokenPayload } from '@/modules/auth/auth.service'
 import { BatchResolveDto } from './dto/batch-resolve.dto'
 import { CreateWhitelistDto } from './dto/create-whitelist.dto'
 import { ReportErrorDto } from './dto/report-error.dto'
@@ -166,8 +167,9 @@ export class ErrorLogsController {
   @Permissions(PermissionCodes.ERROR_LOG_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '删除错误日志' })
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    return this.errorLogsService.remove(id)
+  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
+    // M2：取证类行（401/403/429/5xx）仅超管可删，service 需要调用方身份判定
+    return this.errorLogsService.remove(id, currentUser)
   }
 
   @Post('whitelist')

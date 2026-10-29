@@ -31,6 +31,11 @@ const WS_MESSAGE_MAX_PER_WINDOW = 20
 // 广播走 server.to(room)，经 Redis adapter 跨实例投递，替代原"遍历本实例连接"的单实例过滤
 const PRESENCE_ROOM = 'presence:watchers'
 
+// M1：socket.io 的 connected 在握手 await 期间可能翻转；经函数读取避免 TS 把属性流分析收窄成字面量
+function isDisconnected(client: Socket): boolean {
+  return (client as { connected?: boolean }).connected === false
+}
+
 /**
  * WebSocket 网关: 在线状态登记 + 通知推送
  * 鉴权: 从 auth.token（JWT access token）解析 userId
@@ -124,6 +129,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     this.logger.log(`用户 ${userId} 已连接 (socket: ${client.id})`)
 
+    // M1：握手 await 期间客户端可能已断开——handleDisconnect 会先跑完 SREM + 离线广播；
+    // 本函数恢复执行后若仍广播 online 并挂定时器，presence 观察者将看到"零连接用户永久在线"，
+    // 且定时器清理方已执行过、refreshTimer 从此永久泄漏。断开局直接返回（SREM 已由 handleDisconnect 完成）
+    if (isDisconnected(client)) {
+      this.logger.log(`用户 ${userId} 在握手完成前已断开 (socket: ${client.id})，跳过在线广播`)
+      return
+    }
+
     // 新用户上线（之前全局不在线）才广播，避免多端重复广播
     // presence 仅推给 presence room 内持 notification:view 的连接，避免泄露全员在线状态
     if (!wasOnline) {
@@ -134,6 +147,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // 防止长连接超过 TTL 300s 后 key 过期导致 pushToUser 不可达
     const refreshTimer = setInterval(async () => {
       try {
+        // M1：断开后若定时器仍存活（清理窗口漏网）自愈，避免永久 60s 空转读 DB/Redis
+        if (isDisconnected(client)) {
+          clearInterval(refreshTimer)
+          return
+        }
         // L4：access token 自然过期不写黑名单，握手只校验一次 exp——不重查则连接
         // 无限存活，presence 泄露面与 5 连接配额占用远超 15min 会话语义
         if (exp && Date.now() >= exp * 1000) {
@@ -162,6 +180,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
     }, 60_000)
     client.data.refreshTimer = refreshTimer
+    // M1：先赋值再复检——断开恰好落在广播后、赋值前时 handleDisconnect 读不到 timer，
+    // 此处补清，避免该窗口泄漏
+    if (isDisconnected(client)) {
+      clearInterval(refreshTimer)
+      client.data.refreshTimer = undefined
+    }
   }
 
   handleDisconnect(client: Socket) {

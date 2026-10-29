@@ -17,6 +17,7 @@ const { EventsGateway } = await import('./events.gateway')
 
 interface FakeClient {
   id: string
+  connected: boolean
   handshake: { auth?: { token?: string } }
   data: Record<string, unknown>
   emit: ReturnType<typeof vi.fn>
@@ -28,6 +29,7 @@ interface FakeClient {
 function makeClient(token?: string): FakeClient {
   return {
     id: 'sock-1',
+    connected: true,
     handshake: token ? { auth: { token } } : {},
     data: {},
     emit: vi.fn(),
@@ -170,6 +172,39 @@ describe('EventsGateway L4 断开时序 / L8 消息频控', () => {
       status: true,
       deletedAt: null,
     } as never)
+  })
+
+  it('M1：握手 await 期间断开——不广播在线、不挂定时器（修复前幽灵在线 + timer 永久泄漏）', async () => {
+    const presenceEmit = vi.fn()
+    gateway.server = { to: vi.fn().mockReturnValue({ emit: presenceEmit }) } as never
+    let release: (value: unknown) => void = () => {}
+    vi.mocked(db.query.users.findFirst).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 1,
+      username: 'admin',
+      jti: 'jti-1',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    })
+
+    const connecting = gateway.handleConnection(client as never)
+    // 进入 loadUserPermissions 的 await
+    await new Promise((r) => setTimeout(r, 0))
+
+    // 模拟真实断开：置 connected=false，且 handleDisconnect 先跑完（SREM + 离线广播）
+    client.connected = false
+    gateway.handleDisconnect(client as never)
+
+    release({ id: 1, username: 'admin', roleId: 1, status: true, deletedAt: null })
+    await connecting
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(client.data.refreshTimer).toBeUndefined()
+    expect(presenceEmit).not.toHaveBeenCalledWith('presence:update', { userId: 1, online: true })
   })
 
   it('L4：登记 await 期间断开仍执行 SREM（userId 先于 SADD 写入 client.data）', async () => {

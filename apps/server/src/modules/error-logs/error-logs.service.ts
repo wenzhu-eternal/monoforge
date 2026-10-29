@@ -1,9 +1,15 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common'
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import type { ErrorLog, ErrorLogGroup, ErrorStats, ErrorWhitelist } from '@shared/schemas/error-log'
 import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { appendErrorLog } from '@/common/logger'
 import { normalizeIpForKey } from '@/common/utils/ip-normalize'
+import { isAdminUser } from '@/common/utils/is-admin'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { trackDbWrite } from '@/db/pending-writes'
@@ -48,6 +54,12 @@ const WHITELIST_ACTIVE_CACHE_KEY = 'error:whitelist:active'
 // 未删除白名单全集（含 isActive=false），供 findWhitelist 列表展示使用
 const WHITELIST_ALL_CACHE_KEY = 'error:whitelist:all:notDeleted'
 const WHITELIST_CACHE_TTL = 60
+
+// 取证类状态码：认证/授权/限流拒绝与 5xx 崩溃证据
+function isForensicLog(statusCode: number | null | undefined): boolean {
+  if (statusCode == null) return false
+  return statusCode === 401 || statusCode === 403 || statusCode === 429 || statusCode >= 500
+}
 
 @Injectable()
 export class ErrorLogsService {
@@ -368,12 +380,20 @@ export class ErrorLogsService {
     }
   }
 
-  async remove(id: number): Promise<{ message: string }> {
+  async remove(
+    id: number,
+    caller?: { roleId?: number | null } | null,
+  ): Promise<{ message: string }> {
     const log = await db.query.errorLogs.findFirst({
       where: and(eq(errorLogs.id, id), notDeleted(errorLogs.deletedAt)),
     })
     if (!log) {
       throw new NotFoundException(`错误日志 ID ${id} 不存在`)
+    }
+    // M2：401/403/429 与 5xx 是越权探测/崩溃的取证行——与 recordInternal 的白名单豁免同一威胁模型，
+    // 此处堵住"持 error_log:manage 者逐行软删取证痕迹"的同权限实现面，仅超管可删
+    if (isForensicLog(log.statusCode) && !isAdminUser(caller)) {
+      throw new ForbiddenException('取证类错误日志仅超级管理员可删除')
     }
 
     await db.update(errorLogs).set({ deletedAt: new Date() }).where(eq(errorLogs.id, id))

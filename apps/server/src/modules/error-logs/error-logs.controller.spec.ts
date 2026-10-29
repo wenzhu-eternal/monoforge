@@ -201,13 +201,14 @@ describe('ErrorLogsController', () => {
   })
 
   describe('remove', () => {
-    it('删除错误日志', async () => {
+    it('删除错误日志（M2：透传调用方身份供取证行判定）', async () => {
       vi.mocked(service.remove).mockResolvedValue({ message: '错误日志 ID 1 已删除' })
+      const caller = { sub: 1, roleId: 1 }
 
-      const result = await controller.remove(1)
+      const result = await controller.remove(1, caller as never)
 
       expect(result).toEqual({ message: '错误日志 ID 1 已删除' })
-      expect(service.remove).toHaveBeenCalledWith(1)
+      expect(service.remove).toHaveBeenCalledWith(1, caller)
     })
   })
 

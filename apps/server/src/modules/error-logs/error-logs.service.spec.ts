@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common'
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock RedisService
@@ -63,6 +63,11 @@ vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
   maybeDeleted: vi.fn(() => undefined),
   isUniqueViolation: vi.fn(() => false),
+}))
+
+// M2：isAdminUser 依赖 ADMIN_ROLE_ID，固定为 1（L34 模式），避免随 .env 漂移
+vi.mock('@/config/env', () => ({
+  getEnv: () => ({ ADMIN_ROLE_ID: 1 }),
 }))
 
 const { db: mockDb } = await import('@/db')
@@ -332,6 +337,49 @@ describe('ErrorLogsService', () => {
       vi.mocked(mockDb.query.errorLogs.findFirst).mockResolvedValue(undefined)
 
       await expect(service.remove(999)).rejects.toThrow(NotFoundException)
+    })
+
+    it('M2：401/403/429 取证行非超管删除被拒（修复前同权限可逐行抹除越权痕迹）', async () => {
+      for (const statusCode of [401, 403, 429]) {
+        vi.mocked(mockDb.query.errorLogs.findFirst).mockResolvedValue({
+          id: 1,
+          statusCode,
+        } as never)
+
+        await expect(service.remove(1, { roleId: 2 })).rejects.toThrow(ForbiddenException)
+      }
+      expect(mockDb.update).not.toHaveBeenCalled()
+    })
+
+    it('M2：5xx 取证行非超管删除被拒，超管可删', async () => {
+      vi.mocked(mockDb.query.errorLogs.findFirst).mockResolvedValue({
+        id: 1,
+        statusCode: 500,
+      } as never)
+      await expect(service.remove(1, { roleId: 2 })).rejects.toThrow(ForbiddenException)
+
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      } as never)
+      const result = await service.remove(1, { roleId: 1 })
+      expect(result.message).toContain('1')
+    })
+
+    it('M2：非取证类 4xx 与无状态码行不误伤（委托管理员仍可删降噪）', async () => {
+      vi.mocked(mockDb.query.errorLogs.findFirst).mockResolvedValue({
+        id: 1,
+        statusCode: 400,
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      } as never)
+
+      const result = await service.remove(1, { roleId: 2 })
+      expect(result.message).toContain('1')
     })
   })
 
