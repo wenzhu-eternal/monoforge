@@ -1,7 +1,8 @@
 import { z } from 'zod'
 
 // L22：WebSocket 测试通知入参契约与后端 DTO 共用，前端表单规则不再手写长度
-export const NotifySchema = z.object({
+// L16：写侧统一 strictObject——多传字段 400，不静默 strip
+export const NotifySchema = z.strictObject({
   userId: z.number().int().positive('用户 ID 必须为正整数'),
   type: z.string().min(1, '类型不能为空').max(50, '类型最多 50 字符'),
   title: z.string().min(1, '标题不能为空').max(200, '标题最多 200 字符'),

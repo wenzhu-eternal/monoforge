@@ -22,12 +22,14 @@ export const RoleBriefSchema = z.object({
  */
 export const CreateRoleSchema = z.strictObject({
   name: z.string().min(1).max(50),
-  description: z.string().optional(),
+  // L19：DB description 可空，开放显式置空
+  description: z.string().nullable().optional(),
 })
 
 export const UpdateRoleSchema = z.strictObject({
   name: z.string().min(1).max(50).optional(),
-  description: z.string().optional(),
+  // L19：同 Create，开放显式置空
+  description: z.string().nullable().optional(),
 })
 
 export type Role = z.infer<typeof RoleSchema>

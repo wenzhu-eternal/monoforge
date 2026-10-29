@@ -30,12 +30,13 @@ describe('SanitizeBodyPipe', () => {
   })
 
   it('H2: 非 nullable 字段的 null 仍转 undefined（保持原有 optional 匹配语义）', () => {
-    const out = pipe.transform({ email: null, nickname: null }, meta(UpdateUserDto)) as Record<
-      string,
-      unknown
-    >
+    const out = pipe.transform({ email: null }, meta(UpdateUserDto)) as Record<string, unknown>
     expect(out.email).toBeUndefined()
-    expect(out.nickname).toBeUndefined()
+  })
+
+  it('L19: nickname 开放置空后 null 被保留（清空昵称不被吞成未改动）', () => {
+    const out = pipe.transform({ nickname: null }, meta(UpdateUserDto)) as Record<string, unknown>
+    expect(out.nickname).toBeNull()
   })
 
   it('无 metatype（非 DTO body）时退回原行为：null 全转 undefined', () => {

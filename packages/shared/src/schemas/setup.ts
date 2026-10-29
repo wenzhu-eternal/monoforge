@@ -1,11 +1,12 @@
 import { z } from 'zod'
 import { PasswordSchema, UserEmailSchema, UsernameSchema } from './user'
 
-export const SetupSchema = z.object({
+// L16：写侧统一 strictObject；L19：DB nickname 可空，开放显式置空
+export const SetupSchema = z.strictObject({
   username: UsernameSchema,
   email: UserEmailSchema,
   password: PasswordSchema,
-  nickname: z.string().max(50).optional(),
+  nickname: z.string().max(50).nullable().optional(),
 })
 
 export const SetupStatusSchema = z.object({

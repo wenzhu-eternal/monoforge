@@ -11,10 +11,12 @@ export const PermissionSchema = z.object({
   updatedAt: z.coerce.date(),
 })
 
-export const CreatePermissionSchema = z.object({
+// L16：写侧统一 strictObject（同 role.ts）——多传字段显式 400，不得静默 strip 造成 200 假成功
+export const CreatePermissionSchema = z.strictObject({
   code: z.string().min(1).max(50),
   name: z.string().min(1).max(100),
-  description: z.string().optional(),
+  // L19：DB description 可空，开放显式置空
+  description: z.string().nullable().optional(),
   // L14：routes 元素格式"方法 + 空格 + /路径"并限长，数组限 50 条
   routes: z
     .array(
@@ -27,10 +29,11 @@ export const CreatePermissionSchema = z.object({
     .optional(),
 })
 
-export const UpdatePermissionSchema = z.object({
+export const UpdatePermissionSchema = z.strictObject({
   code: z.string().min(1).max(50).optional(),
   name: z.string().min(1).max(100).optional(),
-  description: z.string().optional(),
+  // L19：同 Create，开放显式置空
+  description: z.string().nullable().optional(),
   routes: z
     .array(
       z
@@ -42,7 +45,7 @@ export const UpdatePermissionSchema = z.object({
     .optional(),
 })
 
-export const UpdateRolePermissionsSchema = z.object({
+export const UpdateRolePermissionsSchema = z.strictObject({
   // L2：数组上限防超大 inArray 打穿 PG 65535 绑定参数上限（整单 500 且白耗 DB 往返 + 两条审计写）；
   // 元素限长 50 对齐 permissions.code varchar(50)
   permissions: z.array(z.string().min(1).max(50)).min(0).max(50),

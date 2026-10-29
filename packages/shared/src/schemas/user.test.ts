@@ -127,6 +127,27 @@ describe('UpdateUserSchema', () => {
     const data = UpdateUserSchema.parse({ mustChangePassword: false })
     expect(data.mustChangePassword).toBe(false)
   })
+
+  it('L16：写侧 strict——多传未知字段 400，不再静默 strip', () => {
+    const r = UpdateUserSchema.safeParse({ nickname: 'n', permissionIds: [1] })
+    expect(r.success).toBe(false)
+    expect(
+      CreateUserSchema.safeParse({ username: 'u1', email: 'a@b.com', password: 'Pass1234', foo: 1 })
+        .success,
+    ).toBe(false)
+  })
+
+  it('L19：nickname 与 DB 同步开放置空（null 通过，空串仍拒）', () => {
+    expect(UpdateUserSchema.safeParse({ nickname: null }).success).toBe(true)
+    expect(
+      CreateUserSchema.safeParse({
+        username: 'user1',
+        email: 'a@b.com',
+        password: 'Pass1234',
+        nickname: null,
+      }).success,
+    ).toBe(true)
+  })
 })
 
 describe('LoginSchema', () => {

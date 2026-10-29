@@ -38,7 +38,8 @@ export const ErrorLogSchema = z.object({
   createdAt: z.coerce.date(),
 })
 
-export const ReportErrorSchema = z.object({
+// L16：写侧统一 strictObject——公开上报/白名单/批量处理的多余字段一律 400，不静默 strip
+export const ReportErrorSchema = z.strictObject({
   source: ErrorSource.default('frontend'),
   errorType: ErrorType.optional(),
   message: z.string().min(1).max(2000),
@@ -74,6 +75,10 @@ export const ErrorStatsSchema = z.object({
   byType: z.record(z.string(), z.number()),
 })
 
+/**
+ * L20：聚合投影（groupBy message+source），不是 error_logs 表结构——
+ * `count` / `firstCreatedAt` / `lastCreatedAt` / `sampleId` 均为聚合派生字段
+ */
 export const ErrorLogGroupSchema = z.object({
   message: z.string(),
   source: z.string(),
@@ -95,7 +100,7 @@ export const ErrorWhitelistSchema = z.object({
   updatedAt: z.coerce.date(),
 })
 
-export const CreateErrorWhitelistSchema = z.object({
+export const CreateErrorWhitelistSchema = z.strictObject({
   // L7：≥4 才不会被 "E1"、"/x" 之类的模式静默吞掉全部同类报错（命中即过滤、无处可见）
   pattern: z.string().min(4).max(500),
   matchType: WhitelistMatchType.default('message'),
@@ -103,7 +108,7 @@ export const CreateErrorWhitelistSchema = z.object({
   isActive: z.boolean().default(true),
 })
 
-export const UpdateErrorWhitelistSchema = z.object({
+export const UpdateErrorWhitelistSchema = z.strictObject({
   // L7：PATCH 同样限 ≥4，否则建完再改短即可绕过创建侧下限
   pattern: z.string().min(4).max(500).optional(),
   matchType: WhitelistMatchType.optional(),
@@ -111,7 +116,7 @@ export const UpdateErrorWhitelistSchema = z.object({
   isActive: z.boolean().optional(),
 })
 
-export const BatchResolveErrorSchema = z.object({
+export const BatchResolveErrorSchema = z.strictObject({
   message: z.string().min(1).max(2000),
   source: z.string().min(1).max(2000),
 })

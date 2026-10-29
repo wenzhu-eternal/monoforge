@@ -7,7 +7,8 @@ export const WechatLoginTypeSchema = z.enum(['qrcode', 'miniprogram'])
  * - qrcode: 扫码登录，code 来自微信 OAuth 重定向
  * - miniprogram: 小程序登录，code 来自 wx.login()
  */
-export const WechatLoginSchema = z.object({
+// L16：写侧统一 strictObject
+export const WechatLoginSchema = z.strictObject({
   code: z.string().min(1, 'code 不能为空'),
   loginType: WechatLoginTypeSchema,
   state: z.string().optional(),

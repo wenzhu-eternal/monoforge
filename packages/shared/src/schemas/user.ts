@@ -35,6 +35,12 @@ export const PasswordSchema = z
   .max(100, '密码最多 100 个字符')
   .regex(/^(?=.*[a-zA-Z])(?=.*\d).+$/, '密码必须同时包含字母和数字')
 
+/**
+ * L20：读侧契约是 DB 列的超集，勿据此反推 DDL——
+ * - `roleName` / `roles` / `permissions` 为 join 角色/权限表派生的展示字段（非 users 列）
+ * - `adminRoleId` / `isAdmin` 为 /auth/me 的配置派生字段，由服务端计算
+ * - `mustChangePassword` 读侧带 default 属容差（服务端漏发时按 false），不是"未列即可省"的承诺
+ */
 export const UserSchema = z.object({
   id: z.number().int().positive(),
   username: z.string().min(3).max(50),
@@ -78,11 +84,17 @@ export const UserListItemSchema = UserSchema.pick({
   roles: z.array(RoleBriefSchema).optional(),
 })
 
-export const CreateUserSchema = z.object({
+/**
+ * L16：写侧统一 strictObject——普通 object 会把调用方多传的字段静默 strip，
+ * 造成 200 假成功（如把 shouldChangePassword 写错成 mustChangePasswords 时零生效）。
+ * 调用方契约漂移应显式 400，而不是靠前端"提交白名单"兜底
+ */
+export const CreateUserSchema = z.strictObject({
   username: UsernameSchema,
   email: UserEmailSchema,
   password: PasswordSchema,
-  nickname: z.string().max(50).optional(),
+  // L19：DB nickname 可空，契约同步开放置空（清空须显式 null）
+  nickname: z.string().max(50).nullable().optional(),
   phone: PhoneSchema,
   // 角色: 仅 USER_ROLE_MANAGE 权限可指定，其余调用方由服务端默认分配普通角色
   roleId: z.number().int().positive().optional(),
@@ -90,9 +102,9 @@ export const CreateUserSchema = z.object({
   mustChangePassword: z.boolean().optional(),
 })
 
-export const UpdateUserSchema = z.object({
+export const UpdateUserSchema = z.strictObject({
   email: UserEmailSchema.optional(),
-  nickname: z.string().max(50).optional(),
+  nickname: z.string().max(50).nullable().optional(),
   avatar: z
     .string()
     .url()
@@ -114,25 +126,25 @@ export const UpdateUserSchema = z.object({
 })
 
 // 修改自己密码：必须验证旧密码，防止 token 泄露后被改密码锁账号
-export const ChangePasswordSchema = z.object({
+export const ChangePasswordSchema = z.strictObject({
   oldPassword: z.string().min(1, '请输入旧密码'),
   newPassword: PasswordSchema,
 })
 
-export const LoginSchema = z.object({
+export const LoginSchema = z.strictObject({
   username: UsernameSchema,
   // 登录不套用注册级密码策略：历史弱密码用户需能登录后走改密流程，真实性由 argon2 校验
   password: z.string().min(1, '请输入密码').max(100),
 })
 
-export const RegisterWithCodeSchema = z.object({
+export const RegisterWithCodeSchema = z.strictObject({
   username: UsernameSchema,
   email: UserEmailSchema,
   password: PasswordSchema,
   code: z.string().length(6, '验证码为 6 位数字'),
 })
 
-export const SendRegisterCodeSchema = z.object({
+export const SendRegisterCodeSchema = z.strictObject({
   email: UserEmailSchema,
 })
 
