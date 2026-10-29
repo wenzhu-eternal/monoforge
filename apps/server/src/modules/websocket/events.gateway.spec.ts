@@ -178,7 +178,8 @@ describe('EventsGateway L4 断开时序 / L8 消息频控', () => {
     const presenceEmit = vi.fn()
     gateway.server = { to: vi.fn().mockReturnValue({ emit: presenceEmit }) } as never
     let release: (value: unknown) => void = () => {}
-    vi.mocked(db.query.users.findFirst).mockImplementationOnce(
+    const usersFindFirst = db.query.users.findFirst as unknown as ReturnType<typeof vi.fn>
+    usersFindFirst.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           release = resolve
