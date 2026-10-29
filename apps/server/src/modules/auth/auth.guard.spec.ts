@@ -87,6 +87,24 @@ describe('AuthGuard（L12 账号存续薄复检）', () => {
     expect(redis.set).not.toHaveBeenCalled()
   })
 
+  it('L4：AT 的 iat 早于最近登出 → 401（logout 场景无 DB 复检兜底，覆盖吊销链非原子窗口）', async () => {
+    const jwt = {
+      verifyAsync: vi.fn().mockResolvedValue({ sub: 9, roleId: 1, jti: 'jti-1', iat: 1000 }),
+    }
+    const reflector = { getAllAndOverride: vi.fn().mockReturnValue(false) }
+    const config = { get: vi.fn().mockReturnValue('secret') }
+    const logoutRedis = {
+      get: vi.fn((key: string) =>
+        Promise.resolve(key.startsWith('logout:at:') ? '9999999999999' : null),
+      ),
+      set: vi.fn(),
+    }
+    const g = new AuthGuard(jwt as never, config as never, reflector as never, logoutRedis as never)
+
+    await expect(g.canActivate(makeContext())).rejects.toThrow('访问令牌已吊销')
+    expect(db.query.users.findFirst).not.toHaveBeenCalled()
+  })
+
   describe('L11 可选鉴权（health 详情按 token 裁剪）', () => {
     function buildOptionalGuard(opts: { token?: string; verify?: () => Promise<unknown> }) {
       const jwt = { verifyAsync: vi.fn(opts.verify ?? (async () => ({ sub: 1, roleId: 1 }))) }

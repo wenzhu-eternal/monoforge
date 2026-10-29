@@ -16,7 +16,7 @@ import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-
 import {
   consumeDailyQuota,
   type DailyQuotaConsume,
-  rollbackDailyQuota,
+  rollbackDailyQuotaQuietly,
 } from '@/common/utils/daily-quota'
 import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
 import { getEnv } from '@/config/env'
@@ -207,11 +207,7 @@ export class ScheduleService implements OnApplicationBootstrap {
     if (result.status === 'busy') {
       // L1：锁忙未实际执行 → 退还刚扣的配额，防连点把 3 次额度耗在 409 上、真需备份时被拒
       if (quota?.consumed) {
-        try {
-          await rollbackDailyQuota(this.redisService, quota.key)
-        } catch (err) {
-          this.logger.warn(`备份配额回滚失败: ${err instanceof Error ? err.message : String(err)}`)
-        }
+        await rollbackDailyQuotaQuietly(this.redisService, quota.key)
       }
       throw new ConflictException('已有备份任务进行中，请稍后再试')
     }
@@ -221,13 +217,7 @@ export class ScheduleService implements OnApplicationBootstrap {
     if (result.status === 'failed') {
       // 手动触发失败统一退还配额（原 doBackup 内退还，Q3 后移到调用方按实扣判定）
       if (quota?.consumed) {
-        try {
-          await rollbackDailyQuota(this.redisService, quota.key)
-        } catch (rollbackErr) {
-          this.logger.warn(
-            `备份配额退还失败: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
-          )
-        }
+        await rollbackDailyQuotaQuietly(this.redisService, quota.key)
       }
       throw new InternalServerErrorException('数据库备份执行失败，详情见 error_logs')
     }

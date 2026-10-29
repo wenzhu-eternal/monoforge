@@ -462,6 +462,12 @@ export class UsersService {
       throw new ConflictException('旧密码不正确')
     }
 
+    // L6：新旧密码不得相同——否则 mustChangePassword 强制改密可"原值重设"通过闸门，
+    // 封锁流程形同虚设（泄露密码在"已改密"表象下继续有效）
+    if (newPassword === oldPassword) {
+      throw new ConflictException('新密码不能与旧密码相同')
+    }
+
     const hashedPassword = await argon2.hash(newPassword)
     const [updatedRow] = await db
       .update(users)

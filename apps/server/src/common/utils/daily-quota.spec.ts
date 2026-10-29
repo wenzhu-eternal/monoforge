@@ -6,7 +6,7 @@ vi.mock('@/common/logger', () => ({
   appendErrorLog: (...args: unknown[]) => mockAppendErrorLog(...args),
 }))
 
-import { consumeDailyQuota, rollbackDailyQuota } from './daily-quota'
+import { consumeDailyQuota, rollbackDailyQuota, rollbackDailyQuotaQuietly } from './daily-quota'
 
 function mockRedis(evalResult: number) {
   return { eval: vi.fn().mockResolvedValue(evalResult) }
@@ -62,5 +62,16 @@ describe('rollbackDailyQuota（L1 配额退还）', () => {
     expect(keys[0]).toBe(key)
     expect(keys[0]).toMatch(/^quota:backup:7:\d{8}$/)
     expect(args).toEqual([])
+  })
+})
+
+describe('rollbackDailyQuotaQuietly（L3 退额失败口径）', () => {
+  it('退额抛错时登记 error_logs 并吞掉，不顶替原始业务错误', async () => {
+    const redis = { eval: vi.fn().mockRejectedValue(new Error('redis down')) }
+
+    await expect(
+      rollbackDailyQuotaQuietly(redis as never, 'quota:upload:7:20260101'),
+    ).resolves.toBeUndefined()
+    expect(mockAppendErrorLog).toHaveBeenCalledWith(expect.stringContaining('配额退还失败'))
   })
 })

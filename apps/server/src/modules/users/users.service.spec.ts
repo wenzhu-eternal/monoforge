@@ -596,6 +596,20 @@ describe('UsersService', () => {
   })
 
   describe('changePassword', () => {
+    it('L6：新旧密码相同 → 409 且不写库（否则强制改密可原值重设通过闸门）', async () => {
+      vi.mocked(argon2.verify).mockResolvedValue(true as never)
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        password: 'old-hash',
+        status: true,
+      } as never)
+
+      await expect(service.changePassword(1, 'same-pass', 'same-pass')).rejects.toThrow(
+        ConflictException,
+      )
+      expect(mockDb.update).not.toHaveBeenCalled()
+    })
+
     it('L11: 并发软删致 update 落空 → 抛 NotFound，不误报成功也不吊销', async () => {
       vi.mocked(argon2.verify).mockResolvedValue(true as never)
       vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({

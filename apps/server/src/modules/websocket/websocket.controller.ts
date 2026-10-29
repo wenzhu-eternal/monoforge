@@ -15,7 +15,7 @@ import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
-import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
+import { consumeDailyQuota, rollbackDailyQuotaQuietly } from '@/common/utils/daily-quota'
 import { type TokenPayload } from '@/modules/auth/auth.service'
 import { NotificationsService } from '@/modules/notifications/notifications.service'
 import { RedisService } from '@/modules/redis/redis.service'
@@ -79,7 +79,7 @@ export class WebsocketController {
         // Q3：据 consume 返回值判定实扣才退（fail-open 未扣额时退额会抹掉并发正常计数）
         // L2：用扣额时的日键退还，跨零点不会退到新日键
         if (quota.consumed) {
-          await rollbackDailyQuota(this.redisService, quota.key).catch(() => {})
+          await rollbackDailyQuotaQuietly(this.redisService, quota.key)
         }
         throw err
       })

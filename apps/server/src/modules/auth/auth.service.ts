@@ -183,9 +183,12 @@ export class AuthService {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
 
-    // 原子 get+del 校验并作废旧 token（防并发重放）
-    const stored = await this.redisService.getdel(`refresh:${payload.sub}:${payload.jti}`)
-    if (stored !== '1') {
+    // L2：先 GET 预检（不消耗），DB/状态校验通过后再 getdel 作废——
+    // 原顺序先 getdel，DB 抖动抛 503 时旧 RT 已销毁且新 token 未返回，客户端被迫重登
+    //（多端共享 RT 的部署下放大为一次全员强制重登）
+    const refreshKey = `refresh:${payload.sub}:${payload.jti}`
+    const storedPre = await this.redisService.get(refreshKey)
+    if (storedPre !== '1') {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
 
@@ -205,6 +208,12 @@ export class AuthService {
     // 首登未改密用户拒绝续期，强制重新登录改密
     if (user.mustChangePassword) {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD])
+    }
+
+    // 原子 getdel 复核并作废旧 token：并发重放时只有一个请求能拿到 '1'
+    const stored = await this.redisService.getdel(refreshKey)
+    if (stored !== '1') {
+      throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
 
     const tokens = await this.signTokenPair({
@@ -401,8 +410,15 @@ export class AuthService {
     // Q9：透传注册来源 IP 给内部 login，失败计数键按 ip+username 收敛（不退回全局 username 键）
     ip?: string,
   ): Promise<TokenPair & { user: Omit<User, 'password'> }> {
-    const storedCode = await this.redisService.get(`register:code:${email}`)
-    if (!storedCode || storedCode !== code) {
+    const codeKey = `register:code:${email}`
+    // L1：check-and-consume 必须单点原子——原"先 GET 判等、再 getdel 丢弃返回值"在并发下
+    // 两个请求都能通过 GET，第二个 getdel 拿 null 却继续注册
+    const consumed = await this.redisService.getdel(codeKey)
+    if (!consumed || consumed !== code) {
+      // 输入错误时回填：错码也会被 getdel 取走，回填避免一次输错烧毁有效验证码
+      if (consumed) {
+        await this.redisService.set(codeKey, consumed, 5 * 60)
+      }
       // 验证码尝试次数限制：5 次失败后删除验证码并重置计数，攻击者需重新获取（受 60s 发送限制）
       // Lua 保证 INCR + 首次 EXPIRE 原子，避免进程在两步之间崩溃导致计数永驻
       const attemptKey = `register:code:attempts:${email}`
@@ -421,8 +437,6 @@ export class AuthService {
       throw new UnauthorizedException('验证码无效或已过期')
     }
 
-    // 验证成功即原子消费验证码（getdel）：否则注册失败后可换用户名反复尝试注册（同一码 5 分钟内多次使用）
-    await this.redisService.getdel(`register:code:${email}`)
     await this.redisService.del(`register:code:attempts:${email}`)
 
     try {

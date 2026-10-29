@@ -220,6 +220,36 @@ describe('UsersController', () => {
 
       expect(redisService.eval).toHaveBeenCalledTimes(1)
     })
+
+    it('L5：无 USER_ROLE_MANAGE 时显式 mustChangePassword=false → 403 且退额', async () => {
+      const dto = {
+        username: 'x',
+        email: 'x@test.com',
+        password: 'Pass1234',
+        mustChangePassword: false,
+      }
+      vi.mocked(service.hasPermission).mockResolvedValue(false)
+
+      await expect(controller.create(dto, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.create).not.toHaveBeenCalled()
+      expect(redisService.eval).toHaveBeenCalledTimes(2)
+    })
+
+    it('L5：持 USER_ROLE_MANAGE 时可显式 mustChangePassword=false', async () => {
+      const dto = {
+        username: 'x',
+        email: 'x@test.com',
+        password: 'Pass1234',
+        mustChangePassword: false,
+      }
+      vi.mocked(service.hasPermission).mockResolvedValue(true)
+      vi.mocked(service.create).mockResolvedValue({ id: 9 } as never)
+
+      await controller.create(dto, currentUser)
+
+      expect(service.hasPermission).toHaveBeenCalledWith(1, PermissionCodes.USER_ROLE_MANAGE)
+      expect(service.create).toHaveBeenCalledWith(dto, currentUser)
+    })
   })
 
   describe('update', () => {
@@ -316,6 +346,24 @@ describe('UsersController', () => {
 
       await expect(controller.update(2, dto, currentUser)).rejects.toThrow(ForbiddenException)
       expect(service.update).not.toHaveBeenCalled()
+    })
+
+    it('L7：改他人手机号需 USER_ROLE_MANAGE（防篡改后借短信/找回接管）', async () => {
+      const dto = { phone: '13800000000' }
+      vi.mocked(service.hasPermission).mockResolvedValue(false)
+
+      await expect(controller.update(2, dto, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.update).not.toHaveBeenCalled()
+    })
+
+    it('L7：改自己手机号不触发权限闸（自改无接管面）', async () => {
+      const dto = { phone: '13800000000' }
+      vi.mocked(service.update).mockResolvedValue({ id: 1, phone: '13800000000' } as never)
+
+      await controller.update(1, dto, currentUser)
+
+      expect(service.hasPermission).not.toHaveBeenCalled()
+      expect(service.update).toHaveBeenCalledWith(1, dto, currentUser)
     })
   })
 

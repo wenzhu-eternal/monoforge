@@ -95,6 +95,21 @@ export async function rollbackDailyQuota(redis: RedisService, key: string): Prom
   )
 }
 
+/**
+ * L3：退额失败统一 warn 后吞——原实现三态（裸 catch 静默 / 带 warn / 无 catch），
+ * 无 catch 时退额异常会顶替原始 DB 业务错误。此处统一登记 error_logs 后返回，
+ * 调用方继续抛业务原错误
+ */
+export async function rollbackDailyQuotaQuietly(redis: RedisService, key: string): Promise<void> {
+  try {
+    await rollbackDailyQuota(redis, key)
+  } catch (err) {
+    appendErrorLog(
+      `[Quota] 配额退还失败 ${key}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+}
+
 function quotaKey(action: QuotaAction, userId: number, now: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`

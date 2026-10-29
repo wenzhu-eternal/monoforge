@@ -145,6 +145,8 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 邮箱验证码尝试次数（`register:code:attempts:*`）必须用 Lua 脚本原子执行 INCR + EXPIRE（首次 INCR 时设置 TTL），禁止分两次调用——否则并发下 EXPIRE 丢失会导致计数永驻 Redis。同模式适用于所有"计数 + 过期"场景（限流、错误日志 IP 限额）。
 
+验证码消费本身也必须单点原子（L1）：用 `getdel` 返回值判等，禁止"先 GET 判等、再 getdel 丢弃返回值"——并发双请求都能通过 GET，第二个 getdel 拿到 null 仍会继续注册。输入错误码时把 getdel 取走的有效码回填，避免一次输错烧毁 5 分钟有效的验证码。
+
 ### WebSocket 模块守卫
 
 `websocket.controller` 必须在类级别挂 `@UseGuards(PermissionsGuard)`，并按接口区分鉴权：
@@ -188,6 +190,12 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 3. **业务请求下沉到 Layout 内层**：受保护页面的数据 hook 必须写在 `AuthenticatedLayout` 的**子组件**里（如 `DashboardPage` 只渲染 Layout，数据请求放 `DashboardContent`）。React Hook 规则决定外层 hook 必然先于 Layout 内的重定向执行，写在外层会先打出白名单外请求拿到 401
 
 **签发面清单（四入口必须同时携带标志）**：密码登录、refresh、WebSocket 握手、微信登录（`wechat.service`）。前两者读 DB 的 `mustChangePassword`，WS 与 wechat 的 token payload 必须同样带上——任一入口漏带，管理员重置密码后的"封锁至改密"就会在该入口静默失效（M2）。
+
+### Token 吊销口径（L2/L4）
+
+- **refresh 顺序**：先 `GET` 预检 → DB/状态（禁用、强制改密）校验 → `getdel` 原子消费复核；不得先 getdel 后校验——DB 抖动抛 503 时客户端唯一有效的 RT 已被烧毁且新 token 未下发，多端共享部署下放大为全员重登
+- **access 比对**：`AuthGuard` 除 jti 黑名单外，还比对 `logout:at:<uid>` 与 token `iat`（登出/改密/禁用均写该时间戳）。仅扫 jti 的三步吊销链非原子，并发签发的新 AT 不在扫描结果与活跃集内、可续活 ≤15min；iat 比对把该窗口收敛为"同秒边界 fail-closed"。Redis 抖动降级放行（JWT 已验签）
+- **admin 删除取证类错误日志**：见「限流」节 M2 条目
 
 ## 权限控制
 

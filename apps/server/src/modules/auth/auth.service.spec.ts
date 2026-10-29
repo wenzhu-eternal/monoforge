@@ -63,7 +63,8 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       signAsync: vi.fn().mockResolvedValue('signed-token'),
     }
     redisService = {
-      get: vi.fn().mockResolvedValue(null),
+      // L2：refresh 改为 GET 预检 + getdel 复核，默认 refresh 键存在
+      get: vi.fn((key: string) => Promise.resolve(key.startsWith('refresh:') ? '1' : null)),
       set: vi.fn().mockResolvedValue(undefined),
       getdel: vi.fn().mockResolvedValue('1'),
       deleteByPattern: vi.fn().mockResolvedValue(0),
@@ -97,13 +98,27 @@ describe('AuthService（L7 登出失效时间戳）', () => {
         logoutReads += 1
         return Promise.resolve(logoutReads === 1 ? null : '9999999999999')
       }
-      return Promise.resolve(null)
+      return Promise.resolve(key.startsWith('refresh:') ? '1' : null)
     })
 
     await expect(service.refresh('token')).rejects.toThrow(UnauthorizedException)
     // 复检发生在 storeRefreshTokenForExternal 之后（竞态窗口内 getdel 已完成）
     expect(logoutReads).toBe(2)
     expect(redisService.getdel).toHaveBeenCalled()
+  })
+
+  it('L2：DB 抖动时先 GET 预检、getdel 不执行——旧 RT 不被无谓烧毁', async () => {
+    vi.mocked(db.query.users.findFirst).mockRejectedValue(new Error('db down'))
+
+    await expect(service.refresh('token')).rejects.toThrow('db down')
+    expect(redisService.getdel).not.toHaveBeenCalled()
+  })
+
+  it('L2：状态校验失败（禁用）同样不消耗 RT', async () => {
+    vi.mocked(db.query.users.findFirst).mockResolvedValue({ ...userRow, status: false } as never)
+
+    await expect(service.refresh('token')).rejects.toThrow(UnauthorizedException)
+    expect(redisService.getdel).not.toHaveBeenCalled()
   })
 
   it('无登出记录 → 正常签发令牌对', async () => {
@@ -136,6 +151,40 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     redisService.set.mockRejectedValueOnce(new Error('redis down'))
 
     await expect(service.logout(7)).resolves.toEqual({ message: '退出登录成功' })
+  })
+
+  describe('registerWithCode（L1 验证码原子消费）', () => {
+    function stubPrivate(name: string, impl: () => Promise<unknown>) {
+      const self = service as unknown as Record<string, ReturnType<typeof vi.fn>>
+      self[name] = vi.fn(impl)
+    }
+
+    it('并发双请求同码：第二个 getdel 拿 null → 拒绝注册（修复前两请求都可进注册）', async () => {
+      redisService.getdel.mockResolvedValueOnce('123456').mockResolvedValueOnce(null)
+      stubPrivate('register', async () => undefined)
+      stubPrivate('login', async () => ({
+        accessToken: 'a',
+        refreshToken: 'r',
+        user: { id: 1 },
+      }))
+
+      await expect(
+        service.registerWithCode('u1', 'a@b.com', 'Pass1234', '123456'),
+      ).resolves.toBeTruthy()
+      await expect(service.registerWithCode('u2', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
+        UnauthorizedException,
+      )
+    })
+
+    it('输错码不烧有效码：getdel 取走后立即回填', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.eval.mockResolvedValue(1)
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
+        UnauthorizedException,
+      )
+      expect(redisService.set).toHaveBeenCalledWith('register:code:a@b.com', '123456', 5 * 60)
+    })
   })
 
   describe('getProfile（L19 /auth/me 配置派生字段）', () => {

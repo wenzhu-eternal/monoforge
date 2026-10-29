@@ -111,6 +111,22 @@ export class AuthGuard implements CanActivate {
         }
       }
 
+      // L4：登出/改密/禁用均写 logout:at——AT 也按 iat 比对，堵住吊销链三步非原子
+      // 期间并发签发的新 AT（扫描结果与活跃集均不含该 jti）的 ≤15min 漏网窗口。
+      // 口径与 refresh 一致：iat 为秒、时间戳为毫秒，同秒边界按拒绝 fail-closed；
+      // Redis 抖动降级放行（JWT 已验签）
+      if (payload.iat) {
+        let logoutAt = 0
+        try {
+          logoutAt = Number((await this.redisService.get(`logout:at:${payload.sub}`)) ?? 0)
+        } catch {
+          noteRedisDegraded('auth:logout-at')
+        }
+        if (logoutAt > 0 && payload.iat * 1000 < logoutAt) {
+          throw new UnauthorizedException('访问令牌已吊销')
+        }
+      }
+
       // L12：账号存续薄复检——禁用/软删的强制力原全押 Redis 吊销，revoke 部分失败
       // （DB 已提交）时，无 @Permissions 的路由（/users/me/password、/notifications*、
       // /websocket/notify）不经 PermissionsGuard 复检，存在 ≤15min 可达窗口。

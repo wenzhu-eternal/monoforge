@@ -27,7 +27,7 @@ import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-
 import {
   consumeDailyQuota,
   type DailyQuotaConsume,
-  rollbackDailyQuota,
+  rollbackDailyQuotaQuietly,
 } from '@/common/utils/daily-quota'
 import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
 import { db } from '@/db'
@@ -108,7 +108,7 @@ export class FilesService {
     } catch (err) {
       // M4：仅已扣额才 rollback（consumeDailyQuota 抛 409 时未扣额，误退即旁路）
       if (quota?.consumed) {
-        await rollbackDailyQuota(this.redisService, quota.key)
+        await rollbackDailyQuotaQuietly(this.redisService, quota.key)
       }
       await unlink(file.path).catch(() => {})
       throw err
@@ -135,7 +135,7 @@ export class FilesService {
       await unlink(file.path).catch(() => {})
       // L6：DB insert 失败后退额（quotaConsumed 已在 consume 前置 true）
       if (quota?.consumed) {
-        await rollbackDailyQuota(this.redisService, quota.key)
+        await rollbackDailyQuotaQuietly(this.redisService, quota.key)
       }
       throw e
     }

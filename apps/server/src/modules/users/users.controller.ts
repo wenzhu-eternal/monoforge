@@ -25,7 +25,7 @@ import { AuditAction } from '@/common/decorators/audit.decorator'
 import { CurrentUser } from '@/common/decorators/current-user.decorator'
 import { Permissions } from '@/common/decorators/permissions.decorator'
 import { PermissionsGuard } from '@/common/guards/permissions.guard'
-import { consumeDailyQuota, rollbackDailyQuota } from '@/common/utils/daily-quota'
+import { consumeDailyQuota, rollbackDailyQuotaQuietly } from '@/common/utils/daily-quota'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { parsePagination } from '@/common/utils/pagination'
 import { type TokenPayload } from '@/modules/auth/auth.service'
@@ -110,12 +110,26 @@ export class UsersController {
           throw new ForbiddenException('指定角色需要更高权限')
         }
       }
+      // L5：create 路径同样受控——显式 mustChangePassword=false 需要 USER_ROLE_MANAGE，
+      // 否则仅持 user:create 的委托可建号绕开"管理员指定密码应首登改密"口径（对齐 update 路径）
+      if (
+        createUserDto.mustChangePassword !== undefined &&
+        createUserDto.mustChangePassword !== true
+      ) {
+        const canManage = await this.usersService.hasPermission(
+          currentUser.sub,
+          PermissionCodes.USER_ROLE_MANAGE,
+        )
+        if (!canManage) {
+          throw new ForbiddenException('指定强制改密标记需要更高权限')
+        }
+      }
       return await this.usersService.create(createUserDto, currentUser)
     } catch (err) {
       // L1：建号失败（403 越权/409 重复等）退还配额——原实现只扣不退，
       // 连续失败即静默耗干当日 100 额度且审计不可辨（对齐 upload/backup 失败即退口径）
       if (quota.consumed) {
-        await rollbackDailyQuota(this.redisService, quota.key).catch(() => {})
+        await rollbackDailyQuotaQuietly(this.redisService, quota.key)
       }
       throw err
     }
@@ -174,6 +188,17 @@ export class UsersController {
       } else {
         // 改自己密码必须走 /me/password 接口验证旧密码
         throw new ForbiddenException('请使用修改密码接口更改自己的密码')
+      }
+    }
+    // L7：手机号是短信/找回链路前件——他人 phone 写入挂 USER_ROLE_MANAGE（同 email 口径，
+    // 防委托操作员篡改他人手机号后借短信/找回完成接管）
+    if (updateUserDto.phone !== undefined && currentUser.sub !== id) {
+      const canManage = await this.usersService.hasPermission(
+        currentUser.sub,
+        PermissionCodes.USER_ROLE_MANAGE,
+      )
+      if (!canManage) {
+        throw new ForbiddenException('修改他人手机号需要更高权限')
       }
     }
     // M1：受控解锁通道——管理员重置密码会把微信账号置 mustChangePassword=true 但占位密码不可验证，
