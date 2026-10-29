@@ -54,7 +54,7 @@ describe('WebsocketController', () => {
 
   describe('me', () => {
     it('返回当前用户在线状态', async () => {
-      const user = { sub: 5, username: 'alice', email: 'a@b.com' } as TokenPayload
+      const user = { sub: 5, username: 'alice', roleId: 2 } as TokenPayload
       vi.mocked(eventsService.isUserOnline).mockResolvedValue(true)
 
       const result = await controller.me(user)
@@ -64,7 +64,7 @@ describe('WebsocketController', () => {
     })
 
     it('用户离线时返回 online: false', async () => {
-      const user = { sub: 5, username: 'alice', email: 'a@b.com' } as TokenPayload
+      const user = { sub: 5, username: 'alice', roleId: 2 } as TokenPayload
       vi.mocked(eventsService.isUserOnline).mockResolvedValue(false)
 
       const result = await controller.me(user)
@@ -74,7 +74,7 @@ describe('WebsocketController', () => {
   })
 
   describe('notify', () => {
-    const user = { sub: 5, username: 'alice', email: 'a@b.com' } as TokenPayload
+    const user = { sub: 5, username: 'alice', roleId: 2 } as TokenPayload
 
     it('给自己发通知 → 成功并持久化', async () => {
       const dto = { userId: 5, type: 'test', title: 'hello', content: 'world' }
