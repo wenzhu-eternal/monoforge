@@ -344,7 +344,7 @@ type CreateUser = z.infer<typeof CreateUserSchema>;
 
 ### 原生模块构建
 
-根 `package.json` 的 `pnpm.onlyBuiltDependencies` 预置了需要构建脚本的原生依赖（`@swc/core`、`esbuild`、`argon2`），pnpm install 后自动执行构建脚本。
+`pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 预置了需要构建脚本的原生依赖（`@swc/core`、`esbuild`、`argon2`），pnpm install 后自动执行构建脚本；`overrides`（`multer`、`esbuild`）同文件维护（pnpm 10.32 起根 package.json 的 `pnpm` 字段不再读取）。
 
 ### 环境变量
 

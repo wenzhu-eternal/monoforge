@@ -25,7 +25,8 @@ import { RedisService } from '@/modules/redis/redis.service'
 export interface TokenPayload {
   sub: number
   username: string
-  email: string
+  // L8：不内嵌 email——鉴权链路用不到（/auth/me 已下发），token 经日志/错误上报泄露时
+  // 不应带出 PII
   roleId: number | null
   mustChangePassword?: boolean
 }
@@ -95,7 +96,6 @@ export class AuthService {
     const tokens = await this.signTokenPair({
       sub: user.id,
       username: user.username,
-      email: user.email,
       roleId: user.roleId,
       mustChangePassword: user.mustChangePassword,
     })
@@ -220,7 +220,6 @@ export class AuthService {
     const tokens = await this.signTokenPair({
       sub: user.id,
       username: user.username,
-      email: user.email,
       roleId: user.roleId,
       mustChangePassword: user.mustChangePassword,
     })

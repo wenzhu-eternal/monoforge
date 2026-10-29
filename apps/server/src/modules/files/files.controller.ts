@@ -132,6 +132,11 @@ export class FilesController {
         ? `inline; filename="preview"; filename*=UTF-8''${encodedName}`
         : `attachment; filename="download"; filename*=UTF-8''${encodedName}`,
     )
+    // L9：PDF 同源 inline 补 sandbox 隔离头——旧浏览器/旧 Acrobat 插件对含 JS 的 PDF
+    // 仍有执行面（现代查看器忽略内嵌 JS，属纵深缺口）
+    if (file.mimeType === 'application/pdf') {
+      response.setHeader('Content-Security-Policy', 'sandbox')
+    }
 
     // 支持 Range 请求（大文件分片）；异步 stat 避免阻塞事件循环，文件被删时 404 兜底
     let statResult: { size: number }

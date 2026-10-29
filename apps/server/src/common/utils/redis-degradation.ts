@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common'
 import { appendErrorLog } from '@/common/logger'
 
 /**
@@ -9,6 +10,8 @@ import { appendErrorLog } from '@/common/logger'
  * error_logs 告警（每阈值时长至多一条），恢复时清零。
  */
 const UPGRADE_AFTER_MS = 5 * 60_000
+
+const logger = new Logger('RedisDegradation')
 
 let degradedSince: number | null = null
 let lastUpgradeLogAt = 0
@@ -24,10 +27,13 @@ export function noteRedisDegraded(scope: string): void {
   if (now - lastUpgradeLogAt < UPGRADE_AFTER_MS) return
 
   lastUpgradeLogAt = now
-  appendErrorLog(
+  const message =
     `[Redis] 降级放行已持续 ${Math.round(lastedMs / 60_000)} 分钟（最近触发: ${scope}）：` +
-      'jti 黑名单/日配额/限流存储等全部 fail-open，请尽快排查 Redis 可用性',
-  )
+    'jti 黑名单/日配额/限流存储等全部 fail-open，请尽快排查 Redis 可用性'
+  // L10：error_logs 写入自身可能因聚合单点故障失败——同步打 stdout 日志链，
+  // 保证外部采集（容器日志/平台）仍可见
+  logger.error(message)
+  appendErrorLog(message)
 }
 
 /** Redis 恢复正常时调用，重置降级计时 */

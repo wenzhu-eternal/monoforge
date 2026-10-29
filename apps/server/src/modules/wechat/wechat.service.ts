@@ -179,7 +179,7 @@ export class WechatService {
     const payload: TokenPayload = {
       sub: user.id,
       username: user.username,
-      email: user.email,
+      // L8：token 不内嵌 email（PII 最小化）
       roleId: user.roleId,
       mustChangePassword: user.mustChangePassword,
     }

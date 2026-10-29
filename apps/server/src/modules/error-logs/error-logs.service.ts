@@ -65,12 +65,12 @@ function isForensicLog(statusCode: number | null | undefined): boolean {
 export class ErrorLogsService {
   constructor(private readonly redisService: RedisService) {}
 
-  async report(
-    params: ReportErrorParams,
-  ): Promise<{ id?: number; skipped?: boolean; reason?: string }> {
+  async report(params: ReportErrorParams): Promise<{ id?: number }> {
     const isWhitelisted = await this.checkWhitelist(params.message, params.url)
     if (isWhitelisted) {
-      return { skipped: true, reason: 'whitelisted' }
+      // L12：命中白名单与非命中共用同一响应形态——原返回 {skipped:true, reason:'whitelisted'}
+      // 让匿名攻击者可二分探测运营方静默了哪些模式，摸清取证盲区后定向利用
+      return {}
     }
 
     // 按 IP 限制每日上报条数，防止公开接口撑大数据库

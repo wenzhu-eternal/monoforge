@@ -74,7 +74,7 @@
 3. **路径遍历防护** - 文件名清洗，禁止 `..`、`/`、`\` 等路径字符
 4. **扩展名黑名单** - 禁止 `.exe`/`.bat`/`.sh`/`.php` 等可执行扩展名
 5. **大小限制** - 单文件最大 10MB（限制值由 `packages/shared/src/constants/files.ts` 的 `MAX_FILE_SIZE` 统一管理，前后端共享，禁止在 controller/页面内硬编码）
-6. **MIME 白名单** - 仅允许图片/文档等安全类型；`text/html` 已剔除（M4/J1=A：HTML 可内嵌脚本，静态托管/预览即 XSS 面，脚手架默认最小开口）。`image/svg+xml` 保留，但恶意内容扫描额外覆盖 `<iframe`/`<embed`/`<object`/`<foreignObject` 等可内嵌脚本/外链的容器标签；**`svg` 永不进入 `INLINE_SAFE_MIME_TYPES`**，预览/下载一律 `attachment` + `nosniff`（L13，实体解码增强也不得放松）
+6. **MIME 白名单** - 仅允许图片/文档等安全类型；`text/html` 已剔除（M4/J1=A：HTML 可内嵌脚本，静态托管/预览即 XSS 面，脚手架默认最小开口）。`image/svg+xml` 保留，但恶意内容扫描额外覆盖 `<iframe`/`<embed`/`<object`/`<foreignObject` 等可内嵌脚本/外链的容器标签；**`svg` 永不进入 `INLINE_SAFE_MIME_TYPES`**，预览/下载一律 `attachment` + `nosniff`（L13，实体解码增强也不得放松）。PDF 虽在 inline 白名单，但响应额外带 `Content-Security-Policy: sandbox`（L9：旧浏览器/旧 Acrobat 插件对含 JS 的 PDF 仍有执行面）
 7. **扩展名白名单** - 与 MIME 白名单联合校验（`html`/`htm` 已同步剔除）
 
 ### 文件存储
@@ -146,6 +146,10 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 邮箱验证码尝试次数（`register:code:attempts:*`）必须用 Lua 脚本原子执行 INCR + EXPIRE（首次 INCR 时设置 TTL），禁止分两次调用——否则并发下 EXPIRE 丢失会导致计数永驻 Redis。同模式适用于所有"计数 + 过期"场景（限流、错误日志 IP 限额）。
 
 验证码消费本身也必须单点原子（L1）：用 `getdel` 返回值判等，禁止"先 GET 判等、再 getdel 丢弃返回值"——并发双请求都能通过 GET，第二个 getdel 拿到 null 仍会继续注册。输入错误码时把 getdel 取走的有效码回填，避免一次输错烧毁 5 分钟有效的验证码。
+
+### JWT payload 最小化（L8）
+
+`TokenPayload` 只含 `sub` / `username` / `roleId` / `mustChangePassword`——**不得内嵌 email 等 PII**：鉴权链路用不到（`/auth/me` 已下发完整资料），而 token 一旦经日志、错误上报 `url`/`context` 泄露，内嵌 PII 会随可解码 JSON 一并外泄。
 
 ### WebSocket 模块守卫
 

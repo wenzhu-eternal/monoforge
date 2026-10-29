@@ -15,7 +15,7 @@ import { getEnv } from '@/config/env'
 import { HealthService } from './health.service'
 
 interface AuthRequest {
-  user?: { sub: number; username: string; email: string; roleId: number | null }
+  user?: { sub: number; username: string; roleId: number | null }
 }
 
 @ApiTags('Health')

@@ -34,16 +34,6 @@
     "turbo": "^2.10.3",
     "typescript": "^6.0.3"
   },
-  "pnpm": {
-    "overrides": {
-      "multer": "^2.2.0"
-    },
-    "onlyBuiltDependencies": [
-      "@swc/core",
-      "esbuild",
-      "argon2"
-    ]
-  },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
       "biome check --write"

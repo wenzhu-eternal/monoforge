@@ -85,7 +85,7 @@ describe('ErrorLogsService', () => {
   })
 
   describe('report - 白名单过滤', () => {
-    it('白名单命中时返回 skipped 不入库', async () => {
+    it('白名单命中时返回空对象不入库（与非命中共用响应形态，不泄露静默面）', async () => {
       // 模拟白名单缓存命中
       redisServiceMock.get.mockResolvedValue(
         JSON.stringify([{ pattern: 'ECONNRESET', matchType: 'message', isActive: true }]),
@@ -93,7 +93,7 @@ describe('ErrorLogsService', () => {
 
       const result = await service.report({ message: 'ECONNRESET timeout' })
 
-      expect(result).toEqual({ skipped: true, reason: 'whitelisted' })
+      expect(result).toEqual({})
       expect(mockDb.insert).not.toHaveBeenCalled()
     })
 
