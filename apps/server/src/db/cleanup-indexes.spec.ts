@@ -13,6 +13,8 @@ describe('保留期清理索引（L10）', () => {
     const target = indexes.find((item) => item.config.name === indexName)
 
     expect(target).toBeDefined()
-    expect(target?.config.columns.map((column) => column.name)).toEqual(['created_at'])
+    expect(target?.config.columns.map((column) => (column as { name: string }).name)).toEqual([
+      'created_at',
+    ])
   })
 })

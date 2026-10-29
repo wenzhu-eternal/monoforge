@@ -421,7 +421,7 @@ describe('FilesService', () => {
     ]
 
     // M2 后的链路：条件 delete → returning 返回归属行 → 才允许清盘
-    function mockChains(rows: typeof expiredRows) {
+    function mockChains(rows: Array<{ id: number; path: string; trashPath: string | null }>) {
       const deleteWhere = vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue(rows) })
       mockDelete.mockReturnValue({ where: deleteWhere })
       return deleteWhere

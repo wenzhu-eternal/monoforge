@@ -54,7 +54,7 @@ describe('UsersService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockDb.select.mockReturnValue({
+    ;(mockDb.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockResolvedValue([]),
     })
@@ -604,7 +604,7 @@ describe('UsersService', () => {
         status: true,
       } as never)
       // 检查阶段命中、更新阶段已被并发软删 → returning 空
-      mockDb.update.mockReturnValue({
+      ;(mockDb.update as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             returning: vi.fn().mockResolvedValue([]),
@@ -625,7 +625,7 @@ describe('UsersService', () => {
         password: 'old-hash',
         status: true,
       } as never)
-      mockDb.update.mockReturnValue({
+      ;(mockDb.update as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             returning: vi.fn().mockResolvedValue([{ id: 1 }]),
@@ -646,7 +646,7 @@ describe('UsersService', () => {
         password: 'old-hash',
         status: true,
       } as never)
-      mockDb.update.mockReturnValue({
+      ;(mockDb.update as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
             returning: vi.fn().mockResolvedValue([{ id: 1 }]),

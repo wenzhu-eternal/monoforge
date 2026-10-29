@@ -16,15 +16,16 @@ const METHOD_NAMES: Record<number, string> = {
   [RequestMethod.DELETE]: 'DELETE',
 }
 
-type ControllerClass = { prototype: Record<string, unknown> }
+type ControllerClass = new (...args: never[]) => object
 
 /** 从 controller 反射出 `${METHOD} /path` 与 @Permissions 码（方法级优先，类级兜底） */
 function collectControllerRoutes(controller: ControllerClass) {
+  const proto = controller.prototype as Record<string, unknown>
   const classPath = (Reflect.getMetadata(PATH_METADATA, controller) as string | undefined) ?? ''
-  return Object.getOwnPropertyNames(controller.prototype)
-    .filter((name) => name !== 'constructor' && typeof controller.prototype[name] === 'function')
+  return Object.getOwnPropertyNames(proto)
+    .filter((name) => name !== 'constructor' && typeof proto[name] === 'function')
     .flatMap((name) => {
-      const handler = controller.prototype[name] as object
+      const handler = proto[name] as object
       const method = Reflect.getMetadata(METHOD_METADATA, handler) as number | undefined
       const path = Reflect.getMetadata(PATH_METADATA, handler) as string | undefined
       if (method === undefined || path === undefined) return []

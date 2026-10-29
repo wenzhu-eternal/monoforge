@@ -28,6 +28,7 @@ vi.mock('@/config/env', () => ({
 }))
 
 const { db: mockDb } = await import('@/db')
+const mockTransaction = mockDb.transaction as unknown as ReturnType<typeof vi.fn>
 
 import { SetupService } from './setup.service'
 
@@ -100,34 +101,32 @@ describe('SetupService', () => {
       } as never)
 
       // transaction 回调用 tx：roles 插入返回含 admin 的数组
-      vi.mocked(mockDb.transaction).mockImplementation(
-        async (cb: (tx: unknown) => Promise<unknown>) => {
-          const tx = {
-            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
-            select: vi.fn().mockReturnValue({
-              from: vi.fn().mockReturnValue({
-                where: vi.fn().mockResolvedValue([{ count: 0 }]),
+      mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 0 }]),
+            }),
+          }),
+          insert: vi.fn().mockReturnValue({
+            values: vi.fn().mockReturnValue({
+              onConflictDoNothing: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([
+                  { id: 1, name: 'admin', description: '系统管理员' },
+                  { id: 2, name: 'user', description: '普通用户' },
+                ]),
               }),
             }),
-            insert: vi.fn().mockReturnValue({
-              values: vi.fn().mockReturnValue({
-                onConflictDoNothing: vi.fn().mockReturnValue({
-                  returning: vi.fn().mockResolvedValue([
-                    { id: 1, name: 'admin', description: '系统管理员' },
-                    { id: 2, name: 'user', description: '普通用户' },
-                  ]),
-                }),
-              }),
-            }),
-            query: {
-              roles: {
-                findFirst: vi.fn().mockResolvedValue({ id: 1, name: 'admin' }),
-              },
+          }),
+          query: {
+            roles: {
+              findFirst: vi.fn().mockResolvedValue({ id: 1, name: 'admin' }),
             },
-          }
-          return cb(tx)
-        },
-      )
+          },
+        }
+        return cb(tx)
+      })
 
       const result = await service.initialize({
         username: 'admin',
@@ -157,25 +156,23 @@ describe('SetupService', () => {
           }),
         }),
       })
-      vi.mocked(mockDb.transaction).mockImplementation(
-        async (cb: (tx: unknown) => Promise<unknown>) => {
-          const tx = {
-            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
-            select: vi.fn().mockReturnValue({
-              from: vi.fn().mockReturnValue({
-                where: vi.fn().mockResolvedValue([{ count: 0 }]),
-              }),
+      mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 0 }]),
             }),
-            insert: insertMock,
-            query: {
-              roles: {
-                findFirst: vi.fn().mockResolvedValue({ id: 1, name: 'admin' }),
-              },
+          }),
+          insert: insertMock,
+          query: {
+            roles: {
+              findFirst: vi.fn().mockResolvedValue({ id: 1, name: 'admin' }),
             },
-          }
-          return cb(tx)
-        },
-      )
+          },
+        }
+        return cb(tx)
+      })
 
       await service.initialize({
         username: 'admin',
@@ -187,7 +184,9 @@ describe('SetupService', () => {
       // （M3：user 角色默认零权限，不再有第 5 次 user 绑定 insert）
       expect(insertMock).toHaveBeenCalledTimes(4)
       // 共享 mock：values 的调用序列 = 4 次 insert 的入参，逐一核对灌入内容
-      const valuesArg = insertMock.mock.results[0].value.values.mock.calls.map((c) => c[0])
+      const valuesArg = insertMock.mock.results[0].value.values.mock.calls.map(
+        (c: unknown[]) => c[0],
+      )
       expect(valuesArg[0]).toHaveLength(2) // DEFAULT_ROLES: admin + user
       expect(valuesArg[1]).toHaveLength(22) // DEFAULT_PERMISSIONS 全量灌入
       expect(valuesArg[2]).toHaveLength(22) // admin 角色全量绑定
@@ -241,33 +240,31 @@ describe('SetupService', () => {
       } as never)
 
       // 返回的角色列表中无 admin，且 findFirst 也找不到
-      vi.mocked(mockDb.transaction).mockImplementation(
-        async (cb: (tx: unknown) => Promise<unknown>) => {
-          const tx = {
-            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
-            select: vi.fn().mockReturnValue({
-              from: vi.fn().mockReturnValue({
-                where: vi.fn().mockResolvedValue([{ count: 0 }]),
+      mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 0 }]),
+            }),
+          }),
+          insert: vi.fn().mockReturnValue({
+            values: vi.fn().mockReturnValue({
+              onConflictDoNothing: vi.fn().mockReturnValue({
+                returning: vi
+                  .fn()
+                  .mockResolvedValue([{ id: 2, name: 'user', description: '普通用户' }]),
               }),
             }),
-            insert: vi.fn().mockReturnValue({
-              values: vi.fn().mockReturnValue({
-                onConflictDoNothing: vi.fn().mockReturnValue({
-                  returning: vi
-                    .fn()
-                    .mockResolvedValue([{ id: 2, name: 'user', description: '普通用户' }]),
-                }),
-              }),
-            }),
-            query: {
-              roles: {
-                findFirst: vi.fn().mockResolvedValue(undefined),
-              },
+          }),
+          query: {
+            roles: {
+              findFirst: vi.fn().mockResolvedValue(undefined),
             },
-          }
-          return cb(tx)
-        },
-      )
+          },
+        }
+        return cb(tx)
+      })
 
       await expect(
         service.initialize({
@@ -304,22 +301,20 @@ describe('SetupService', () => {
           }),
         }),
       })
-      vi.mocked(mockDb.transaction).mockImplementation(
-        async (cb: (tx: unknown) => Promise<unknown>) => {
-          const tx = {
-            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
-            select: vi.fn().mockReturnValue({
-              from: vi.fn().mockReturnValue({
-                where: vi.fn().mockResolvedValue([{ count: 0 }]),
-              }),
+      mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 0 }]),
             }),
-            insert: insertMock,
-            update: updateMock,
-            query: { roles: { findFirst } },
-          }
-          return cb(tx)
-        },
-      )
+          }),
+          insert: insertMock,
+          update: updateMock,
+          query: { roles: { findFirst } },
+        }
+        return cb(tx)
+      })
 
       await service.initialize({
         username: 'admin',
@@ -332,7 +327,9 @@ describe('SetupService', () => {
       expect(updateSet).toHaveBeenCalledWith({ deletedAt: null })
       // 建户绑定的是复活的原 admin id=1，而非 serial 续号的新角色
       // （values 为共享 mock，calls 序列 = 4 次 insert 入参，第 4 次是建户）
-      const allValues = insertMock.mock.results[0].value.values.mock.calls.map((c) => c[0])
+      const allValues = insertMock.mock.results[0].value.values.mock.calls.map(
+        (c: unknown[]) => c[0],
+      )
       expect(allValues[3]).toMatchObject({ username: 'admin', roleId: 1 })
     })
 
@@ -343,33 +340,31 @@ describe('SetupService', () => {
         }),
       } as never)
 
-      vi.mocked(mockDb.transaction).mockImplementation(
-        async (cb: (tx: unknown) => Promise<unknown>) => {
-          const tx = {
-            execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
-            select: vi.fn().mockReturnValue({
-              from: vi.fn().mockReturnValue({
-                where: vi.fn().mockResolvedValue([{ count: 0 }]),
+      mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          execute: vi.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 0 }]),
+            }),
+          }),
+          insert: vi.fn().mockReturnValue({
+            values: vi.fn().mockReturnValue({
+              onConflictDoNothing: vi.fn().mockReturnValue({
+                returning: vi
+                  .fn()
+                  .mockResolvedValue([{ id: 9, name: 'admin', description: '漂移的 admin' }]),
               }),
             }),
-            insert: vi.fn().mockReturnValue({
-              values: vi.fn().mockReturnValue({
-                onConflictDoNothing: vi.fn().mockReturnValue({
-                  returning: vi
-                    .fn()
-                    .mockResolvedValue([{ id: 9, name: 'admin', description: '漂移的 admin' }]),
-                }),
-              }),
-            }),
-            query: {
-              roles: {
-                findFirst: vi.fn().mockResolvedValue({ id: 1, name: 'admin' }),
-              },
+          }),
+          query: {
+            roles: {
+              findFirst: vi.fn().mockResolvedValue({ id: 1, name: 'admin' }),
             },
-          }
-          return cb(tx)
-        },
-      )
+          },
+        }
+        return cb(tx)
+      })
 
       await expect(
         service.initialize({

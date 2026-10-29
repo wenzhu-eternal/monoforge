@@ -176,7 +176,7 @@ export class AuthGuard implements CanActivate {
         // 忽略
       }
       return true
-    } catch (err) {
+    } catch {
       // L4：DB 抖动不吞成"访问令牌无效"——抛 ServiceUnavailableException，由 canActivate 透传
       //（与 PermissionsGuard 的"DB 异常直接 500"口径一致，避免全站误登出）
       throw new ServiceUnavailableException('账号存续检查失败，服务暂不可用')

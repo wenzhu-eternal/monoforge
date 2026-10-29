@@ -8,7 +8,7 @@
     "dev": "cross-env NODE_ENV=development nest start --watch",
     "dev:debug": "nest start --debug --watch",
     "dev:prod": "cross-env NODE_ENV=production node dist/main",
-    "lint": "biome check .",
+    "lint": "biome check --error-on-warnings .",
     "lint:fix": "biome check --write .",
     "test": "vitest",
     "test:watch": "vitest --watch",

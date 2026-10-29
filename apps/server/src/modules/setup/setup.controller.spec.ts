@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // getEnv mock：单测内联控制 ALLOW_SETUP，避免依赖真实 .env。
 // vi.hoisted：静态 import 链经 @/db 在加载期即调 getEnv（建池消费 DB_POOL_MAX），防 TDZ
-const mockGetEnv = vi.hoisted(() => vi.fn(() => ({ DB_POOL_MAX: 10 })))
+const mockGetEnv = vi.hoisted(() => vi.fn((): Record<string, unknown> => ({ DB_POOL_MAX: 10 })))
 vi.mock('@/config/env', () => ({
   getEnv: (...args: unknown[]) => mockGetEnv(...(args as Parameters<typeof mockGetEnv>)),
 }))
 
+import type { SetupResult, SetupStatus } from '@shared/schemas/setup'
 import { SetupController } from './setup.controller'
-import type { SetupResult, SetupService, SetupStatus } from './setup.service'
+import type { SetupService } from './setup.service'
 
 describe('SetupController', () => {
   let controller: SetupController

@@ -225,8 +225,8 @@ test('admin 查看用户列表', async ({ page }) => {
 
 | Job | 内容 | 依赖 |
 |---|---|---|
-| `lint` | `pnpm lint`（Biome） | 无 |
-| `typecheck` | `tsc --noEmit`（shared + server + web + e2e） | 无 |
+| `lint` | `pnpm lint`（Biome，`--error-on-warnings`：warning 级同样视为失败） | 无 |
+| `typecheck` | `tsc --noEmit`（shared + server + web + e2e；server/shared 追加 `-p tsconfig.test.json` 覆盖 spec/test） | 无 |
 | `security` | `bash scripts/security-check.sh` | 无 |
 | `unit-test` | `pnpm test`（Mock DB，三包 745 用例：server 527 + web 150 + shared 68） | 无 |
 | `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，73 用例：71 冒烟 + 2 启动告警） | postgres + redis services |
@@ -245,7 +245,7 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 
 脚本会执行：
 
-1. **TypeScript 类型检查**：`server` + `web` 的 `tsc --noEmit`（`shared` / `e2e` 由 CI `typecheck` job 覆盖）
+1. **TypeScript 类型检查**：`server` + `web` 的 `tsc --noEmit`（`shared` / `e2e` 及 server/shared 的 spec 由 CI `typecheck` job 覆盖，含 `tsconfig.test.json` 两份）
 2. **Biome lint**：`pnpm lint`
 3. **软删除过滤审计**：扫描所有 service 的 `findFirst/findMany/count()` 是否有软删除过滤。采用函数级扫描（向前回溯 25 行 + 向后 8 行），识别 `notDeleted` / `maybeDeleted` / `includeDeleted` / `deletedFilter` 四种写法（过滤条件常预先计算为变量后复用）。白名单：`restore()` / `*Raw()` 方法与显式注明「故意不过滤」的查询需读取软删记录，属正确设计
 4. **前端 catch 块审计**：扫描所有 `.tsx` 是否有 `catch {}` 不读 error

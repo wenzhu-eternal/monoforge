@@ -30,7 +30,6 @@ import {
   rollbackDailyQuota,
 } from '@/common/utils/daily-quota'
 import { getTrashDir, getUploadDir } from '@/common/utils/storage-dirs'
-import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, users } from '@/db/schema'

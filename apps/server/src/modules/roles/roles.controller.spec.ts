@@ -146,7 +146,7 @@ describe('RolesController', () => {
       const mockRole = { id: 1, name: 'new-name' }
       vi.mocked(service.update).mockResolvedValue(mockRole as never)
 
-      const result = await controller.update(1, dto)
+      const result = await controller.update(1, dto, { sub: 2, roleId: 2 } as TokenPayload)
 
       expect(result).toEqual(mockRole)
       expect(service.update).toHaveBeenCalledWith(1, dto, false)

@@ -6,7 +6,7 @@ import type { AuthService } from './auth.service'
 
 // vi.hoisted：静态 import 链在模块加载期即会经 @/db 调 getEnv（db 建池消费 DB_POOL_MAX），
 // 普通 const 会落在 TDZ；默认值补 DB_POOL_MAX 供建池
-const mockGetEnv = vi.hoisted(() => vi.fn(() => ({ DB_POOL_MAX: 10 })))
+const mockGetEnv = vi.hoisted(() => vi.fn((): Record<string, unknown> => ({ DB_POOL_MAX: 10 })))
 
 vi.mock('@/config/env', () => ({
   getEnv: (...args: unknown[]) => mockGetEnv(...(args as Parameters<typeof mockGetEnv>)),

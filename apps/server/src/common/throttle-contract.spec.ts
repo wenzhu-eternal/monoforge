@@ -182,7 +182,7 @@ describe('限流契约（M5）', () => {
 
   it.each(contractCases)('$name 声明值与 SkipThrottle 契约', async ({ cls, handler, expected }) => {
     expect(await resolveLimit(cls, handler)).toBe(expected())
-    expect(Reflect.getMetadata('THROTTLER:SKIPdefault', handler)).toBeUndefined()
+    expect(Reflect.getMetadata('THROTTLER:SKIPdefault', handler as object)).toBeUndefined()
   })
 
   it('公开错误上报 3/min', async () => {
@@ -209,7 +209,7 @@ describe('限流契约（M5）', () => {
       skipIf: () => boolean
       throttlers: Array<{ ttl: number; limit: number }>
     }
-    const bypass = buildThrottlerOptions(fakeConfig('true'), {} as RedisService) as {
+    const bypass = buildThrottlerOptions(fakeConfig('true'), {} as RedisService) as unknown as {
       skipIf: () => boolean
     }
     expect(prod.skipIf()).toBe(false)

@@ -256,7 +256,7 @@ export class ScheduleService implements OnApplicationBootstrap {
         for (const name of entries) {
           const full = join(uploadDir, name)
           const st = await stat(full).catch(() => null)
-          if (!st || !st.isFile() || st.mtimeMs > cutoff) continue
+          if (!st?.isFile() || st.mtimeMs > cutoff) continue
           candidates.push(full)
         }
         let removed = 0
@@ -301,7 +301,7 @@ export class ScheduleService implements OnApplicationBootstrap {
       for (const name of trashEntries) {
         const full = join(trashDir, name)
         const st = await stat(full).catch(() => null)
-        if (!st || !st.isFile() || st.mtimeMs > trashCutoff || knownTrash.has(full)) continue
+        if (!st?.isFile() || st.mtimeMs > trashCutoff || knownTrash.has(full)) continue
         await unlink(full).catch(() => null)
         trashRemoved += 1
       }

@@ -48,9 +48,8 @@ describe('RolePermissionsService', () => {
     mockTx.delete.mockClear()
     mockTx.insert.mockClear()
     service = new RolePermissionsService(mockRedisService as never)
-    vi.mocked(mockDb.transaction).mockImplementation(async (fn: (tx: unknown) => unknown) =>
-      fn(mockTx),
-    )
+    vi.mocked(mockDb.transaction).mockImplementation((async (fn: (tx: unknown) => unknown) =>
+      fn(mockTx)) as never)
   })
 
   describe('updateRolePermissions', () => {

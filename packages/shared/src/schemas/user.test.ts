@@ -124,9 +124,8 @@ describe('UpdateUserSchema', () => {
   })
 
   it('M1：mustChangePassword 受控解锁字段——接受 false 清 flag，供微信死锁留出路', () => {
-    const r = UpdateUserSchema.safeParse({ mustChangePassword: false })
-    expect(r.success).toBe(true)
-    expect(r.data.mustChangePassword).toBe(false)
+    const data = UpdateUserSchema.parse({ mustChangePassword: false })
+    expect(data.mustChangePassword).toBe(false)
   })
 })
 

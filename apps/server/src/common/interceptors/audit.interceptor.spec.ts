@@ -186,6 +186,6 @@ describe('sanitizeNewValue 响应脱敏（H2/N4）', () => {
 
   it('null/undefined 与非对象输入原样返回', () => {
     expect(sanitizeNewValue(undefined, 'AuthController')).toBeUndefined()
-    expect(sanitizeNewValue(null, 'AuthController')).toBeNull()
+    expect(sanitizeNewValue(null as never, 'AuthController')).toBeNull()
   })
 })

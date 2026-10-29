@@ -34,7 +34,7 @@ describe('ErrorLogsController', () => {
 
   describe('reportError', () => {
     it('上报错误并返回结果', async () => {
-      const body = { message: 'Test error', source: 'frontend' }
+      const body = { message: 'Test error', source: 'frontend' } as const
       vi.mocked(service.report).mockResolvedValue({ id: 1 })
 
       const result = await controller.reportError(body, '127.0.0.1')
@@ -213,7 +213,7 @@ describe('ErrorLogsController', () => {
 
   describe('createWhitelist', () => {
     it('创建白名单规则', async () => {
-      const dto = { pattern: 'ECONNRESET', matchType: 'message' as const }
+      const dto = { pattern: 'ECONNRESET', matchType: 'message' as const, isActive: true }
       const mockCreated = { id: 1, ...dto }
       vi.mocked(service.createWhitelist).mockResolvedValue(mockCreated as never)
 

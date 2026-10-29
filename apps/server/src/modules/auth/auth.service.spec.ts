@@ -140,10 +140,10 @@ describe('AuthService（L7 登出失效时间戳）', () => {
 
   describe('getProfile（L19 /auth/me 配置派生字段）', () => {
     function stubProfileDeps() {
-      vi.spyOn(service as never, 'getPermissionsByUserId' as never).mockResolvedValue([
-        'user:view',
-      ] as never)
-      vi.spyOn(service as never, 'getRoleByUserId' as never).mockResolvedValue({
+      const spy = (name: string) =>
+        vi.spyOn(service as never, name as never) as unknown as ReturnType<typeof vi.fn>
+      spy('getPermissionsByUserId').mockResolvedValue(['user:view'] as never)
+      spy('getRoleByUserId').mockResolvedValue({
         id: 1,
         name: 'admin',
         description: null,

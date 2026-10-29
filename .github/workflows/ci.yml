@@ -30,7 +30,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter=@monoforge/shared exec tsc --noEmit
+      - run: pnpm --filter=@monoforge/shared exec tsc --noEmit -p tsconfig.test.json
       - run: pnpm --filter=@monoforge/server exec tsc --noEmit
+      - run: pnpm --filter=@monoforge/server exec tsc --noEmit -p tsconfig.test.json
       - run: pnpm --filter=@monoforge/web exec tsc --noEmit
       - run: pnpm --filter=@monoforge/e2e exec tsc --noEmit
 

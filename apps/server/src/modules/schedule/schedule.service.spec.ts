@@ -34,7 +34,7 @@ vi.mock('@/db', () => ({
 
 // getEnv mock：避免依赖真实 .env，单测内联控制环境变量。
 // 默认值补 DB_POOL_MAX——@/db 建池在模块加载期调 getEnv 消费它
-const mockGetEnv = vi.fn(() => ({ DB_POOL_MAX: 10 }))
+const mockGetEnv = vi.fn((): Record<string, unknown> => ({ DB_POOL_MAX: 10 }))
 vi.mock('@/config/env', () => ({
   getEnv: (...args: unknown[]) => mockGetEnv(...(args as Parameters<typeof mockGetEnv>)),
 }))
@@ -86,7 +86,10 @@ describe('ScheduleService', () => {
 
   // spyOn 私有方法 spawnPgDump，避免直接 mock node:child_process（vitest 对该 CJS 内置模块 mock 不稳定）
   function mockSpawnPgDump(impl: () => Promise<void>) {
-    return vi.spyOn(service as never, 'spawnPgDump' as never).mockImplementation(impl as never)
+    const spy = vi.spyOn(service as never, 'spawnPgDump' as never) as unknown as ReturnType<
+      typeof vi.fn
+    >
+    return spy.mockImplementation(impl)
   }
 
   describe('cleanOrphanUploads（L1 空 uploads 仍清扫 trash）', () => {
@@ -232,6 +235,7 @@ describe('ScheduleService', () => {
 
     it('M12 回归锁：删除量取自 returning 行数组 length（RETURNING 聚合是 PG 非法语法）', async () => {
       mockReturning.mockResolvedValue([{ id: 1 }, { id: 2 }])
+      // biome-ignore lint/complexity/useLiteralKeys: 测试需访问私有 logger
       const logSpy = vi.spyOn(service['logger'], 'log')
 
       await service.dailyNotificationCleanup()
@@ -257,6 +261,7 @@ describe('ScheduleService', () => {
       mockReturning
         .mockResolvedValueOnce(Array.from({ length: 5000 }, (_, i) => ({ id: i })))
         .mockResolvedValueOnce([{ id: 5000 }])
+      // biome-ignore lint/complexity/useLiteralKeys: 测试需访问私有 logger
       const logSpy = vi.spyOn(service['logger'], 'log')
 
       await service.dailyNotificationCleanup()
@@ -277,6 +282,7 @@ describe('ScheduleService', () => {
 
     it('L16 回归锁：删除量取自 returning 行数组 length（RETURNING 聚合是 PG 非法语法）', async () => {
       mockReturning.mockResolvedValue([{ id: 1 }, { id: 2 }])
+      // biome-ignore lint/complexity/useLiteralKeys: 测试需访问私有 logger
       const logSpy = vi.spyOn(service['logger'], 'log')
 
       await service.dailyErrorLogsCleanup()
