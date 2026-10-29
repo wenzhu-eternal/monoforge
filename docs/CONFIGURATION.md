@@ -180,7 +180,7 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 
 | 表 | 自动清理 | 保留期 | 说明 |
 |---|---|---|---|
-| `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | createdAt 全量截断删（J1/M1=A，保留期=全量口径，未删通知不再无限堆积；M2 按 5000/批 ctid 子查询分批，避免首夜大存量超 statement_timeout） |
+| `notifications` | ✅ 每天 0:30 cron（`dailyNotificationCleanup`） | 90 天 | 清理锚点 `coalesce(deletedAt, createdAt)`（L14：用户"删除"是软删，按 createdAt 截断会让创建 89 天+当天删除的记录次日即硬删；未删通知仍按创建时间起算，M2 按 5000/批 ctid 子查询分批） |
 | `error_logs` | ✅ 每天 1:30 cron（`dailyErrorLogsCleanup`） | 30 天 | createdAt 全量截断删（J1=A，保留期=全量口径，未删数据永不堆积） |
 | `files` trash | ✅ 每天 0:30 cron（`dailyTrashCleanup`） | 30 天 | 物理删除超期软删文件 |
 | `backups` | ✅ 每次成功备份后（`cleanOldBackups`） | 保留最新 30 份 | 按文件 mtime 排序删除最旧的 `backup-*.sql`；读不到 mtime 的文件跳过不删（避免并发删除/权限异常时误删最新备份） |

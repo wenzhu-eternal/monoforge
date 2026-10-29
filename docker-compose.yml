@@ -107,6 +107,7 @@ services:
       - TRUST_PROXY=${TRUST_PROXY:-false}
       - UPLOAD_DIR=${UPLOAD_DIR:-}
       - BACKUP_DIR=${BACKUP_DIR:-}
+      - BACKUP_MIN_BYTES=${BACKUP_MIN_BYTES:-1024}
       - APP_NAME=${APP_NAME:-MonoForge}
       - DB_POOL_MAX=${DB_POOL_MAX:-10}
       - MAIL_HOST=${MAIL_HOST:-}

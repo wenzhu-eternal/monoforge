@@ -249,7 +249,7 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 
 1. **TypeScript 类型检查**：`server` + `web` 的 `tsc --noEmit`（`shared` / `e2e` 及 server/shared 的 spec 由 CI `typecheck` job 覆盖，含 `tsconfig.test.json` 两份）
 2. **Biome lint**：`pnpm lint`
-3. **软删除过滤审计**：扫描所有 service 的 `findFirst/findMany/count()` 是否有软删除过滤。采用函数级扫描（向前回溯 25 行 + 向后 8 行），识别 `notDeleted` / `maybeDeleted` / `includeDeleted` / `deletedFilter` 四种写法（过滤条件常预先计算为变量后复用）。白名单：`restore()` / `*Raw()` 方法与显式注明「故意不过滤」的查询需读取软删记录，属正确设计
+3. **软删除过滤审计**：扫描 `apps/server/src` 下所有 `*.service.ts`（`audit.service.ts` 例外）的 `findFirst/findMany/count()` 是否有软删除过滤。采用函数级扫描（向前回溯 25 行 + 向后 8 行），识别 `notDeleted` / `maybeDeleted` / `includeDeleted` / `deletedFilter` 四种写法（过滤条件常预先计算为变量后复用）。白名单：`restore()` / `*Raw()` 方法与显式注明「故意不过滤」的查询需读取软删记录，属正确设计。非 service 直接查询（如 `db/seed.ts`、`audit.interceptor` 的 TABLE_MAP）不在扫描面，需人工评审
 4. **前端 catch 块审计**：扫描所有 `.tsx` 是否有 `catch {}` 不读 error
 5. **环境变量完整性**：对比根 `.env` 与 `.env.example` 的 `[必填]` 变量（项目采用单一根 `.env`，由 `apps/server/src/env-loader.ts` 加载；`[可选]` 变量有默认值，缺失不校验）
 6. **依赖安全扫描**：`pnpm audit --prod`（国内镜像源不实现 audit 端点时自动跳过，如需扫描请切换至官方 registry）

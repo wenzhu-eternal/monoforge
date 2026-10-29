@@ -132,6 +132,8 @@ export class NotificationsService {
   }
 
   async remove(userId: number, id: number) {
+    // L14：软删（与全仓删除铁律一致）；物理清理按 deletedAt 起算 90 天（dailyNotificationCleanup），
+    // 不再出现"创建 89 天+当天删除、次日即硬删"
     const [deleted] = await db
       .update(notifications)
       .set({ deletedAt: new Date() })

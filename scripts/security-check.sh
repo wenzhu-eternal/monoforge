@@ -87,7 +87,7 @@ while IFS= read -r file; do
       fi
     fi
   done < <(grep -n -E '(findFirst|findMany|count\(\))' "$file" || true)
-done < <(find apps/server/src/modules -name "*.service.ts" -not -name "audit.service.ts" -type f)
+done < <(find apps/server/src -name "*.service.ts" -not -name "audit.service.ts" -type f)
 
 if [ -z "$SOFT_DELETE_ISSUES" ]; then
   check_pass "所有 service 查询都有软删除过滤（或已标注故意不过滤）"

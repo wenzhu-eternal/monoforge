@@ -268,7 +268,9 @@ export class ScheduleService implements OnApplicationBootstrap {
         }
       }
     } catch (err) {
-      this.logger.warn(`孤儿文件清理失败: ${err instanceof Error ? err.message : String(err)}`)
+      // L13：对照另三个清理 cron 均经 recordCleanupFailure 入库——容器重建后 logger 丢失，
+      // 孤儿堆积时心跳仍显示成功，取证链断开
+      await this.recordCleanupFailure('孤儿文件清理失败', err)
     }
 
     // L8：同步清理 uploads-trash 中无 DB 行对应的孤立文件（M3 竞态窗口留下的残留）
@@ -300,9 +302,7 @@ export class ScheduleService implements OnApplicationBootstrap {
       }
       await this.recordLastRun('cleanOrphanUploads')
     } catch (err) {
-      this.logger.warn(
-        `uploads-trash 孤儿清理失败: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      await this.recordCleanupFailure('uploads-trash 孤儿清理失败', err)
     }
   }
 
@@ -334,13 +334,12 @@ export class ScheduleService implements OnApplicationBootstrap {
   ): Promise<void> {
     const total = await runCleanupInBatches(runBatch)
     if (total > 0) {
-      this.logger.log(
-        `${label}：${total} 条超 ${retentionDays} 天已物理删除（createdAt 全量截断，分批）`,
-      )
+      this.logger.log(`${label}：${total} 条超 ${retentionDays} 天已物理删除（分批）`)
     }
   }
 
-  // J1/M1：每天 0:30 清理超保留期的通知（90 天，createdAt 全量截断），audit_logs 不自动删仅文档声明归档责任
+  // J1/M1：每天 0:30 清理超保留期的通知（90 天）；L14：清理锚点取 coalesce(deletedAt, createdAt)——
+  // 用户"删除"是软删，若仍按 createdAt 截断，创建 89 天 + 当天被删的记录次日即硬删（软删名不副实）
   @Cron('30 0 * * *')
   async dailyNotificationCleanup() {
     try {
@@ -352,7 +351,7 @@ export class ScheduleService implements OnApplicationBootstrap {
           const rows = await db
             .delete(notifications)
             .where(
-              sql`ctid IN (SELECT ctid FROM ${notifications} WHERE ${lt(notifications.createdAt, cutoff)} LIMIT ${CLEANUP_BATCH_SIZE})`,
+              sql`ctid IN (SELECT ctid FROM ${notifications} WHERE coalesce(${notifications.deletedAt}, ${notifications.createdAt}) < ${cutoff} LIMIT ${CLEANUP_BATCH_SIZE})`,
             )
             .returning({ id: notifications.id })
           return rows.length
