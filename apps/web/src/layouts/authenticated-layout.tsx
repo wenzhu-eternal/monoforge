@@ -302,7 +302,7 @@ function AuthenticatedLayoutInner({ children }: { children: ReactNode }) {
         >
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Space className="cursor-pointer">
-              <Avatar size="small" icon={<UserOutlined />} />
+              <Avatar size="small" src={user?.avatar ?? undefined} icon={<UserOutlined />} />
               <Text style={{ color: '#ffffff' }}>{user?.nickname || user?.username || '用户'}</Text>
             </Space>
           </Dropdown>

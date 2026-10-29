@@ -41,8 +41,7 @@
     "onlyBuiltDependencies": [
       "@swc/core",
       "esbuild",
-      "argon2",
-      "msw"
+      "argon2"
     ]
   },
   "lint-staged": {

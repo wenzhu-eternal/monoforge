@@ -88,7 +88,9 @@ export function UsersContent() {
   // L8：与后端 403 同条件——改自己须走 /me/password，改他人须 USER_ROLE_MANAGE
   const isSelf = editingUser != null && me?.id === editingUser.id
 
-  const [form] = Form.useForm<CreateUser & UpdateUser & { roleId?: number }>()
+  const [form] = Form.useForm<
+    CreateUser & UpdateUser & { roleId?: number; mustChangePassword?: boolean }
+  >()
 
   useEffect(() => {
     if (isError) {
@@ -213,6 +215,8 @@ export function UsersContent() {
       phone: user.phone ?? undefined,
       roleId: user.roles?.[0]?.id,
       status: user.status,
+      // M3：首登强制改密当前值（微信占位密码死锁的解锁入口）
+      mustChangePassword: user.mustChangePassword,
     })
     setIsModalOpen(true)
   }
@@ -271,6 +275,14 @@ export function UsersContent() {
           updateData.roleId =
             values.roleId ?? (editingUser.roles?.[0]?.id != null ? null : undefined)
           updateData.status = values.status
+          // M3：仅在值与当前不同才上送——避免"只改昵称"也重置强制改密态；
+          // 后端对该字段要求 USER_ROLE_MANAGE，与 roleId/status 同一闸
+          if (
+            values.mustChangePassword !== undefined &&
+            values.mustChangePassword !== editingUser.mustChangePassword
+          ) {
+            updateData.mustChangePassword = values.mustChangePassword
+          }
         }
         // L8：与后端 403 条件对齐——改自己须走 /me/password，改他人须 USER_ROLE_MANAGE
         if (values.password && !isSelf && canManageRole) {
@@ -457,6 +469,16 @@ export function UsersContent() {
                 unCheckedChildren="禁用"
                 disabled={isSelf || !canManageRole}
               />
+            </Form.Item>
+          )}
+          {editingUser && canManageRole && !isSelf && (
+            <Form.Item
+              name="mustChangePassword"
+              label="首登强制改密"
+              valuePropName="checked"
+              extra="微信登录用户的占位密码不可验证：关闭此项即解锁其登录"
+            >
+              <Switch checkedChildren="强制" unCheckedChildren="已解锁" />
             </Form.Item>
           )}
         </Form>

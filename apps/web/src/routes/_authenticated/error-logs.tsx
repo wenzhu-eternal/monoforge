@@ -295,7 +295,7 @@ export function LogsTab() {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="统计面板加载失败"
+          title="统计面板加载失败"
           action={
             <Button size="small" onClick={() => refetchStats()}>
               重试
@@ -341,7 +341,7 @@ export function LogsTab() {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="相似错误聚合加载失败"
+          title="相似错误聚合加载失败"
           action={
             <Button size="small" onClick={() => refetchGrouped()}>
               重试

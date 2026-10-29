@@ -74,6 +74,8 @@ export const useCreateRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] })
+      // L32：新建角色后 users 列表的角色列可能刚被指派，同步失效避免 30s staleTime 内显示旧值
+      queryClient.invalidateQueries({ queryKey: ['users'] })
     },
   })
 }
@@ -103,6 +105,8 @@ export const useDeleteRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] })
+      // L32：删角色后 users 列表的角色列与实际相反（绑定被级联清除）
+      queryClient.invalidateQueries({ queryKey: ['users'] })
     },
   })
 }
@@ -117,6 +121,8 @@ export const useRestoreRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] })
+      // L32：恢复角色后 users 列表的角色列需重新带回绑定
+      queryClient.invalidateQueries({ queryKey: ['users'] })
     },
   })
 }

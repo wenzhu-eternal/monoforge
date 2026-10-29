@@ -1,6 +1,4 @@
 import '@testing-library/jest-dom/vitest'
-import { afterAll, afterEach, beforeAll } from 'vitest'
-import { server } from '@/mocks/server'
 
 // 组件测试（jsdom）：antd 依赖的浏览器 API 缺失时补桩，防 matchMedia/ResizeObserver 未定义
 if (typeof window !== 'undefined') {
@@ -25,7 +23,3 @@ if (typeof window !== 'undefined') {
     } as unknown as typeof ResizeObserver
   }
 }
-
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
-afterEach(() => server.resetHandlers())
-afterAll(() => server.close())

@@ -55,6 +55,8 @@ vi.mock('@/hooks/use-users', () => {
     phone: null,
     roleId: 2,
     status: true,
+    // M3：首登强制改密当前值，供解锁控件用例断言
+    mustChangePassword: true,
     deletedAt: null,
     roles: [{ id: 2, name: 'user' }],
   }
@@ -156,6 +158,47 @@ describe('M2：自改不上送 roleId/status（后端对自改 roleId 一律 403
 
     expect(data.roleId).toBe(2)
     expect(data.status).toBe(true)
+  })
+})
+
+describe('M3：首登强制改密解锁控件（微信占位密码死锁的管理端入口）', () => {
+  beforeEach(() => {
+    state.granted = [PermissionCodes.USER_UPDATE, PermissionCodes.USER_ROLE_MANAGE]
+    state.me = { id: 7, adminRoleId: 1 }
+    state.updatePayloads = []
+  })
+
+  it('编辑他人持 user:role_manage → 控件可见，关闭后 payload 带 mustChangePassword=false', async () => {
+    render(<UsersContent />)
+
+    await openEditModal(0)
+    const toggle = await screen.findByLabelText('首登强制改密')
+    fireEvent.click(toggle)
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    expect(payload.data.mustChangePassword).toBe(false)
+  })
+
+  it('无 user:role_manage → 不渲染解锁控件（后端该字段要求更高权限）', async () => {
+    state.granted = [PermissionCodes.USER_UPDATE]
+    render(<UsersContent />)
+
+    await openEditModal(0)
+    expect(screen.queryByLabelText('首登强制改密')).toBeNull()
+  })
+
+  it('只改昵称不改解锁态 → payload 不携带 mustChangePassword（避免误重置封锁态）', async () => {
+    render(<UsersContent />)
+
+    await openEditModal(0)
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: '新昵称' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    expect(payload.data).not.toHaveProperty('mustChangePassword')
   })
 })
 

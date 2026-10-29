@@ -108,12 +108,11 @@ const port = portRaw ? Number(portRaw) : undefined // 未配置时交给 nodemai
 | `VITE_APP_NAME` | 品牌名（侧边栏 Logo、页面标题） | `MonoForge` |
 | `VITE_APP_SHORT_NAME` | 品牌简称（侧边栏折叠态显示） | `MF` |
 | `VITE_DEV_HOST` | Vite dev server 绑定主机（默认 `localhost`，局域网调试可设 `0.0.0.0`） | `localhost` |
-| `VITE_ENABLE_MOCK` | 启用 MSW mock（开发阶段无后端时使用，生产禁用） | `false` |
 
 ### 品牌配置
 
 - 品牌名统一由 `apps/web/src/config/brand.ts` 管理，禁止在组件中硬编码
-- `brand.ts` 通过 `apps/web/src/lib/env.ts` 的 `env` 对象读取 `VITE_APP_NAME` / `VITE_APP_SHORT_NAME`，不直接读 `import.meta.env`（统一经 zod schema 校验）；`VITE_ENABLE_MOCK` 的消费点在 `main.tsx`（MSW 启动开关），不在 `brand.ts`
+- `brand.ts` 通过 `apps/web/src/lib/env.ts` 的 `env` 对象读取 `VITE_APP_NAME` / `VITE_APP_SHORT_NAME`，不直接读 `import.meta.env`（统一经 zod schema 校验）
 - 新项目接入时修改 `.env` 的 `VITE_APP_NAME` / `VITE_APP_SHORT_NAME` 即可
 - `index.html` 的 `<title>` 使用 `%VITE_APP_NAME%` 由 Vite 注入
 

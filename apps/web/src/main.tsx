@@ -3,7 +3,6 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { APP_NAME } from '@/config/brand'
 import { bootstrapAuth } from '@/lib/api'
-import { env } from '@/lib/env'
 import { installGlobalErrorHandlers } from '@/lib/error-reporter'
 import './index.css'
 import { ErrorPage } from './components/error-page'
@@ -27,35 +26,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
-// MSW 仅在显式开启 mock 时启用（VITE_ENABLE_MOCK=true），避免开发环境总拦截请求
-async function enableMocking() {
-  if (import.meta.env.DEV && env.VITE_ENABLE_MOCK === 'true') {
-    const { worker } = await import('./mocks/browser')
-    return worker.start({
-      onUnhandledRequest: 'bypass',
-    })
-  }
-  return undefined
-}
-
 const rootElement = document.getElementById('root')!
 
-// 先注册全局错误处理器，再启动 mock，避免 mock 启动失败时错误无人接管
+// 先注册全局错误处理器
 installGlobalErrorHandlers()
-enableMocking()
-  .then(() => bootstrapAuth())
-  .then(() => {
-    ReactDOM.createRoot(rootElement).render(
-      <React.StrictMode>
-        <RouterProvider router={router} />
-      </React.StrictMode>,
-    )
-  })
-  .catch((err) => {
-    console.error('[bootstrap] mock 启动失败，跳过 mock 直接渲染:', err)
-    ReactDOM.createRoot(rootElement).render(
-      <React.StrictMode>
-        <RouterProvider router={router} />
-      </React.StrictMode>,
-    )
-  })
+
+// L33：bootstrapAuth 仅在"已认证但 token 为空"的遗留态才发 refresh（内部串 15s 超时），
+// 后端不可达时首屏白屏干等；加 3s 短超时兜底，到点先渲染（持久化 store 已就绪，路由守卫照常工作）
+const bootstrapWithTimeout = Promise.race([
+  bootstrapAuth().catch((err) => {
+    console.error('[bootstrap] 恢复会话失败，继续渲染:', err)
+  }),
+  new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+])
+
+bootstrapWithTimeout.then(() => {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <RouterProvider router={router} />
+    </React.StrictMode>,
+  )
+})

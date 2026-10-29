@@ -1,13 +1,22 @@
 import { NotifySchema, PasswordSchema, PhoneSchema, UserEmailSchema, UsernameSchema } from '@shared'
 import type { Rule } from 'antd/es/form'
-import { ZodOptional, type ZodString } from 'zod'
+import { ZodNullable, ZodOptional, type ZodString, type ZodType } from 'zod'
+
+/** L19：写侧 schema 可能叠加 optional + nullable，逐层解包到底层 ZodString */
+function unwrapStringSchema(schema: ZodType): ZodString {
+  let current: unknown = schema
+  while (current instanceof ZodOptional || current instanceof ZodNullable) {
+    current = current.unwrap()
+  }
+  return current as ZodString
+}
 
 /**
  * L24：长度校验直接读 shared schema 的 minLength/maxLength——前端不再手写数字，
  * 契约调整时表单提示自动跟随（required 仍由各表单项自行声明）
  */
-export function schemaLengthRule(schema: ZodString | ZodOptional<ZodString>, label: string): Rule {
-  const stringSchema = schema instanceof ZodOptional ? schema.unwrap() : schema
+export function schemaLengthRule(schema: ZodType, label: string): Rule {
+  const stringSchema = unwrapStringSchema(schema)
   return {
     validator: (_, value: string | undefined) => {
       if (!value) return Promise.resolve()

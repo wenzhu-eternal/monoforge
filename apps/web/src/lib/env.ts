@@ -5,7 +5,6 @@ const envSchema = z.object({
   VITE_API_BASE_URL: z.string().default(''),
   VITE_APP_NAME: z.string().default('MonoForge'),
   VITE_APP_SHORT_NAME: z.string().default('MF'),
-  VITE_ENABLE_MOCK: z.string().optional().default('false'),
 })
 
 export const env = envSchema.parse(import.meta.env)
