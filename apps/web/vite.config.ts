@@ -4,6 +4,8 @@ import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react-swc'
+// 仅类型导入（编译期擦除，不会引入第二条 vite 运行时实例）
+import type { Plugin } from 'vite'
 // 从 vitest/config 导入，使其同时识别 test 字段（vite 的 defineConfig 不含 test）
 import { defineConfig } from 'vitest/config'
 
@@ -20,11 +22,25 @@ function readRootEnv(key: string): string | undefined {
 // VITE_DEV_HOST: 默认仅监听 localhost（防局域网未授权访问）；ngrok 调试等场景设 0.0.0.0
 const devHost = process.env.VITE_DEV_HOST || readRootEnv('VITE_DEV_HOST') || 'localhost'
 
+// M4：e2e 指纹探针——仅 dev 中间件，不进生产构建；e2e global-setup 校验回显值，
+// 防止复用 3000 端口上的旧提交 dev web / mock 站点继续跑 UI 断言
+function e2eMarkerPlugin(): Plugin {
+  return {
+    name: 'e2e-marker-probe',
+    configureServer(server) {
+      server.middlewares.use('/__e2e__', (_req, res) => {
+        res.end(process.env.E2E_RUN_MARKER ?? '')
+      })
+    },
+  }
+}
+
 export default defineConfig({
   plugins: [
     TanStackRouterVite({ quoteStyle: 'single', routeFileIgnorePattern: '\\.spec\\.' }),
     react(),
     tailwindcss(),
+    e2eMarkerPlugin(),
   ],
   // .env 在 monorepo 根目录，指定 envDir 让 Vite 正确加载并注入 index.html 的 %VITE_*%
   envDir: resolve(__dirname, '../..'),

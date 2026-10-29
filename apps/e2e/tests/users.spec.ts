@@ -1,7 +1,7 @@
 import { adminUser, normalUser, targetUser, tempUserPrefix } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
 import { loginAsAdmin, loginAsNormalUser } from '@e2e/helpers/auth'
-import { findRoleId } from '@e2e/helpers/cleanup'
+import { fetchAllPages, findRoleId } from '@e2e/helpers/cleanup'
 import { expect, test } from '@playwright/test'
 
 /**
@@ -54,10 +54,10 @@ test.beforeAll(async () => {
 
   // 校验目标用户已由 global-setup 创建，并缓存其 id 供越权用例直接引用
   //（M11：普通用户无 USER_VIEW，列表接口 403 返回 data:null，用例内再查列表必 TypeError）
-  const { data } = await apiClient.get<{ list: Array<{ id: number; username: string }> }>(
-    '/users?pageSize=100',
-  )
-  const target = data.list.find((u) => u.username === targetUser.username)
+  // M5：软删不清理 + 每轮新增临时账号，单页 pageSize=100 会在十余轮后把夹具挤出首屏——
+  // 改为逐页拉全量
+  const users = await fetchAllPages<{ id: number; username: string }>('/users')
+  const target = users.find((u) => u.username === targetUser.username)
   if (!target) throw new Error(`目标用户 ${targetUser.username} 未创建，请检查 global-setup`)
   targetUserId = target.id
 })
@@ -209,6 +209,55 @@ test.describe('用户管理（admin 视角）', () => {
       .last()
       .click()
     await expect(row.getByText('正常')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('L28：admin 改他人邮箱 + 代改密码 → 新密码可登录', async ({ page }) => {
+    const username = `${tempUserPrefix}_edit_${Date.now()}`
+    const password = 'E2ePass123'
+    const newPassword = 'E2eNewPass456'
+    const newEmail = `e2e-edit-${Date.now()}@test.com`
+    const { data: created } = await apiClient.post<{ id: number }>(
+      '/users',
+      {
+        username,
+        email: `${username}@test.com`,
+        password,
+        nickname: '代改密测试',
+        mustChangePassword: false,
+      },
+      201,
+    )
+    expect(created?.id).toBeTruthy()
+
+    await page.goto('/users')
+    const row = await findRowAcrossPages(page, username)
+    await expect(row).toBeVisible({ timeout: 10_000 })
+
+    await row.getByRole('button', { name: '编辑' }).click()
+    const modal = page.locator('.ant-modal')
+    await expect(page.getByRole('dialog', { name: '编辑用户' })).toBeVisible()
+
+    await modal.getByLabel('邮箱').fill(newEmail)
+    await modal.getByLabel('新密码').fill(newPassword)
+    await page
+      .locator('.ant-modal-footer')
+      .getByRole('button', { name: /OK|确\s*定/ })
+      .click()
+
+    await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
+    // 行内回显新邮箱（payload 白名单漏带 email 时服务端不会改但 toast 仍绿）
+    await expect(row).toContainText(newEmail, { timeout: 10_000 })
+
+    // 新密码可登录，旧密码失效（代改密链路端到端闭环）
+    const newLogin = await fetch('http://localhost:9000/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: newPassword }),
+    })
+    expect(newLogin.ok).toBe(true)
+
+    const { status: oldStatus } = await apiClient.post('/auth/login', { username, password })
+    expect(oldStatus).toBe(401)
   })
 
   test('删除临时用户 → 成功', async ({ page }) => {

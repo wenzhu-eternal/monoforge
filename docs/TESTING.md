@@ -176,9 +176,11 @@ apps/e2e/
 - e2e server: **9000**（复用 dev 端口，vite proxy 写死 9000）
 - e2e web: **3000**（复用 dev 端口，vite.config.ts + check-port.mjs 写死 3000）
 
-**约束**：e2e 跑时必须停 dev server + dev web（端口冲突）。M3：`global-setup` 会校验 `/health` 回显的 `e2eMarker` 指纹——`reuseExistingServer` 命中 9000 端口上悬挂的 dev server 时直接 fail-fast 退出，不再静默吞掉环境钉子与 `db:push+seed`。
+**约束**：e2e 跑时必须停 dev server + dev web（端口冲突）。M3/M4：`global-setup` 会校验**双端指纹**——server 的 `/health` 回显 `e2eMarker`、web 的 dev 中间件 `/__e2e__` 回显 `E2E_RUN_MARKER`；两者均为 `monoforge-e2e:<HEAD 短 SHA>`，`reuseExistingServer` 命中悬挂的 dev 进程或旧提交实例时直接 fail-fast 退出，不再静默吞掉环境钉子与 `db:push+seed`（也不会拿旧前端代码跑 UI 断言）。
 **数据隔离**：e2e 用独立 DB（`monoforge_e2e_db`），DEV DB 完全不受影响。`playwright.config.ts` 的 `webServer.command` 启动前自动执行 `db:push && db:seed` 重置 e2e DB，确保每次跑都是干净状态。
 **用户名命名**：e2e 用户名必须用下划线（如 `e2e_normal_user`），禁止连字符——`UsernameSchema` 正则（小写化后）为 `^[a-z0-9_]+$`，含连字符的用户名会在 global-setup 的 `POST /users` 被 Zod 校验拒 400，导致套件 setup 阶段直接失败。
+**夹具定位与清理（M5/L26）**：beforeAll 查夹具必须用 `fetchAllPages` 逐页拉全量——用户只软删、每轮新增临时账号，单页 `pageSize=100` 会在十余轮后把夹具挤出首屏；`cleanupAll` 覆盖用户/角色/权限/文件/错误白名单/错误日志六类 `e2e-` 前缀数据。
+**冒烟侧库指纹（L24）**：`vitest-e2e.config.ts` 拒绝非 e2e 库连接串（只放行 `:5433/` 或 CI 的 `test_db`），防止 shell 残留的 DEV `DATABASE_URL` 被 `test:e2e:ci` 直跑命中。
 
 ### 运行
 

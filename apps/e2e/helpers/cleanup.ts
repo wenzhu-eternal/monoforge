@@ -96,6 +96,29 @@ export async function cleanupTempPermissions() {
 }
 
 /**
+ * 清理 e2e- 前缀的临时错误白名单规则（L26）
+ * 白名单 Tab 不分页，跨轮次残留会无限堆积并淹没统计
+ */
+export async function cleanupTempWhitelists() {
+  const { data } =
+    await apiClient.get<Array<{ id: number; pattern: string }>>('/error-logs/whitelist')
+  const list = Array.isArray(data) ? data : []
+  for (const item of list.filter((w) => w.pattern.startsWith(E2E_PREFIX))) {
+    await apiClient.delete(`/error-logs/whitelist/${item.id}`).catch(() => {})
+  }
+}
+
+/**
+ * 清理 e2e- 前缀的临时错误日志（L26）——错误统计不被 e2e 噪音逐轮淹没
+ */
+export async function cleanupTempErrorLogs() {
+  const logs = await fetchAllPages<{ id: number; message: string }>('/error-logs')
+  for (const log of logs.filter((l) => l.message.startsWith(E2E_PREFIX))) {
+    await apiClient.delete(`/error-logs/${log.id}`).catch(() => {})
+  }
+}
+
+/**
  * 全量清理（global-teardown 调用）
  */
 export async function cleanupAll() {
@@ -103,4 +126,6 @@ export async function cleanupAll() {
   await cleanupTempUsers().catch(() => {})
   await cleanupTempRoles().catch(() => {})
   await cleanupTempPermissions().catch(() => {})
+  await cleanupTempWhitelists().catch(() => {})
+  await cleanupTempErrorLogs().catch(() => {})
 }

@@ -1,7 +1,7 @@
 import { adminUser, normalUser, targetUser } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
 import { cleanupAll, fetchAllPages } from '@e2e/helpers/cleanup'
-import { E2E_MARKER } from './e2e-marker'
+import { makeRunMarker } from './e2e-marker'
 
 /**
  * Playwright 全局 setup：在所有测试前准备测试数据
@@ -73,7 +73,7 @@ async function ensureUser(
       password: user.password,
       nickname: user.nickname,
       roleId: roleId ?? undefined,
-      status: true,
+      // L16：写侧 strictObject——status 不属于 CreateUserSchema，多传即 400
       mustChangePassword: false,
     },
     201,
@@ -95,6 +95,7 @@ async function ensureUser(
  * 指纹不符直接 fail-fast，把"必须停 dev"从口头约定变成硬校验。
  */
 async function assertE2EEnvironment() {
+  const expected = makeRunMarker()
   const res = await fetch('http://localhost:9000/api/v1/health', {
     signal: AbortSignal.timeout(2000),
   })
@@ -104,11 +105,24 @@ async function assertE2EEnvironment() {
     e2eMarker?: string
   } | null
   const actual = body?.data?.e2eMarker ?? body?.e2eMarker
-  if (actual !== E2E_MARKER) {
+  if (actual !== expected) {
     throw new Error(
-      `[global-setup] 9000 端口的 server 不是本次 e2e 实例（e2eMarker=${actual ?? '缺失'}）：\n` +
+      `[global-setup] 9000 端口的 server 不是本次 e2e 实例（e2eMarker=${actual ?? '缺失'}，期望 ${expected}）：\n` +
         '  reuseExistingServer 复用了已有进程，全部环境钉子（库地址/注册开关/邮件/限流）与 db:push+seed 均已失效。\n' +
         '  请先停掉 dev server（pnpm dev 的 server 进程）后重跑 pnpm test:e2e。',
+    )
+  }
+
+  // M4：web(3000) 同样校验——旧提交 dev web / VITE_ENABLE_MOCK 站点会被直接复用，
+  // 全部 UI 断言将验证旧代码（假绿假红）
+  const webRes = await fetch('http://localhost:3000/__e2e__', {
+    signal: AbortSignal.timeout(2000),
+  })
+  const webMarker = (await webRes.text().catch(() => '')).trim()
+  if (webMarker !== expected) {
+    throw new Error(
+      `[global-setup] 3000 端口的 web 不是本次 e2e 实例（marker=${webMarker || '缺失'}，期望 ${expected}）：\n` +
+        '  请先停掉 dev web（pnpm dev 的 web 进程）后重跑 pnpm test:e2e。',
     )
   }
 }

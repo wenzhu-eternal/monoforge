@@ -103,6 +103,32 @@ test.describe('文件上传 + 软删', () => {
     expect([200, 204].includes(status)).toBe(true)
   })
 
+  test('L28：图片预览浮层打开并渲染 blob URL', async ({ page }) => {
+    const filename = `e2e-preview-${Date.now()}.png`
+    const filePath = makePngFile(filename)
+    const { data: uploaded } = await apiClient.uploadFile(
+      '/files/upload',
+      filePath,
+      filename,
+      'image/png',
+    )
+    expect((uploaded as { id?: number })?.id).toBeTruthy()
+
+    await page.goto('/files')
+    const row = page.locator('.ant-table-row').filter({ hasText: filename })
+    await expect(row).toBeVisible({ timeout: 10_000 })
+
+    await row.getByRole('button', { name: '预览' }).click()
+
+    // 预览浮层（antd Image preview）出现且 src 为本地 blob——预览请求失败时浮层不开
+    const previewImg = page.locator('.ant-image-preview-img')
+    await expect(previewImg).toBeVisible({ timeout: 10_000 })
+    await expect(previewImg).toHaveAttribute('src', /^blob:/)
+
+    await page.keyboard.press('Escape')
+    await expect(previewImg).toBeHidden({ timeout: 5000 })
+  })
+
   test('上传非法文件内容（伪装 png）→ 失败提示', async ({ page }) => {
     await page.goto('/files')
     await expect(page.getByRole('heading', { name: '文件管理' })).toBeVisible()

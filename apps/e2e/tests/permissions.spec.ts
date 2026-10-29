@@ -105,25 +105,22 @@ test.describe('权限管理（admin 视角）', () => {
     // 配置路由 Modal
     await expect(page.getByRole('dialog', { name: '配置路由' })).toBeVisible({ timeout: 5000 })
 
-    // 勾选第一个 checkbox（如果有的话）
+    // 勾选第一个 checkbox——路由清单为空/加载失败时不得静默跳过核心断言
+    //（原 if (checkboxCount > 0) 让用例退化成"点了确定就通过"）
     const firstCheckbox = page.locator('.ant-modal .ant-checkbox-wrapper').first()
-    const checkboxCount = await page.locator('.ant-modal .ant-checkbox-wrapper').count()
-    if (checkboxCount > 0) {
-      await firstCheckbox.click()
-    }
+    await expect(firstCheckbox).toBeVisible({ timeout: 5000 })
+    await firstCheckbox.click()
 
     await page.locator('.ant-modal-footer').getByRole('button', { name: '确 定' }).click()
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
 
     // L16：重新打开弹窗确认勾选已持久化（原仅 toast，路由未保存也过）
-    if (checkboxCount > 0) {
-      await row.getByRole('button', { name: '配置路由' }).click()
-      await expect(page.getByRole('dialog', { name: '配置路由' })).toBeVisible({ timeout: 5000 })
-      await expect(
-        page.locator('.ant-modal .ant-checkbox-wrapper').first().locator('input'),
-      ).toBeChecked()
-      await page.locator('.ant-modal-footer').getByRole('button', { name: '取 消' }).click()
-    }
+    await row.getByRole('button', { name: '配置路由' }).click()
+    await expect(page.getByRole('dialog', { name: '配置路由' })).toBeVisible({ timeout: 5000 })
+    await expect(
+      page.locator('.ant-modal .ant-checkbox-wrapper').first().locator('input'),
+    ).toBeChecked()
+    await page.locator('.ant-modal-footer').getByRole('button', { name: '取 消' }).click()
   })
 
   test('禁用权限 → 成功', async ({ page }) => {

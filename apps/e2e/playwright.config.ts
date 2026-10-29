@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
-import { E2E_MARKER } from './e2e-marker'
+import { makeRunMarker } from './e2e-marker'
+
+const runMarker = makeRunMarker()
 
 // M15：最终生效的 e2e 数据库连接串（E2E_DATABASE_URL > DATABASE_URL > 5433 默认）。
 // 非 5433 目标（如 shell 残留的 DEV DATABASE_URL）会把 db:push+seed 打进非 e2e 库——醒目警告。
@@ -73,8 +75,9 @@ export default defineConfig({
       env: {
         NODE_ENV: 'development',
         DATABASE_URL: e2eDatabaseUrl,
-        // M3：环境指纹——global-setup 校验 /health 回显，避免复用端口上的 dev server
-        E2E_MARKER,
+        // M3/M4：环境指纹（常量 + HEAD 短 SHA）——global-setup 校验 /health 回显，
+        // 避免复用端口上的 dev server 或旧提交实例
+        E2E_MARKER: runMarker,
         THROTTLE_LIMIT: '1000',
         // M6/L18：login/register/send-register-code 各为独立 default 桶（THROTTLE_LOGIN_LIMIT），
         // e2e 内大量登录请求调高避免各自撞 5/min 红线
@@ -97,6 +100,9 @@ export default defineConfig({
       url: 'http://localhost:3000',
       env: {
         NODE_ENV: 'development',
+        // M4：web 侧同样打指纹——vite dev 中间件 /__e2e__ 回显，global-setup 校验；
+        // 复用 3000 上的旧提交 dev web 或 VITE_ENABLE_MOCK 站点时 fail-fast
+        E2E_RUN_MARKER: runMarker,
       },
       timeout: 90_000,
       reuseExistingServer: !process.env.CI,

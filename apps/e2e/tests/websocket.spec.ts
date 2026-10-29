@@ -1,6 +1,7 @@
 import { adminUser, normalUser } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
 import { loginAsAdmin, loginAsNormalUser } from '@e2e/helpers/auth'
+import { fetchAllPages } from '@e2e/helpers/cleanup'
 import { expect, test } from '@playwright/test'
 
 /**
@@ -17,11 +18,10 @@ let normalUserId: number
 
 test.beforeAll(async () => {
   await apiClient.login(adminUser.username, adminUser.password)
-  const { data } = await apiClient.get<{ list: Array<{ id: number; username: string }> }>(
-    '/users?pageSize=100',
-  )
-  adminUserId = data.list.find((u) => u.username === adminUser.username)?.id ?? 1
-  normalUserId = data.list.find((u) => u.username === normalUser.username)?.id ?? 0
+  // M5：软删不清理 + 每轮新增账号会逐轮把夹具挤出单页首屏——逐页拉全量
+  const users = await fetchAllPages<{ id: number; username: string }>('/users')
+  adminUserId = users.find((u) => u.username === adminUser.username)?.id ?? 1
+  normalUserId = users.find((u) => u.username === normalUser.username)?.id ?? 0
   if (!normalUserId) throw new Error('普通用户未创建，请检查 global-setup')
 })
 

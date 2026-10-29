@@ -173,4 +173,29 @@ test.describe('角色管理（admin 视角）', () => {
     await expect(targetRow.getByText('已禁用')).toBeVisible({ timeout: 5000 })
     await expect(targetRow.getByRole('button', { name: '禁用' })).toBeDisabled()
   })
+
+  test('L28：禁用后恢复角色 → 行状态回到正常', async ({ page }) => {
+    const roleName = `${tempRolePrefix}-restore-${Date.now()}`
+    const { data: created } = await apiClient.post<{ id: number }>(
+      '/roles',
+      { name: roleName, description: '恢复测试角色' },
+      201,
+    )
+    expect(created?.id).toBeTruthy()
+    // 先经 API 禁用，再走 UI 恢复按钮（恢复链路此前零 e2e 覆盖）
+    const { status } = await apiClient.delete(`/roles/${created?.id}`)
+    expect([200, 204].includes(status)).toBe(true)
+
+    await page.goto('/roles')
+    const row = page.locator('.ant-table-row').filter({ hasText: roleName })
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await expect(row.getByText('已禁用')).toBeVisible({ timeout: 5000 })
+
+    await row.getByRole('button', { name: '恢复' }).click()
+    await page.locator('.ant-popconfirm .ant-btn-primary').click()
+
+    await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
+    // 锁定行内状态回翻为"正常"（仅 toast 时为假绿）
+    await expect(row.getByText('正常')).toBeVisible({ timeout: 5000 })
+  })
 })
