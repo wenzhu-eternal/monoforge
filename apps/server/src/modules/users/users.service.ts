@@ -123,7 +123,8 @@ export class UsersService {
       username: string
       email: string
       password: string
-      nickname?: string
+      // L19：DB nickname 可空，契约开放置空后 service 同步接受 null
+      nickname?: string | null
       // L13：phone 置空通道，null 直写 DB NULL
       phone?: string | null
       roleId?: number | null
@@ -209,7 +210,8 @@ export class UsersService {
     id: number,
     data: {
       email?: string
-      nickname?: string
+      // L19：DB nickname 可空，契约开放置空后 service 同步接受 null
+      nickname?: string | null
       // L13：avatar/phone 置空通道，null 直写 DB NULL
       avatar?: string | null
       phone?: string | null

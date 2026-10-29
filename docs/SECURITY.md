@@ -194,7 +194,7 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 ### Token 吊销口径（L2/L4）
 
 - **refresh 顺序**：先 `GET` 预检 → DB/状态（禁用、强制改密）校验 → `getdel` 原子消费复核；不得先 getdel 后校验——DB 抖动抛 503 时客户端唯一有效的 RT 已被烧毁且新 token 未下发，多端共享部署下放大为全员重登
-- **access 比对**：`AuthGuard` 除 jti 黑名单外，还比对 `logout:at:<uid>` 与 token `iat`（登出/改密/禁用均写该时间戳）。仅扫 jti 的三步吊销链非原子，并发签发的新 AT 不在扫描结果与活跃集内、可续活 ≤15min；iat 比对把该窗口收敛为"同秒边界 fail-closed"。Redis 抖动降级放行（JWT 已验签）
+- **access 比对**：`AuthGuard` 除 jti 黑名单外，还比对 `logout:at:<uid>` 与 token `iat`（登出/改密/禁用均写该时间戳）。仅扫 jti 的三步吊销链非原子，并发签发的新 AT 不在扫描结果与活跃集内、可续活 ≤15min；iat 比对把该窗口收敛到"登出那一秒之后签发的一律拒绝"（iat 精度为秒，按该秒末尾比较，同秒重新登录不受误伤）。Redis 抖动降级放行（JWT 已验签）
 - **admin 删除取证类错误日志**：见「限流」节 M2 条目
 
 ## 权限控制

@@ -43,7 +43,7 @@ export class SetupService {
     username: string
     email: string
     password: string
-    nickname?: string
+    nickname?: string | null
   }): Promise<SetupResult> {
     // M3：本进程已初始化过 → 直接拒（不查库），配合下方事务双保险
     if (this.setupCompleted) {

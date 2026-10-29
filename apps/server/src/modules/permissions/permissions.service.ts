@@ -94,7 +94,7 @@ export class PermissionsService {
     data: {
       code: string
       name: string
-      description?: string
+      description?: string | null
       routes?: string[]
     },
     caller: { isAdmin: boolean },
@@ -123,7 +123,7 @@ export class PermissionsService {
 
   async update(
     id: number,
-    data: { code?: string; name?: string; description?: string; routes?: string[] },
+    data: { code?: string; name?: string; description?: string | null; routes?: string[] },
     caller: { isAdmin: boolean },
   ): Promise<Permission> {
     this.assertRoutesEditable(data, caller.isAdmin)

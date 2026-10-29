@@ -177,9 +177,10 @@ export class AuthService {
     }
 
     // L7：登出失效时间戳早退——签发时间早于最近一次登出的 token 一律拒绝
-    //（iat 为秒、时间戳为毫秒，同秒边界按拒绝 fail-closed）
+    //（iat 为秒、时间戳为毫秒，按 iat 该秒末尾比较：同秒内重新登录的新 token 放行，
+    // 严格比较会把"登出后同一秒登录"误判为吊销）
     const logoutAt = Number((await this.redisService.get(`logout:at:${payload.sub}`)) ?? 0)
-    if (logoutAt > 0 && (payload.iat ?? 0) * 1000 < logoutAt) {
+    if (logoutAt > 0 && (payload.iat ?? 0) * 1000 + 999 < logoutAt) {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
 
@@ -230,7 +231,7 @@ export class AuthService {
     // deleteByPattern 完成、新 refresh 键晚于清理写入即存活）。令牌未出网关，
     // 直接作废不返回即可（孤儿键 7d 自然过期）
     const logoutAtFinal = Number((await this.redisService.get(`logout:at:${user.id}`)) ?? 0)
-    if (logoutAtFinal > 0 && (payload.iat ?? 0) * 1000 < logoutAtFinal) {
+    if (logoutAtFinal > 0 && (payload.iat ?? 0) * 1000 + 999 < logoutAtFinal) {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
 
