@@ -14,11 +14,13 @@ import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import type { RoleBrief } from '@shared/schemas/role'
 import * as argon2 from 'argon2'
 import { and, eq } from 'drizzle-orm'
+import { normalizeIpForKey } from '@/common/utils/ip-normalize'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
 import type { User } from '@/db/schema'
 import { permissions, rolePermissions, roles, users } from '@/db/schema'
+import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { MailService } from '@/modules/mail/mail.service'
 import { RedisService } from '@/modules/redis/redis.service'
 
@@ -50,6 +52,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly mailService: MailService,
+    private readonly errorLogsService: ErrorLogsService,
   ) {}
 
   // L1：登录防用户枚举——不存在/禁用与密码错误返回同一文案；不存在时仍做一次
@@ -144,8 +147,10 @@ export class AuthService {
   }
 
   /** M2：锁定键含来源 IP；无 IP 时退化为仅用户名（与旧行为一致，不放大口径） */
+  // L3：入键前归一（/24 折叠）——与 throttler/audit/error-logs 同口径；原用原始 IP 时
+  // IPv6 隐私地址逐请求变即换桶，10 次/15min 的账户封顶对旋转源近乎失效
   private loginFailKey(username: string, ip?: string): string {
-    return ip ? `login:fail:${ip}:${username}` : `login:fail:${username}`
+    return ip ? `login:fail:${normalizeIpForKey(ip)}:${username}` : `login:fail:${username}`
   }
 
   private async clearLoginFailures(username: string, ip?: string): Promise<void> {
@@ -160,7 +165,6 @@ export class AuthService {
     let payload: {
       sub: number
       username: string
-      email: string
       roleId?: number | null
       jti?: string
       iat?: number
@@ -241,24 +245,45 @@ export class AuthService {
     // L7：先落登出失效时间戳——refresh 的 getdel 若先于 deleteByPattern 完成，竞态设备
     // 会在清理之后签发存活 7d 的新令牌；时间戳供 refresh 早退 + 签发后复检判定作废。
     // TTL 盖过 refresh 存续期（7d + 1d 余量）
-    // L3：Redis 抖动下三段吊销降级放行——客户端已清 cookie，服务端缺口由 logout:at/TTL 兜底，
-    // 不能因 Redis 瞬时故障让"登出"反报 500（口径与 users.service 吊销链降级一致）
-    try {
-      await this.redisService.set(
-        `logout:at:${userId}`,
-        String(Date.now()),
-        REFRESH_TOKEN_TTL + 86400,
-      )
-      await this.redisService.deleteByPattern(`refresh:${userId}:*`)
-      // 批量吊销全部活跃 access token（多设备/refresh 轮换后遗留的旧 token 一并拉黑，TTL=15min 与 token 有效期一致）
-      await this.revokeAllAccessTokens(userId)
-    } catch (err) {
-      this.logger.warn(
-        `退出登录部分吊销失败（已降级放行）: ${err instanceof Error ? err.message : String(err)}`,
-      )
-    }
+    // M2：三段吊销独立重试+留痕——原单 try 下首段 logout:at 抖动会让 refresh 批删与 AT 拉黑
+    // 整段跳过，Redis 恢复后旧 RT 可续命最长 7d 且零留痕（对照 changePassword 的三段收口）
+    await this.retryAndRecord(
+      () =>
+        this.redisService.set(`logout:at:${userId}`, String(Date.now()), REFRESH_TOKEN_TTL + 86400),
+      'logout:at 写入',
+    )
+    await this.retryAndRecord(
+      () => this.redisService.deleteByPattern(`refresh:${userId}:*`),
+      'refresh token 吊销',
+    )
+    // 批量吊销全部活跃 access token（多设备/refresh 轮换后遗留的旧 token 一并拉黑，TTL=15min 与 token 有效期一致）
+    await this.retryAndRecord(() => this.revokeAllAccessTokens(userId), 'access token 拉黑')
 
     return { message: '退出登录成功' }
+  }
+
+  /** 单段重试一次，仍失败写 error_logs 留痕；留痕自身失败降级 logger（业务已成功不回滚） */
+  private async retryAndRecord(fn: () => Promise<unknown>, what: string): Promise<void> {
+    try {
+      await fn()
+    } catch {
+      try {
+        await fn()
+      } catch (retryErr) {
+        const message = `退出登录 ${what} 失败（重试后仍失败）: ${
+          retryErr instanceof Error ? retryErr.message : String(retryErr)
+        }`
+        try {
+          await this.errorLogsService.record({ message, internal: true })
+        } catch (recordErr) {
+          this.logger.warn(
+            `退出登录失败留痕写入失败: ${
+              recordErr instanceof Error ? recordErr.message : String(recordErr)
+            }`,
+          )
+        }
+      }
+    }
   }
 
   /**
@@ -411,13 +436,17 @@ export class AuthService {
     ip?: string,
   ): Promise<TokenPair & { user: Omit<User, 'password'> }> {
     const codeKey = `register:code:${email}`
+    // L11：先读剩余 TTL 再 getdel——getdel 后 key 已删除无从查询，原实现错码回填恒设满 5 分钟，
+    // 等于每次输错都把验证码余量续满（配合 60s 取码锁可无限延长有效窗口）
+    const remainingTtl = await this.redisService.ttl(codeKey)
     // L1：check-and-consume 必须单点原子——原"先 GET 判等、再 getdel 丢弃返回值"在并发下
     // 两个请求都能通过 GET，第二个 getdel 拿 null 却继续注册
     const consumed = await this.redisService.getdel(codeKey)
     if (!consumed || consumed !== code) {
       // 输入错误时回填：错码也会被 getdel 取走，回填避免一次输错烧毁有效验证码
+      // L11：按剩余余量回填（-1 永久 / -2 不存在时退回原有效期）
       if (consumed) {
-        await this.redisService.set(codeKey, consumed, 5 * 60)
+        await this.redisService.set(codeKey, consumed, remainingTtl > 0 ? remainingTtl : 5 * 60)
       }
       // 验证码尝试次数限制：5 次失败后删除验证码并重置计数，攻击者需重新获取（受 60s 发送限制）
       // Lua 保证 INCR + 首次 EXPIRE 原子，避免进程在两步之间崩溃导致计数永驻

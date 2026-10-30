@@ -37,7 +37,9 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     del: ReturnType<typeof vi.fn>
     scanKeys: ReturnType<typeof vi.fn>
     eval: ReturnType<typeof vi.fn>
+    ttl: ReturnType<typeof vi.fn>
   }
+  let errorLogsService: { record: ReturnType<typeof vi.fn> }
 
   const userRow = {
     id: 7,
@@ -71,13 +73,16 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       del: vi.fn().mockResolvedValue(undefined),
       scanKeys: vi.fn().mockResolvedValue([]),
       eval: vi.fn().mockResolvedValue(0),
+      ttl: vi.fn().mockResolvedValue(300),
     }
     const configService = { get: vi.fn().mockReturnValue('secret') }
+    errorLogsService = { record: vi.fn().mockResolvedValue(undefined) }
     service = new AuthService(
       jwtService as never,
       configService as never,
       redisService as never,
       {} as never,
+      errorLogsService as never,
     )
     vi.mocked(db.query.users.findFirst).mockResolvedValue(userRow as never)
   })
@@ -153,6 +158,21 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     await expect(service.logout(7)).resolves.toEqual({ message: '退出登录成功' })
   })
 
+  it('M2：首段 logout:at 重试仍失败时，refresh 批删与 AT 拉黑照常执行并写 error_logs', async () => {
+    redisService.set.mockRejectedValueOnce(new Error('redis down'))
+    redisService.set.mockRejectedValueOnce(new Error('redis down'))
+
+    await expect(service.logout(7)).resolves.toEqual({ message: '退出登录成功' })
+
+    // 三段独立：首段失败不阻断后两段
+    expect(redisService.deleteByPattern).toHaveBeenCalledWith('refresh:7:*')
+    expect(redisService.scanKeys).toHaveBeenCalledWith('access:active:7:*')
+    // 失败留痕（internal 豁免白名单）
+    expect(errorLogsService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ internal: true, message: expect.stringContaining('logout:at') }),
+    )
+  })
+
   describe('registerWithCode（L1 验证码原子消费）', () => {
     function stubPrivate(name: string, impl: () => Promise<unknown>) {
       const self = service as unknown as Record<string, ReturnType<typeof vi.fn>>
@@ -176,9 +196,21 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       )
     })
 
-    it('输错码不烧有效码：getdel 取走后立即回填', async () => {
+    it('L11：输错码回填按剩余 TTL，不重置为满 5 分钟', async () => {
       redisService.getdel.mockResolvedValue('123456')
       redisService.eval.mockResolvedValue(1)
+      redisService.ttl.mockResolvedValue(60)
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
+        UnauthorizedException,
+      )
+      expect(redisService.set).toHaveBeenCalledWith('register:code:a@b.com', '123456', 60)
+    })
+
+    it('输错码不烧有效码：getdel 取走后立即回填（无 TTL 时退回原有效期）', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.eval.mockResolvedValue(1)
+      redisService.ttl.mockResolvedValue(-2)
 
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
@@ -233,7 +265,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       const [script, keys, args] = redisService.eval.mock.calls[0] as [string, string[], number[]]
       expect(script).toContain('INCR')
       expect(script).toContain('EXPIRE')
-      expect(keys[0]).toBe('login:fail:1.2.3.4:u')
+      expect(keys[0]).toBe('login:fail:1.2.3.:id:u')
       expect(args).toEqual([900, 10]) // LOGIN_FAIL_TTL=15min、LOGIN_FAIL_LIMIT=10
     })
 
