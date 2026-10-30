@@ -104,7 +104,9 @@ export const CreateErrorWhitelistSchema = z.strictObject({
   // L7：≥4 才不会被 "E1"、"/x" 之类的模式静默吞掉全部同类报错（命中即过滤、无处可见）
   pattern: z.string().min(4).max(500),
   matchType: WhitelistMatchType.default('message'),
-  description: z.string().max(500).optional(),
+  // M5：DB 列可空且读侧已 nullable，写侧必须留 null 通道——否则清除 description 的请求被
+  // SanitizeBodyPipe 转 undefined 后 zod 判缺省，静默无操作
+  description: z.string().max(500).optional().nullable(),
   isActive: z.boolean().default(true),
 })
 
@@ -112,7 +114,8 @@ export const UpdateErrorWhitelistSchema = z.strictObject({
   // L7：PATCH 同样限 ≥4，否则建完再改短即可绕过创建侧下限
   pattern: z.string().min(4).max(500).optional(),
   matchType: WhitelistMatchType.optional(),
-  description: z.string().max(500).optional(),
+  // M5：同 Create——null 显式置空通道
+  description: z.string().max(500).optional().nullable(),
   isActive: z.boolean().optional(),
 })
 

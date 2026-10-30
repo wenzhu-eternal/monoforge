@@ -516,7 +516,7 @@ export class ErrorLogsService {
   async createWhitelist(data: {
     pattern: string
     matchType?: string
-    description?: string
+    description?: string | null
     isActive?: boolean
   }): Promise<ErrorWhitelist> {
     // M9：并发撞 (match_type, pattern) 唯一索引时转 409（原直接 500）
@@ -546,7 +546,7 @@ export class ErrorLogsService {
     data: {
       pattern?: string
       matchType?: string
-      description?: string
+      description?: string | null
       isActive?: boolean
     },
   ): Promise<ErrorWhitelist> {

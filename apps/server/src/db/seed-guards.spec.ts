@@ -72,6 +72,12 @@ describe('DEFAULT_PERMISSIONS 路由清单（L14）', () => {
     const codes = DEFAULT_PERMISSIONS.map((permission) => permission.code)
     expect(new Set(codes).size).toBe(codes.length)
   })
+
+  // L7：USER_ROLE_MANAGE 只作字段级二道闸，若带 routes 会成为 user:create/user:update 的超集
+  //（守卫层被 routes 兜底绕过，仅持"分配角色"的委托静默获得整套用户 CRUD）
+  it('USER_ROLE_MANAGE 不携带端点 routes（仅字段级闸，不做 routes 兜底授权）', () => {
+    expect(routesOf(PermissionCodes.USER_ROLE_MANAGE)).toEqual([])
+  })
 })
 
 describe('DEFAULT_PERMISSIONS 路由清单与 controller 全覆盖（L23）', () => {

@@ -1,5 +1,6 @@
 import type { ArgumentMetadata } from '@nestjs/common'
 import { describe, expect, it } from 'vitest'
+import { UpdateWhitelistDto } from '@/modules/error-logs/dto/update-whitelist.dto'
 import { UpdateUserDto } from '@/modules/users/dto/update-user.dto'
 import { SanitizeBodyPipe } from './sanitize-body.pipe'
 
@@ -37,6 +38,14 @@ describe('SanitizeBodyPipe', () => {
   it('L19: nickname 开放置空后 null 被保留（清空昵称不被吞成未改动）', () => {
     const out = pipe.transform({ nickname: null }, meta(UpdateUserDto)) as Record<string, unknown>
     expect(out.nickname).toBeNull()
+  })
+
+  it('M5: 白名单 description null 被保留（清空备注不被吞成未改动）', () => {
+    const out = pipe.transform({ description: null }, meta(UpdateWhitelistDto)) as Record<
+      string,
+      unknown
+    >
+    expect(out.description).toBeNull()
   })
 
   it('无 metatype（非 DTO body）时退回原行为：null 全转 undefined', () => {

@@ -174,8 +174,12 @@ export const DEFAULT_PERMISSIONS: DefaultPermission[] = [
   {
     code: PermissionCodes.USER_ROLE_MANAGE,
     name: '管理用户角色',
-    description: '分配/修改用户角色、状态、密码与邮箱',
-    routes: ['POST /users/', 'PATCH /users/:id'],
+    description:
+      '分配/修改用户角色、状态、密码、邮箱与手机号（需同时具备 user:update 才能编辑用户）',
+    // L7：routes 置空——该码只作字段级二道闸（users.controller 内部复查），不承担端点授权；
+    // 原先包含 POST /users/ 与 PATCH /users/:id，会让仅持本码的委托经 routes 兜底拿到整套用户
+    // CRUD（守卫层 user:create/user:update 被绕过），授权人只想"分配角色"却静默获得建号改户能力
+    routes: [],
   },
 ]
 
