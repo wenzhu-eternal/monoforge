@@ -9,11 +9,15 @@ export function parsePagination(
   page?: string,
   pageSize?: string,
 ): { page: number; pageSize: number } {
-  const pageNum = page ? Number.parseInt(page, 10) : 1
-  const size = pageSize ? Number.parseInt(pageSize, 10) : 10
-  // NaN 走显式文案（zod 的 invalid_type 提示对终端用户不可读）
-  if (Number.isNaN(pageNum)) throw new BadRequestException('page 必须为正整数')
-  if (Number.isNaN(size)) throw new BadRequestException('pageSize 必须为正整数')
+  // L6：先做整数串校验再转数——原 Number.parseInt 会把 '12abc' 截成 12 静默分页，
+  // 与 audit userId 等"非法输入直接 400"的收口口径不一致
+  const toInt = (raw: string | undefined, fallback: number, field: string): number => {
+    if (!raw) return fallback
+    if (!/^\d+$/.test(raw)) throw new BadRequestException(`${field} 必须为正整数`)
+    return Number.parseInt(raw, 10)
+  }
+  const pageNum = toInt(page, 1, 'page')
+  const size = toInt(pageSize, 10, 'pageSize')
 
   const parsed = PaginationQuerySchema.safeParse({ page: pageNum, pageSize: size })
   if (!parsed.success) {

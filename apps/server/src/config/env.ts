@@ -221,8 +221,8 @@ export const envSchema = z
         .max(500)
         .refine((v) => v.includes('{filepath}'), 'BACKUP_CMD 必须包含 {filepath} 占位符')
         .refine(
-          (v) => !/[\r\n`$|;&]/.test(v),
-          'BACKUP_CMD 禁止换行/反引号/变量展开($)/管道(|)/命令拼接(;，&,&&,||)（如需管道请改走默认 pg_dump）',
+          (v) => !/[\r\n`$|;&()<]/.test(v),
+          'BACKUP_CMD 禁止换行/反引号/变量展开($)/管道(|)/命令拼接(;，&,&&,||)/子 shell 与输入重定向( (, ) , < )（如需管道请改走默认 pg_dump）',
         )
         .optional(),
     ),

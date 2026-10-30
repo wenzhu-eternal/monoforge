@@ -234,6 +234,8 @@ describe('env 上线防线（L24）', () => {
       'pg_dump {filepath}\nrm -rf /',
       'pg_dump $(id) {filepath}',
       'pg_dump `id` {filepath}',
+      'pg_dump {filepath} (> /tmp/x)',
+      'pg_dump {filepath} < /etc/passwd',
     ]) {
       expect(envSchema.safeParse({ ...baseEnv, BACKUP_CMD: unsafe }).success).toBe(false)
     }

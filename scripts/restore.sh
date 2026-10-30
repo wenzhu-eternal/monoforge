@@ -23,9 +23,11 @@ DB_NAME="${POSTGRES_DB:-$(env_value POSTGRES_DB)}"
 : "${DB_USER:=monoforge_user}"
 : "${DB_NAME:=monoforge_database}"
 
-# Q10：库名只允许字母/数字/下划线——下方原样内插 psql 命令行，非法字符会破坏/注入 SQL
-if [[ ! "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
-  echo "❌ 非法数据库名: $DB_NAME（仅允许字母/数字/下划线）"
+# Q10/L27：库名允许字母/数字/下划线/连字符——首字符仍限字母/数字/下划线（与 spawnPgDump
+# 口径对齐；`$` 刻意排除：内插在 shell 双引号里会被展开）。合法连字符库名原先能备份却恢复不了。
+# 连字符按 SQL 标识符加双引号（见下方 DROP/CREATE），' 与 ; 由正则天然排除
+if [[ ! "$DB_NAME" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]]; then
+  echo "❌ 非法数据库名: $DB_NAME（仅允许字母/数字/下划线/连字符，且不得以连字符开头）"
   exit 1
 fi
 
@@ -66,8 +68,8 @@ fi
 echo ""
 echo "🔄 重置数据库..."
 docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$DB_NAME' AND pid <> pg_backend_pid();" 2>/dev/null || true
-docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS $DB_NAME;"
-docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "CREATE DATABASE $DB_NAME;"
+docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\";"
+docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\";"
 
 echo "📥 导入备份（psql 原生格式）..."
 # L1：ON_ERROR_STOP=1 让任一语句失败即整体非退出 0——原实现靠 grep ERROR 文案判定，

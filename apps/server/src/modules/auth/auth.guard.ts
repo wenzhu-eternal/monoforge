@@ -110,8 +110,10 @@ export class AuthGuard implements CanActivate {
         }
       }
 
-      // L4：登出/改密/禁用均写 logout:at——AT 也按 iat 比对，堵住吊销链三步非原子
+      // L4：登出与自助改密会写 logout:at——AT 也按 iat 比对，堵住吊销链三步非原子
       // 期间并发签发的新 AT（扫描结果与活跃集均不含该 jti）的 ≤15min 漏网窗口。
+      // 禁用/软删/管理员重置密码不写该键，分别由下方 isAccountAlive 复检与
+      // mustChangePassword 白名单兜底。
       // iat 精度为秒、logoutAt 为毫秒：按"iat 该秒末尾"比较，同秒内重新登录的新令牌放行
       //（严格比较会把登出后同一秒重新登录的令牌全判死；该秒之后签发的仍一律拒绝）
       if (payload.iat) {
