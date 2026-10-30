@@ -64,9 +64,11 @@ export default defineConfig({
 
   webServer: [
     {
-      // 启动前先重置 e2e DB（push schema + seed），确保每次跑都是干净状态
+      // 启动前先重置 e2e DB（drop schema + push + seed），确保每次跑都是干净状态
+      // M4：drop schema 消灭软删行跨轮累积——原仅 push+seed，已删行只增不减，
+      // 长跑后夹具行滚出翻页上限且清理耗时线性上升
       command:
-        'pnpm --filter=server db:push && pnpm --filter=server db:seed && pnpm --filter=@monoforge/server dev',
+        'pnpm --filter=server db:reset:e2e && pnpm --filter=server db:push && pnpm --filter=server db:seed && pnpm --filter=@monoforge/server dev',
       url: 'http://localhost:9000/api/v1/health',
       // DATABASE_URL 环境感知（M15）：优先 e2e 专用 E2E_DATABASE_URL——shell 里残留的
       // DATABASE_URL 常指向 DEV 5432，直接透传会把 db:push+seed 打到 DEV DB 造成污染；

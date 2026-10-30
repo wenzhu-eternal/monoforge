@@ -62,6 +62,18 @@ test.beforeAll(async () => {
   targetUserId = target.id
 })
 
+test.afterAll(async () => {
+  // L15：改角色用例把夹具提权到 admin，本 run 内复位——仅靠下场 global-setup 兜底时，
+  // 未来插入依赖 targetUser 为普通用户的用例会随机踩中提权残留
+  // 末尾用例可能把 apiClient 切成普通用户（/roles 403），复位前先回到 admin 身份
+  apiClient.clearToken()
+  await apiClient.login(adminUser.username, adminUser.password)
+  const userRoleId = await findRoleId('user')
+  if (userRoleId !== undefined) {
+    await apiClient.patch(`/users/${targetUserId}`, { roleId: userRoleId })
+  }
+})
+
 test.describe('用户管理（admin 视角）', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsAdmin(page)
@@ -96,6 +108,8 @@ test.describe('用户管理（admin 视角）', () => {
     // 修复前此处必出 `.ant-message-error`（403 不能修改自己的角色）
     await expect(page.locator('.ant-message-success')).toBeVisible({ timeout: 5000 })
     await expect(page.locator('.ant-message-error')).toHaveCount(0)
+    // L13：锁行内回显——后端 strip/缓存未失效时仍会 toast 成功（原断言只到 toast）
+    await expect(ownRow).toContainText('e2e-admin昵称', { timeout: 10_000 })
   })
 
   test('改用户资料（nickname）→ 成功', async ({ page }) => {

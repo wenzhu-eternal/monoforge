@@ -33,7 +33,7 @@ test.describe('审计日志（admin 视角）', () => {
   test('审计日志包含用户管理操作记录', async ({ page }) => {
     // 先触发一次用户创建操作，确保有最新的审计日志（不传 roleId，服务端默认分配 user 角色）
     const tempUsername = `e2e_audit_${Date.now()}`
-    await apiClient.post(
+    const { data: createdUser } = await apiClient.post<{ id: number }>(
       '/users',
       {
         username: tempUsername,
@@ -43,6 +43,7 @@ test.describe('审计日志（admin 视角）', () => {
       },
       201,
     )
+    if (!createdUser?.id) throw new Error('审计用例：创建临时用户未返回 id')
 
     await page.goto('/audit-logs')
     await expect(page.getByRole('heading', { name: '审计日志' })).toBeVisible()
@@ -58,6 +59,9 @@ test.describe('审计日志（admin 视角）', () => {
 
     await expect(page.locator('.ant-table-row').first()).toBeVisible({ timeout: 10_000 })
     await expect(page.locator('.ant-table-row').first()).toContainText('创建')
+    // L17：锁到本次创建的那条业务行（资源ID=新建用户 id）——只看"任一行含创建"时
+    // 匿名哨兵/错归属（userId=0）也照绿，恰是本用例该防的
+    await expect(page.locator('.ant-table-row').first()).toContainText(String(createdUser.id))
 
     // 清理临时用户
     const { data: userList } = await apiClient.get<{

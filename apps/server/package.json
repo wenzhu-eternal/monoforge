@@ -18,6 +18,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
+    "db:reset:e2e": "tsx src/db/reset-e2e.ts",
     "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { adminUser } from '@e2e/fixtures/users'
+import { adminUser, E2E_API_BASE } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
 import { expect, test } from '@playwright/test'
 
@@ -45,5 +45,15 @@ test.describe('强制改密全链', () => {
 
     // 改密后清态，跳回 /login
     await expect(page).toHaveURL(/\/login$/, { timeout: 10_000 })
+
+    // L18：闭环旧密码失效——原仅断言跳转，旧 RT 未被吊销/密码未真正落库时照绿
+    const rawLogin = (pwd: string) =>
+      fetch(`${E2E_API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: pwd }),
+      })
+    expect((await rawLogin(password)).status).toBe(401)
+    expect((await rawLogin(newPassword)).status).toBe(200)
   })
 })
