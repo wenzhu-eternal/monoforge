@@ -498,7 +498,7 @@ describe('ScheduleService', () => {
       // L7：失败不再恒回成功——入库/邮件仍完成，但调用方看到 500
       // L5：500 只带通用文案，pg_dump stderr 不向调用方透出
       await expect(service.manualBackup()).rejects.toThrow(InternalServerErrorException)
-      await expect(service.manualBackup()).rejects.toThrow('数据库备份执行失败，详情见 error_logs')
+      await expect(service.manualBackup()).rejects.toThrow('数据库备份执行失败，详情见服务端日志')
 
       // service catch 块给 record 的 message 加 "数据库备份失败:" 前缀
       expect(errorLogsService.record).toHaveBeenCalledWith(

@@ -30,7 +30,9 @@ export const notifications = pgTable(
       table.read,
       table.createdAt,
     ),
-    // L10：保留期清理按 created_at 全量截断，复合索引首列非 createdAt 无法避免全表扫描
+    // L2：保留期清理实际锚点为 coalesce(deleted_at, created_at)（软删名实相符），
+    // 普通 created_at 索引无法命中该表达式，清理批次退化为 seq scan——量级低且只在 0:30
+    // 低峰执行，接受该取舍；若日后通知量级显著上升，再补 coalesce 表达式索引
     createdAtIdx: index('idx_notifications_created_at').on(table.createdAt),
   }),
 )

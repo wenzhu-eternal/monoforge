@@ -11,7 +11,7 @@ import {
   type OnApplicationBootstrap,
 } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
-import { inArray, isNotNull, lt, sql } from 'drizzle-orm'
+import { inArray, lt, sql } from 'drizzle-orm'
 import { CLEANUP_BATCH_SIZE, runCleanupInBatches } from '@/common/utils/cleanup-batch'
 import {
   consumeDailyQuota,
@@ -213,13 +213,14 @@ export class ScheduleService implements OnApplicationBootstrap {
     }
     // L7：失败已在 doBackup 内入库 + 发失败邮件；此处让调用者看到非 200，
     // 避免"手动备份失败仍回成功"的操作者视角静默
-    // L5：500 只带通用文案——pg_dump 原始 stderr 常含 DB host/端口/库名，详情已留 error_logs/文件日志
+    // L5：500 只带通用文案——pg_dump 原始 stderr 常含 DB host/端口/库名；
+    // L9 后 stderr 只留文件日志，error_logs 仅存退出码，故引导到服务端日志
     if (result.status === 'failed') {
       // 手动触发失败统一退还配额（原 doBackup 内退还，Q3 后移到调用方按实扣判定）
       if (quota?.consumed) {
         await rollbackDailyQuotaQuietly(this.redisService, quota.key)
       }
-      throw new InternalServerErrorException('数据库备份执行失败，详情见 error_logs')
+      throw new InternalServerErrorException('数据库备份执行失败，详情见服务端日志')
     }
     // L1：手动备份记独立键，与 cron 的 dailyBackup 心跳分账
     await this.recordLastRun('manualBackup')
@@ -282,20 +283,29 @@ export class ScheduleService implements OnApplicationBootstrap {
         await this.recordLastRun('cleanOrphanUploads')
         return
       }
-      // trashPath 绝对路径集合用于快速排除已知行
-      const trashRows = await db
-        .select({ trashPath: files.trashPath })
-        .from(files)
-        .where(isNotNull(files.trashPath))
-      const knownTrash = new Set(trashRows.map((r) => r.trashPath))
+      // L5：与 uploads 支路同款批量化——原实现把全部软删文件行（trashPath 列）拉进内存建 Set，
+      // 软删堆积到 10 万行级时每小时一次全量结果集
       const trashCutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000
-      let trashRemoved = 0
+      const candidates: string[] = []
       for (const name of trashEntries) {
         const full = join(trashDir, name)
         const st = await stat(full).catch(() => null)
-        if (!st?.isFile() || st.mtimeMs > trashCutoff || knownTrash.has(full)) continue
-        await unlink(full).catch(() => null)
-        trashRemoved += 1
+        if (!st?.isFile() || st.mtimeMs > trashCutoff) continue
+        candidates.push(full)
+      }
+      let trashRemoved = 0
+      for (let i = 0; i < candidates.length; i += ORPHAN_PATH_QUERY_BATCH) {
+        const chunk = candidates.slice(i, i + ORPHAN_PATH_QUERY_BATCH)
+        const known = await db
+          .select({ trashPath: files.trashPath })
+          .from(files)
+          .where(inArray(files.trashPath, chunk))
+        const knownSet = new Set(known.map((r) => r.trashPath))
+        for (const full of chunk) {
+          if (knownSet.has(full)) continue
+          await unlink(full).catch(() => null)
+          trashRemoved += 1
+        }
       }
       if (trashRemoved > 0) {
         this.logger.log(`清理 uploads-trash 孤儿文件 ${trashRemoved} 个`)
@@ -366,6 +376,8 @@ export class ScheduleService implements OnApplicationBootstrap {
   }
 
   // L16：error_logs 保留 cron——与通知同款，每天 1:30 执行，createdAt 全量截断
+  // L10：30 天统一口径不做 forensic 例外——401/403/429/5xx 的长期取证由 audit_logs 承担
+  //（该表无清理 cron，永久保留），error_logs 只是短周期排障窗口（详见 SECURITY.md）
   @Cron('30 1 * * *')
   async dailyErrorLogsCleanup() {
     try {
@@ -580,7 +592,10 @@ export class ScheduleService implements OnApplicationBootstrap {
       child.on('close', (code) => {
         if (code !== 0) {
           cleanup()
-          reject(new Error(`pg_dump 退出码 ${code}${stderr ? `: ${stderr.slice(0, 200)}` : ''}`))
+          // L9：stderr 常含目标 host/port/db/user——只落文件日志；错误消息会经 record() 入库
+          // error_logs，持 error_log:view 者可读库内明文，故只保留退出码
+          if (stderr) this.logger.warn(`pg_dump stderr: ${stderr.slice(0, 500)}`)
+          reject(new Error(`pg_dump 退出码 ${code}`))
           return
         }
         if (streamDone) {
