@@ -71,6 +71,10 @@ COPY --from=prod-deps /app/packages/shared/node_modules ./packages/shared/node_m
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 COPY --from=builder /app/apps/server/drizzle ./apps/server/drizzle
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
+# H1：nest build 把 tsconfig 的 @shared/* paths 重写成相对路径（apps/server/dist 内大量
+# require('../../../../../packages/shared/dist/*')），缺此目录容器启动即 MODULE_NOT_FOUND；
+# prod-deps 走 --ignore-scripts 不会重建 shared，.dockerignore 又排除源码 dist，必须显式拷贝
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
 RUN mkdir -p /app/uploads /app/uploads-trash /app/backups && chown -R node:node /app/uploads /app/uploads-trash /app/backups
 

@@ -138,9 +138,54 @@ jobs:
       - run: pnpm --filter=@monoforge/server db:seed
       - run: pnpm test:e2e
 
+  # 生产镜像冒烟：unit/e2e/smoke 全部跑在 src 侧，Dockerfile 镜像层没有任何门在看——
+  # H1（packages/shared/dist 漏拷）曾十轮全绿逃逸。此 job 构建镜像 + 起容器 + 轮询 /health，
+  # 把"容器启动即 MODULE_NOT_FOUND"这类产物级故障挡在合并前
+  docker-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-jwt-secret-must-be-at-least-32-chars-long-xyz
+      JWT_REFRESH_SECRET: ci-jwt-refresh-secret-must-be-at-least-32-chars-long-xyz
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t monoforge:ci .
+      - name: 启动生产镜像并轮询 /health
+        run: |
+          docker run -d --name monoforge-smoke --network host \
+            -e NODE_ENV=production \
+            -e API_PORT=9000 \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e REDIS_URL="$REDIS_URL" \
+            -e JWT_SECRET="$JWT_SECRET" \
+            -e JWT_REFRESH_SECRET="$JWT_REFRESH_SECRET" \
+            -e ALLOW_ORIGIN=http://localhost:3000 \
+            -e COOKIE_SECURE=true \
+            monoforge:ci
+          ok=""
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:9000/api/v1/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs monoforge-smoke
+          if [ -z "$ok" ]; then echo "容器 120s 内未通过 /health"; exit 1; fi
+
   build:
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, security, unit-test, smoke-test, e2e-test]
+    needs: [lint, typecheck, security, unit-test, smoke-test, e2e-test, docker-smoke]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
