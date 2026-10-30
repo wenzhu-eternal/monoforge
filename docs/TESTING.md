@@ -223,17 +223,18 @@ test('admin 查看用户列表', async ({ page }) => {
 
 ### CI 集成
 
-实际配置见 `.github/workflows/ci.yml`，共 6 个 job + 1 个聚合 build job：
+实际配置见 `.github/workflows/ci.yml`，共 7 个 job + 1 个聚合 build job（用例数以 CI 实跑为准，下同）：
 
 | Job | 内容 | 依赖 |
 |---|---|---|
 | `lint` | `pnpm lint`（Biome，`--error-on-warnings`：warning 级同样视为失败） | 无 |
 | `typecheck` | `tsc --noEmit`（shared + server + web + e2e；server/shared 追加 `-p tsconfig.test.json` 覆盖 spec/test） | 无 |
 | `security` | `bash scripts/security-check.sh` | 无 |
-| `unit-test` | `pnpm test`（Mock DB，三包 745 用例：server 527 + web 150 + shared 68） | 无 |
+| `unit-test` | `pnpm test`（Mock DB，三包 795 用例：server 556 + web 169 + shared 70） | 无 |
 | `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，73 用例：71 冒烟 + 2 启动告警） | postgres + redis services |
-| `e2e-test` | `pnpm test:e2e`（Playwright，75 用例） | postgres + redis services + playwright install |
-| `build` | `pnpm build` | 依赖前 6 个 job 全部通过 |
+| `e2e-test` | `pnpm test:e2e`（Playwright，78 用例 / 14 个 spec） | postgres + redis services + playwright install |
+| `docker-smoke` | `docker build` + 起生产镜像 + 轮询 `/api/v1/health`（防镜像层故障逃逸，H1） | postgres + redis services |
+| `build` | `pnpm build` | 依赖前 7 个 job 全部通过 |
 
 **push 时 4 个测试链路必须全量通过**：unit-test + smoke-test + e2e-test + security。
 
@@ -267,15 +268,15 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 ### 数据隔离
 
 - 单测：全部 mock，不碰真实 DB
-- E2E：用真实 DB，每个测试 `beforeEach` truncate
+- E2E：真实 DB；每次 `pnpm test:e2e` 启动前执行 `db:reset:e2e`（DROP schema 重建 + push + seed）——清理逻辑全走 API 软删，不重置则已删行逐轮累积，长跑后夹具行滚出查找上限产生确定性假红（M4）。注意 `uploads/` 与 `uploads-trash/` 磁盘文件不在重置范围，定期手工清空或重建 e2e 容器卷
 - 生产：禁止 `db:seed`（除非首次部署）
 
 ## CI/CD 集成
 
-实际 CI 配置见 `.github/workflows/ci.yml`，push 时触发 6 个并行 job（lint / typecheck / security / unit-test / smoke-test / e2e-test），全部通过后聚合 build job 执行 `pnpm build`。
+实际 CI 配置见 `.github/workflows/ci.yml`，push 时触发 7 个并行 job（lint / typecheck / security / unit-test / smoke-test / e2e-test / docker-smoke），全部通过后聚合 build job 执行 `pnpm build`。
 
 **4 个测试链路全量通过门槛**：
-- `unit-test`：`pnpm test`（server 527 + web 150 + shared 68，共 745 单测）
+- `unit-test`：`pnpm test`（server 556 + web 169 + shared 70，共 795 单测）
 - `smoke-test`：`pnpm --filter=server test:e2e:ci`（73 个：71 API 冒烟 + 2 启动告警）
-- `e2e-test`：`pnpm test:e2e`（75 个 Playwright 全链路）
+- `e2e-test`：`pnpm test:e2e`（78 个 Playwright 全链路）
 - `security`：`bash scripts/security-check.sh`（lint + typecheck + 软删除审计 + 依赖安全扫描）

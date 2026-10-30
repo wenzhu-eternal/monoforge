@@ -36,7 +36,7 @@ export const PasswordSchema = z
   .regex(/^(?=.*[a-zA-Z])(?=.*\d).+$/, '密码必须同时包含字母和数字')
 
 /**
- * L20：读侧契约是 DB 列的超集，勿据此反推 DDL——
+ * L20：读侧契约是 DB 列的有损投影（剔除 password 等敏感列）+ 派生字段，勿据此反推 DDL——
  * - `roleName` / `roles` / `permissions` 为 join 角色/权限表派生的展示字段（非 users 列）
  * - `adminRoleId` / `isAdmin` 为 /auth/me 的配置派生字段，由服务端计算
  * - `mustChangePassword` 读侧带 default 属容差（服务端漏发时按 false），不是"未列即可省"的承诺

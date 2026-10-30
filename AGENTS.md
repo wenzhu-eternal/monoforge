@@ -52,6 +52,7 @@ pnpm security               # 安全 + 兼容性 + 规范检测（详见 docs/TE
 pnpm db:generate            # 生成迁移文件
 pnpm db:migrate             # 执行迁移
 pnpm db:seed                # 种子数据
+pnpm --filter=server db:reset:e2e  # 重置 e2e 库（DROP schema 重建；仅本地/e2e 库，含硬护栏）
 pnpm db:backup              # 备份数据库（pg_dump）
 pnpm db:restore             # 恢复数据库备份（psql 原生格式）
 

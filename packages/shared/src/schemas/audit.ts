@@ -1,10 +1,12 @@
 import { z } from 'zod'
 
 /**
- * Q15：审计日志读侧契约是 DB 列的超集，勿据此反推 DDL：
- * - `username` 为 join users 派生的展示字段（非 audit_logs 列）
- * - `userId`/`resource` 比 DB NOT NULL 宽（读侧容差：软删用户 join 不到时为空）
- * - `userId = 0` 表示系统动作（cron/启动钩子），不是真实用户
+ * Q15：审计日志读侧契约是 DB 列的有损投影，勿据此反推 DDL：
+ * - `username` 为 join users 派生的展示字段（非 audit_logs 列）；该 leftJoin 不过滤 users.deletedAt，
+ *   用户软删后仍照常回显历史用户名
+ * - `userId`/`resource` 比 DB NOT NULL 宽（读侧容差：join 不到用户时为空）
+ * - `userId = 0` 为匿名哨兵（登录失败、登录成功前的账密/微信请求等无身份请求），
+ *   不是系统动作——全仓仅 AuditInterceptor 写库，cron/启动钩子不入审计
  */
 export const AuditLogSchema = z.object({
   id: z.number().int().positive(),

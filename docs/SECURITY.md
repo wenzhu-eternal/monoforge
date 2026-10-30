@@ -89,7 +89,7 @@
 
 - 仅管理员（`isAdminUser`）或原始上传者可删除文件
 
-- **软删时磁盘文件必须移到隔离目录**：`files.service.remove` 在 `set({ deletedAt })` 前调用 `moveToTrash(filePath, filename)`，将文件 `rename` 到 `uploads-trash/{时间戳 base36}-{文件名头尾截断}`（L13）。文件不经静态目录对外托管：预览/下载统一走 `GET /files/:id/preview|download` 的鉴权端点，`uploads-trash/` 无任何 URL 可达路径。`rename` 失败仅告警不阻断软删（DB 记录仍标记删除），保证业务可用性。超 30 天的软删文件由每日 0:30 cron 物理清理（磁盘双路径 + DB 行，J3）
+- **软删必须先抢 DB 行锁，再搬盘**：`files.service.remove` 先用条件更新（`WHERE deleted_at IS NULL` 且命中上传者/admin）抢到行，再 `safeMove` 到 `uploads-trash/{时间戳 base36}-{文件名头尾截断}`；rename 失败降级为留 `error_logs` 记录、DB 行仍标记删除（反竞态版，避免两个请求同时把同一文件搬两次）。文件不经静态目录对外托管：预览/下载统一走 `GET /files/:id/preview|download` 的鉴权端点，`uploads-trash/` 无任何 URL 可达路径。超 30 天的软删文件由每日 0:30 cron 物理清理（磁盘双路径 + DB 行，J3）
 
 ## 越权防护
 
@@ -97,15 +97,21 @@
 
 `PATCH /users/:id` 必须区分"改资料"与"改角色/状态"两类操作，权限分层：
 
-- **改资料**（email/nickname/avatar 等）：持 `USER_UPDATE` 即可
+- **改资料**（email/nickname/avatar 等）：持 `USER_UPDATE` 即可。其中 email 属账号接管链路，另有更高权限闸（见下）
+
+- **nickname/avatar**：默认归入 `USER_UPDATE` 的可编辑面（非身份凭证字段，无独立二道闸）；若业务把昵称/头像视为强身份标识，授予该权限时需自行评估冒用风险
 
 - **改角色/状态**（roleId/status）：必须额外持 `USER_ROLE_MANAGE` 权限码
+
+- **`USER_ROLE_MANAGE` 不携带任何端点 routes**：该码只作字段级二道闸，端点准入由 `user:create` / `user:update` 等业务码控制（routes 兜底授权会使其成为用户 CRUD 的超集）。既有部署若从旧版 seed 升级，需执行 `UPDATE permissions SET routes='{}' WHERE code='user:role_manage'`
 
 - **自改角色**：`currentUser.sub === id` 且携带 `roleId` 时一律 403（含 admin），防止误操作锁死自己或借他人会话提权
 
 - **改邮箱**（含自改）：必须额外持 `USER_ROLE_MANAGE`——邮箱换绑是账号接管链路的一环，自改无门槛会被泄露 token 利用
 
 - **改他人密码**：必须额外持 `USER_ROLE_MANAGE`；改自己密码必须走 `POST /users/me/password`（验证旧密码）
+
+- **改他人手机号**：必须额外持 `USER_ROLE_MANAGE`——手机号是短信/找回链路前件，篡改后可借找回接管；前端对无权限者禁用该输入框且不提交
 
 - **创建用户指定角色**（`POST /users` 传 `roleId`）：同样必须持 `USER_ROLE_MANAGE`，否则低权限用户可借创建接口直接造出管理员账号（绕过 update 校验的提权后门）
 
@@ -244,9 +250,15 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 
 ### 登录失败锁定（J2=A）
 
-- 锁定键为 `login:fail:<ip>:<username>`（取不到 IP 时退化为 `login:fail:<username>`），15 分钟内失败 10 次锁定（`auth.service`）
+- 锁定键为 `login:fail:<归一化 IP>:<username>`（IP 经 `normalizeIpForKey` 折叠 /24，与限流/审计同口径；取不到 IP 时退化为 `login:fail:<username>`），15 分钟内失败 10 次锁定（`auth.service`）
 - 保留 IP + 用户名双维度：单 IP 无法批量锁死全站账号，分布式攻击也无法仅凭用户名全局锁死；J2=A 拍板维持此方案，不引入全局用户名熔断
 - 该方案依赖真实客户端 IP：反代部署必须正确设置 `TRUST_PROXY`（M3 已做合法值校验 + 生产启动告警）；漏配时全体请求共享代理 IP，锁定键退化为用户名维度，任意攻击者可零成本锁死 admin。部署检查单已覆盖此项前置条件
+
+## 日志保留与取证口径
+
+- **`audit_logs`**：无清理 cron，永久保留——长期取证的唯一入口（越权探测、登录/角色变更等）
+- **`error_logs`**：每日 1:30 cron 按 `created_at` 统一截断 30 天，**不区分 401/403/429/5xx**（取证行也不延长）。它是短周期排障窗口，不是长期证据链；需要跨月复盘的安全事件请查 `audit_logs`
+- **备份失败明细**：`pg_dump` 的 stderr 可能含 DB host/port/库名/用户名，只写服务端文件日志；入库 `error_logs` 的失败消息只保留退出码
 
 ## CORS
 
