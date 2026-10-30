@@ -108,4 +108,13 @@ describe('clearUserScopedState', () => {
     expect(spy).toHaveBeenCalled()
     setQueryClientForAuth(null)
   })
+
+  // 从原 hooks/use-auth.spec.ts 迁入（该文件实为 auth-cleanup 用例，已按实际被测对象归档）
+  it('未注册 queryClient 时不抛异常（登出流程不应因清理失败而中断）', () => {
+    setQueryClientForAuth(null)
+    useAuthStore.getState().login({ id: 1, username: 'alice' } as never, 'token-alice')
+
+    expect(() => clearUserScopedState()).not.toThrow()
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+  })
 })

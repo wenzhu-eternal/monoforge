@@ -52,7 +52,7 @@ vi.mock('@/hooks/use-users', () => {
     username: 'other',
     email: 'o@example.com',
     nickname: 'Other',
-    phone: null,
+    phone: '13800138000',
     roleId: 2,
     status: true,
     // M3：首登强制改密当前值，供解锁控件用例断言
@@ -161,6 +161,40 @@ describe('M2：自改不上送 roleId/status（后端对自改 roleId 一律 403
   })
 })
 
+describe('M3：手机号提交门控（后端对他人 phone 要求 USER_ROLE_MANAGE）', () => {
+  beforeEach(() => {
+    state.me = { id: 7, adminRoleId: 1 }
+    state.updatePayloads = []
+  })
+
+  it('无 user:role_manage 编辑他人只改昵称 → payload 不含 phone，且手机号输入框禁用', async () => {
+    state.granted = [PermissionCodes.USER_UPDATE]
+    render(<UsersContent />)
+
+    await openEditModal(0)
+    expect(screen.getByLabelText('手机号')).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: '他人昵称' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    expect(payload.data).not.toHaveProperty('phone')
+  })
+
+  it('持 user:role_manage 清空他人手机号 → payload 提交 null（与 DB nullable 对齐）', async () => {
+    state.granted = [PermissionCodes.USER_UPDATE, PermissionCodes.USER_ROLE_MANAGE]
+    render(<UsersContent />)
+
+    await openEditModal(0)
+    fireEvent.change(screen.getByLabelText('手机号'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    expect(payload.data.phone).toBeNull()
+  })
+})
+
 describe('M3：首登强制改密解锁控件（微信占位密码死锁的管理端入口）', () => {
   beforeEach(() => {
     state.granted = [PermissionCodes.USER_UPDATE, PermissionCodes.USER_ROLE_MANAGE]
@@ -199,6 +233,33 @@ describe('M3：首登强制改密解锁控件（微信占位密码死锁的管�
     const [payload] = state.updatePayloads
     if (!payload) throw new Error('未捕获 update payload')
     expect(payload.data).not.toHaveProperty('mustChangePassword')
+  })
+})
+
+describe('L16：新建用户弹窗的强制改密开关（与编辑弹窗能力对齐）', () => {
+  beforeEach(() => {
+    state.me = { id: 7, adminRoleId: 1 }
+    state.updatePayloads = []
+  })
+
+  async function openCreateModal() {
+    render(<UsersContent />)
+    fireEvent.click(await screen.findByRole('button', { name: '新建用户' }))
+    return screen.findByLabelText('昵称')
+  }
+
+  it('持 user:role_manage → 新建弹窗渲染开关且默认开启（对齐后端默认 true）', async () => {
+    state.granted = [PermissionCodes.USER_CREATE, PermissionCodes.USER_ROLE_MANAGE]
+    await openCreateModal()
+
+    expect(screen.getByLabelText('首登强制改密')).toBeChecked()
+  })
+
+  it('无 user:role_manage → 不渲染（后端该字段要求更高权限）', async () => {
+    state.granted = [PermissionCodes.USER_CREATE]
+    await openCreateModal()
+
+    expect(screen.queryByLabelText('首登强制改密')).toBeNull()
   })
 })
 

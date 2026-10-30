@@ -98,7 +98,6 @@ export default defineConfig({
         'src/**/*.spec.{ts,tsx}',
         'src/**/*.d.ts',
         'src/main.tsx',
-        'src/mocks/**',
         'src/test/**',
       ],
     },

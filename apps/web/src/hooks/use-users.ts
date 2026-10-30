@@ -64,6 +64,10 @@ export const useUpdateUser = () => {
       if (variables.data.roleId !== undefined) {
         queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
       }
+      // L14：启停 Switch 直接改 status，仪表盘计数需同步失效（同 create/delete/restore 口径）
+      if (variables.data.status !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
+      }
     },
   })
 }

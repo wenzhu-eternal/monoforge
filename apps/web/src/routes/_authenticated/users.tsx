@@ -260,8 +260,12 @@ export function UsersContent() {
         // 额外字段触发 Zod 校验失败（avatar 必须是合法 URL）
         const updateData: UpdateUser = {
           nickname: values.nickname,
-          // L13：清空手机号提交 null（'' 会被 regex 拒 400）——与 DB nullable 对齐
-          phone: values.phone || null,
+        }
+        // M3：改他人手机号后端要求 USER_ROLE_MANAGE（L7 闸）——无权限/未变更时不提交，
+        // 否则"仅改昵称"也会因恒带 phone 整弹窗 403；清空提交 null（'' 会被 regex 拒 400）
+        const nextPhone = values.phone || null
+        if ((canManageRole || isSelf) && nextPhone !== (editingUser.phone || null)) {
+          updateData.phone = nextPhone
         }
         // 邮箱/角色/状态变更后端要求 USER_ROLE_MANAGE，无权限时不提交避免 403
         if (canManageRole) {
@@ -302,6 +306,11 @@ export function UsersContent() {
         // 仅持角色管理权限时才提交 roleId（后端对越权指定返回 403）
         if (canManageRole && values.roleId) {
           createData.roleId = values.roleId
+        }
+        // L16：新建补同款解锁开关——默认强制首登改密（后端缺省 true），显式关闭才提交；
+        // 原编辑弹窗独有此控件，管理员按交付场景批量建号后须逐个回列表解锁
+        if (canManageRole && values.mustChangePassword === false) {
+          createData.mustChangePassword = false
         }
         await createUser.mutateAsync(createData)
         messageApi.success('创建成功')
@@ -435,8 +444,13 @@ export function UsersContent() {
           >
             <Input />
           </Form.Item>
-          <Form.Item name="phone" label="手机号" rules={[phoneRule]}>
-            <Input placeholder="选填" />
+          <Form.Item
+            name="phone"
+            label="手机号"
+            rules={[phoneRule]}
+            extra={editingUser && !canManageRole && !isSelf ? '无权限修改他人手机号' : undefined}
+          >
+            <Input placeholder="选填" disabled={!!editingUser && !canManageRole && !isSelf} />
           </Form.Item>
           <Form.Item
             name="roleId"
@@ -477,6 +491,17 @@ export function UsersContent() {
               label="首登强制改密"
               valuePropName="checked"
               extra="微信登录用户的占位密码不可验证：关闭此项即解锁其登录"
+            >
+              <Switch checkedChildren="强制" unCheckedChildren="已解锁" />
+            </Form.Item>
+          )}
+          {!editingUser && canManageRole && (
+            <Form.Item
+              name="mustChangePassword"
+              label="首登强制改密"
+              valuePropName="checked"
+              initialValue
+              extra="默认开启：用户首次登录须先修改密码；关闭后首次登录即可直接使用"
             >
               <Switch checkedChildren="强制" unCheckedChildren="已解锁" />
             </Form.Item>
