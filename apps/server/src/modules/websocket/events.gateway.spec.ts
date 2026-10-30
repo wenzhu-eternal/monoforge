@@ -260,4 +260,66 @@ describe('EventsGateway L4 断开时序 / L8 消息频控', () => {
       vi.useRealTimers()
     }
   })
+
+  it('M1：extractAuth 窗口内断开——不登记、不广播、不挂定时器（复现：幽灵成员残留 300s）', async () => {
+    const presenceEmit = vi.fn()
+    gateway.server = { to: vi.fn().mockReturnValue({ emit: presenceEmit }) } as never
+    let release: (value: unknown) => void = () => {}
+    jwtService.verifyAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+
+    const connecting = gateway.handleConnection(client as never)
+    await new Promise((r) => setTimeout(r, 0))
+
+    // 断开发生在 userId 落库之前：handleDisconnect 早退，SREM 无从执行
+    client.connected = false
+    gateway.handleDisconnect(client as never)
+    redisService.eval.mockClear()
+
+    release({ sub: 1, username: 'admin', jti: 'jti-1', exp: Math.floor(Date.now() / 1000) + 3600 })
+    await connecting
+
+    // 认证窗内断开 → 直接返回，SADD 不执行
+    expect(redisService.eval).not.toHaveBeenCalled()
+    expect(client.data.refreshTimer).toBeUndefined()
+    expect(presenceEmit).not.toHaveBeenCalledWith('presence:update', { userId: 1, online: true })
+  })
+
+  it('M1：SADD 窗口内断开——登记完成后补偿 SREM（复现：SREM 早于 SADD 等于白删）', async () => {
+    const presenceEmit = vi.fn()
+    gateway.server = { to: vi.fn().mockReturnValue({ emit: presenceEmit }) } as never
+    let release: (value: unknown) => void = () => {}
+    redisService.eval.mockImplementationOnce(
+      () =>
+        new Promise<unknown>((resolve) => {
+          release = resolve
+        }),
+    )
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 1,
+      username: 'admin',
+      jti: 'jti-1',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    })
+
+    const connecting = gateway.handleConnection(client as never)
+    await new Promise((r) => setTimeout(r, 0))
+
+    // 断开恰好落在 SADD 的 await 中：handleDisconnect 的 SREM 先于 SADD 完成
+    client.connected = false
+    gateway.handleDisconnect(client as never)
+    redisService.eval.mockClear()
+    release(1)
+    await connecting
+
+    // SADD 完成后复检命中 → 内联补偿 SREM
+    expect(redisService.eval).toHaveBeenCalledTimes(1)
+    expect(String(redisService.eval.mock.calls[0]?.[0])).toContain('SREM')
+    expect(client.data.refreshTimer).toBeUndefined()
+    expect(presenceEmit).not.toHaveBeenCalledWith('presence:update', { userId: 1, online: true })
+  })
 })

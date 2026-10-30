@@ -91,6 +91,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.data.userId = userId
     client.data.jti = jti
 
+    // M1：extractAuth 是比 SADD 更早的 await 窗口——期间断开时 handleDisconnect 因 userId
+    // 未落而早退（SREM 无从执行），恢复后若继续登记就会留下幽灵成员（≤300s TTL）。
+    // 此处先复检，断开局直接不登记
+    if (isDisconnected(client)) {
+      this.logger.log(`用户 ${userId} 在认证窗口内已断开 (socket: ${client.id})，跳过在线登记`)
+      return
+    }
+
     // 原子登记（Lua 保证 SCARD 判断 + SADD + TTL 续期无竞态）:
     // 返回 -1 表示连接数超限；否则返回登记后的全局连接数（含本次）
     let connCount: number
@@ -114,6 +122,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (connCount < 0) {
       client.emit('error', { message: '连接数超限，请先关闭其他设备' })
       client.disconnect()
+      return
+    }
+    // M1：SADD 自身也是 await 窗口——handleDisconnect 的 SREM 可能先于 SADD 完成（等于白删），
+    // 复检命中则内联补偿删除后早退，避免幽灵成员
+    if (isDisconnected(client)) {
+      await this.removeOnlineSocket(userId, client.id).catch((err) =>
+        this.logger.warn(`补偿清除在线状态失败 user=${userId}: ${(err as Error).message}`),
+      )
+      this.logger.log(`用户 ${userId} 在登记窗口内已断开 (socket: ${client.id})，补偿清除后退出`)
       return
     }
     // 登记前数量为 0 说明之前全局不在线（用原子脚本返回值推导，消除原 wasOnline 查询竞态）
@@ -198,15 +215,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // 全局清除（Redis Set），脚本返回剩余连接数；为 0 即全部断开，广播离线
     // （用脚本返回值判断，避免 SREM 未完成时二次 SCARD 读到旧值误判在线）
-    this.redisService
-      .eval(
-        `redis.call('SREM', KEYS[1], ARGV[1])
-         local n = redis.call('SCARD', KEYS[1])
-         if n == 0 then redis.call('DEL', KEYS[1]) end
-         return n`,
-        [`ws:online:${userId}`],
-        [client.id],
-      )
+    this.removeOnlineSocket(userId, client.id)
       .then((remaining) => {
         if (Number(remaining) === 0) {
           this.broadcastPresence('presence:update', { userId, online: false })
@@ -220,6 +229,18 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       })
 
     this.logger.log(`用户 ${userId} 已断开 (socket: ${client.id})`)
+  }
+
+  /** SREM + 弹空即删 key，返回剩余连接数（断开广播与握手补偿共用） */
+  private removeOnlineSocket(userId: number, socketId: string): Promise<unknown> {
+    return this.redisService.eval(
+      `redis.call('SREM', KEYS[1], ARGV[1])
+       local n = redis.call('SCARD', KEYS[1])
+       if n == 0 then redis.call('DEL', KEYS[1]) end
+       return n`,
+      [`ws:online:${userId}`],
+      [socketId],
+    )
   }
 
   @SubscribeMessage('ping')
@@ -363,6 +384,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
       return { userId: payload.sub, username: payload.username, jti: payload.jti, exp: payload.exp }
     } catch (err) {
+      // L4：这里刻意 fail-closed（与 HTTP auth.guard 的 noteRedisDegraded 降级放行不同）——
+      // 握手一次性建立、无后续请求可纠正，Redis 故障期宁拒连也不放行未完成吊销复核的连接
       this.logger.warn(`WebSocket 鉴权失败: ${(err as Error).message}`)
       return null
     }
