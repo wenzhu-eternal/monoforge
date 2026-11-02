@@ -113,6 +113,8 @@ export class AuditService {
       conditions.push(eq(auditLogs.resource, filter.resource))
     }
     if (filter?.keyword) {
+      // L32：此处有意用大小写敏感 LIKE——username 入库前已归一小写、action/resource 为
+      // 中文固定词表，无大小写差异；error-logs 的 ILIKE 服务自由文本，两模块口径不同
       // 转义 LIKE 通配符及转义符自身，避免用户输入 \ % _ 破坏匹配
       const escaped = filter.keyword.replace(/[%_\\]/g, '\\$&')
       // 显式加括号包裹 OR，避免 AND 优先级高于 OR 导致 keyword 绕过 userId/action 等过滤

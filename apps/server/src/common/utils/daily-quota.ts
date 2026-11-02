@@ -31,6 +31,8 @@ export async function consumeDailyQuota(
   userId: number,
   limit: number,
 ): Promise<DailyQuotaConsume> {
+  // L10：日界按进程本地时区零点（业务"今日"口径）；audit/error_logs 的分钟级封顶用 UTC
+  // 无日界语义、互不冲突。DST 部署可出现 23/25 小时日，TTL 取实际剩余秒数由 max(1,..) 兜底
   const now = new Date()
   const midnight = new Date(now)
   midnight.setHours(24, 0, 0, 0)

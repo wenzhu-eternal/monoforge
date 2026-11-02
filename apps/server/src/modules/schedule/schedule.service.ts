@@ -37,6 +37,8 @@ const MAX_BACKUPS = 30
 // M13：备份进行中锁的 key 与 TTL（10min 兜底进程崩溃后死锁，备份链路本身 5min 超时）
 const BACKUP_LOCK_KEY = 'schedule:backup:running'
 const BACKUP_LOCK_TTL = 600
+// Q15：cron 显式锚定项目时区——容器未注入 TZ 时默认 UTC，"0 点备份"实际落在北京 8:00
+const CRON_TIME_ZONE = 'Asia/Shanghai'
 // L6：手动备份日配额（cron 每日 1 次走 doBackup 不经此处，不受限）
 const MANUAL_BACKUP_DAILY_LIMIT = 3
 // J1：通知保留期 90 天，与 files trash（30 天）口径对齐；error_logs 另有独立保留 cron（30 天）；audit_logs 不自动清，归档责任见 CONFIGURATION.md「保留与归档」
@@ -172,7 +174,7 @@ export class ScheduleService implements OnApplicationBootstrap {
   /**
    * 每天 0 点执行数据库备份（受 ENABLE_BACKUP 开关控制）
    */
-  @Cron('0 0 * * *')
+  @Cron('0 0 * * *', { timeZone: CRON_TIME_ZONE })
   async dailyBackup() {
     // 必须用 getEnv()：ConfigService 直读 process.env 拿到的是字符串 'false'（truthy），会导致开关失效
     const env = getEnv()
@@ -231,7 +233,7 @@ export class ScheduleService implements OnApplicationBootstrap {
    * 逻辑不可达之处（校验抛错早于落盘记录），永久残留。仅删同时满足：不在 files.path
    * 列、mtime 超 1h（进行中的上传不受影响）；失败只告警。
    */
-  @Cron('0 * * * *')
+  @Cron('0 * * * *', { timeZone: CRON_TIME_ZONE })
   async cleanOrphanUploads() {
     // M1：每小时顺带校验备份新鲜度——错零点重启造成的备份缺口最迟 1 小时内可见
     await this.checkBackupFreshness()
@@ -320,7 +322,7 @@ export class ScheduleService implements OnApplicationBootstrap {
    * J3：每天 0:30 清理回收站——超 30 天软删文件物理删除（磁盘 + 行），
    * 与 backups 30 份上限、error-logs deletedAt 口径对齐
    */
-  @Cron('30 0 * * *')
+  @Cron('30 0 * * *', { timeZone: CRON_TIME_ZONE })
   async dailyTrashCleanup() {
     try {
       const removed = await this.filesService.purgeExpiredTrash()
@@ -350,7 +352,7 @@ export class ScheduleService implements OnApplicationBootstrap {
 
   // J1/M1：每天 0:30 清理超保留期的通知（90 天）；L14：清理锚点取 coalesce(deletedAt, createdAt)——
   // 用户"删除"是软删，若仍按 createdAt 截断，创建 89 天 + 当天被删的记录次日即硬删（软删名不副实）
-  @Cron('30 0 * * *')
+  @Cron('30 0 * * *', { timeZone: CRON_TIME_ZONE })
   async dailyNotificationCleanup() {
     try {
       const cutoff = new Date(Date.now() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
@@ -378,7 +380,7 @@ export class ScheduleService implements OnApplicationBootstrap {
   // L16：error_logs 保留 cron——与通知同款，每天 1:30 执行，createdAt 全量截断
   // L10：30 天统一口径不做 forensic 例外——401/403/429/5xx 的长期取证由 audit_logs 承担
   //（该表无清理 cron，永久保留），error_logs 只是短周期排障窗口（详见 SECURITY.md）
-  @Cron('30 1 * * *')
+  @Cron('30 1 * * *', { timeZone: CRON_TIME_ZONE })
   async dailyErrorLogsCleanup() {
     try {
       const cutoff = new Date(Date.now() - ERROR_LOGS_RETENTION_DAYS * 24 * 60 * 60 * 1000)
@@ -411,19 +413,22 @@ export class ScheduleService implements OnApplicationBootstrap {
   private async doBackup(): Promise<BackupResult> {
     // M13：SETNX 互斥锁——cron 与手动触发（或连发）并发时两个 pg_dump 交叉截断写同一文件，
     // 产物静默损坏且邮件照报成功。Redis 异常时降级无锁执行（备份可用性优先，锁仅为并发防御）
-    let locked = true
+    let lockHeld = false
+    let lockDegraded = false
     try {
-      locked = await this.redisService.setNx(
+      lockHeld = await this.redisService.setNx(
         BACKUP_LOCK_KEY,
         new Date().toISOString(),
         BACKUP_LOCK_TTL,
       )
     } catch (err) {
+      // L8：Redis 异常降级无锁执行——此时锁非本实例持有，finally 不得释放
+      lockDegraded = true
       this.logger.warn(
         `备份互斥锁获取异常，降级为无锁执行: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
-    if (!locked) {
+    if (!lockHeld && !lockDegraded) {
       this.logger.warn('已有备份任务进行中，跳过本次触发')
       return { status: 'busy' }
     }
@@ -524,12 +529,15 @@ export class ScheduleService implements OnApplicationBootstrap {
       // Q3：配额退还已上移到 manualBackup（按实扣判定），doBackup 不再据 userId 内退还
       return { status: 'failed', error: errorMsg }
     } finally {
+      // L8：仅释放本实例确实抢到的锁——降级无锁路径删锁会误删其他实例正常持有的锁
       // 释放失败仅告警：锁有 TTL 兜底，不会永久卡死后续备份
-      void this.redisService
-        .del(BACKUP_LOCK_KEY)
-        .catch((err) =>
-          this.logger.warn(`备份锁释放失败: ${err instanceof Error ? err.message : String(err)}`),
-        )
+      if (lockHeld) {
+        void this.redisService
+          .del(BACKUP_LOCK_KEY)
+          .catch((err) =>
+            this.logger.warn(`备份锁释放失败: ${err instanceof Error ? err.message : String(err)}`),
+          )
+      }
     }
     return { status: 'ok' }
   }

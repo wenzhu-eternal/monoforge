@@ -112,11 +112,13 @@ export class ErrorLogsService {
       if (isWhitelisted) return
     }
 
+    // L18：query 串不落库/不进日志——敏感参数放 query 的未来接口不会明文留存
+    const safeUrl = params.url?.split('?')[0]
     if (params.statusCode) {
       const is5xx = params.statusCode >= 500
       const allowed = await this.enforceRecordMinuteCap(
         params.statusCode,
-        params.url,
+        safeUrl,
         params.userId,
         params.ip,
         is5xx ? 200 : 20,
@@ -124,7 +126,7 @@ export class ErrorLogsService {
       if (!allowed) {
         // L5：丢弃必须留痕——静默 return 后无法事后解释该端点该分钟的缺口
         appendErrorLog(
-          `[ErrorLogs] ${is5xx ? '5xx' : '4xx'} 分钟封顶丢弃: status=${params.statusCode} url=${params.url ?? 'unknown'}`,
+          `[ErrorLogs] ${is5xx ? '5xx' : '4xx'} 分钟封顶丢弃: status=${params.statusCode} url=${safeUrl ?? 'unknown'}`,
         )
         return
       }
@@ -136,6 +138,7 @@ export class ErrorLogsService {
       source: 'backend',
       errorType: 'http_error',
       ...logParams,
+      url: safeUrl,
     })
   }
 
@@ -177,6 +180,12 @@ export class ErrorLogsService {
   private async insertLog(
     params: ReportErrorParams,
   ): Promise<{ id?: number; skipped?: boolean; reason?: string }> {
+    // L18：report/record 两条入口统一在入库点剥离 query（含 context.url）
+    const url = params.url?.split('?')[0]
+    const context =
+      params.context && typeof params.context.url === 'string'
+        ? { ...params.context, url: params.context.url.split('?')[0] }
+        : params.context
     const [created] = await db
       .insert(errorLogs)
       .values({
@@ -187,10 +196,10 @@ export class ErrorLogsService {
         file: params.file,
         line: params.line,
         column: params.column,
-        url: params.url,
+        url,
         method: params.method,
         statusCode: params.statusCode,
-        context: params.context,
+        context,
         userId: params.userId,
         ip: params.ip,
         userAgent: params.userAgent,

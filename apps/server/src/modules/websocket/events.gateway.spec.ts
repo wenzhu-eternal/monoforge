@@ -92,6 +92,7 @@ describe('EventsGateway 60s 重校验（L4 token 自然过期）', () => {
       await vi.advanceTimersByTimeAsync(60_000)
 
       expect(client.emit).toHaveBeenCalledWith('error', {
+        code: 'AUTH_FAILED',
         message: '登录状态已过期，连接被断开',
       })
       expect(client.disconnect).toHaveBeenCalled()

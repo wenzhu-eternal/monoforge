@@ -78,7 +78,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleConnection(client: Socket) {
     const auth = await this.extractAuth(client)
     if (!auth) {
-      client.emit('error', { message: '未认证，连接被拒绝' })
+      client.emit('error', { code: 'AUTH_FAILED', message: '未认证，连接被拒绝' })
       client.disconnect()
       return
     }
@@ -115,12 +115,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (err) {
       // Redis 异常时不留本地残留，直接拒绝连接（避免 onlineUsers 与 Redis 不一致）
       this.logger.error(`WebSocket 在线状态登记失败 user=${userId}: ${(err as Error).message}`)
-      client.emit('error', { message: '服务暂不可用，请稍后重试' })
+      client.emit('error', { code: 'UNAVAILABLE', message: '服务暂不可用，请稍后重试' })
       client.disconnect()
       return
     }
     if (connCount < 0) {
-      client.emit('error', { message: '连接数超限，请先关闭其他设备' })
+      client.emit('error', { code: 'CONNECTION_LIMIT', message: '连接数超限，请先关闭其他设备' })
       client.disconnect()
       return
     }
@@ -139,7 +139,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // 加载权限与角色到 socket（并按权限加入 presence room；同时校验用户状态，禁用/软删则拒绝连接）
     const ok = await this.loadUserPermissions(client, userId)
     if (!ok) {
-      client.emit('error', { message: '账号不可用，连接被拒绝' })
+      client.emit('error', { code: 'ACCOUNT_UNAVAILABLE', message: '账号不可用，连接被拒绝' })
       client.disconnect()
       return
     }
@@ -172,21 +172,24 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // L4：access token 自然过期不写黑名单，握手只校验一次 exp——不重查则连接
         // 无限存活，presence 泄露面与 5 连接配额占用远超 15min 会话语义
         if (exp && Date.now() >= exp * 1000) {
-          client.emit('error', { message: '登录状态已过期，连接被断开' })
+          client.emit('error', { code: 'AUTH_FAILED', message: '登录状态已过期，连接被断开' })
           client.disconnect()
           return
         }
         if (jti) {
           const revoked = await this.redisService.get(`access:${userId}:${jti}`)
           if (revoked === '1') {
-            client.emit('error', { message: '登录状态已失效，连接被断开' })
+            client.emit('error', { code: 'AUTH_FAILED', message: '登录状态已失效，连接被断开' })
             client.disconnect()
             return
           }
         }
         const stillOk = await this.loadUserPermissions(client, userId)
         if (!stillOk) {
-          client.emit('error', { message: '账号状态已变更，连接被断开' })
+          client.emit('error', {
+            code: 'ACCOUNT_UNAVAILABLE',
+            message: '账号状态已变更，连接被断开',
+          })
           client.disconnect()
           return
         }

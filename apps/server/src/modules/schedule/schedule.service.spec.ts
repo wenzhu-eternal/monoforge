@@ -388,6 +388,19 @@ describe('ScheduleService', () => {
       expect(rollbackKeys[0]).toMatch(/^quota:backup:7:\d{8}$/)
     })
 
+    it('L8: 抢锁异常降级无锁执行时，finally 不删锁（防误删他人锁）', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      mockSpawnPgDump(vi.fn().mockResolvedValue(undefined))
+      redisService.setNx.mockRejectedValue(new Error('redis down'))
+
+      await service.manualBackup()
+
+      expect(redisService.del).not.toHaveBeenCalledWith('schedule:backup:running')
+    })
+
     it('L1: 内部调用（无 userId）锁忙不涉及配额，无 eval', async () => {
       mockGetEnv.mockReturnValue({
         BACKUP_CMD: undefined,

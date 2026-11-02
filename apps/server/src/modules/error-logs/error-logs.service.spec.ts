@@ -212,6 +212,28 @@ describe('ErrorLogsService', () => {
       expect(valuesCall.url).toBe('/api/v1/users')
     })
 
+    it('L18：入库 url 剥离 query 串（context.url 同步剥离）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      redisServiceMock.eval.mockResolvedValue(3)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 7 }]),
+        }),
+      } as never)
+
+      await service.record({
+        message: 'Unauthorized',
+        statusCode: 401,
+        url: '/api/v1/users?email=secret@example.com',
+        context: { url: '/api/v1/users?token=abc' },
+      })
+
+      const valuesCall = vi.mocked(mockDb.insert).mock.results[0].value.values.mock
+        .calls[0][0] as Record<string, unknown>
+      expect(valuesCall.url).toBe('/api/v1/users')
+      expect((valuesCall.context as Record<string, unknown>).url).toBe('/api/v1/users')
+    })
+
     it('M6：4xx 封顶键含来源维度——不同用户/IP 各自独立计数，不共享同一预算', async () => {
       redisServiceMock.get.mockResolvedValue(null)
       redisServiceMock.eval.mockResolvedValue(3)

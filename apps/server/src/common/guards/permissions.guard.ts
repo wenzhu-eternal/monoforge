@@ -118,8 +118,10 @@ export class PermissionsGuard implements CanActivate {
         .where(eq(rolePermissions.roleId, userRecord.roleId))
       permissionCodes = userPermissions.map((p) => p.permission)
       // M5：缓存回写失败只告警，绝不能 unhandledRejection 拖垮进程（权限以 DB 为准）
+      // L9：改 SETNX——并发侧已写入新缓存时不覆盖；失效侧仍走 DEL，毫秒级
+      // "读旧集→DEL→回写旧集"竞态无法用 SETNX 完全消除，接受 ≤300s TTL 收敛
       void this.redisService
-        .set(cacheKey, JSON.stringify(permissionCodes), 300)
+        .setNx(cacheKey, JSON.stringify(permissionCodes), 300)
         .catch((err) => this.logger.warn(`权限缓存回写失败: ${err}`))
     }
 
