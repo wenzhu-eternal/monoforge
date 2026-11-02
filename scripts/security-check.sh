@@ -124,31 +124,52 @@ else
 fi
 
 section "5. 环境变量完整性"
-echo "  → 对比根 .env 与 .env.example 的 [必填] 变量..."
+echo "  → 从 env schema 读取必填键，对比 .env.example 与根 .env（Q19）..."
 
 # 项目采用单一根 .env（apps/server/src/env-loader.ts 加载 ../../.env），不在 apps/server/ 下单独放 .env
-if [ ! -f .env ]; then
-  check_warn "根目录 .env 不存在（开发环境必需，可从 .env.example 复制）"
-elif [ ! -f .env.example ]; then
+if [ ! -f .env.example ]; then
   check_warn ".env.example 不存在（文档必需）"
 else
-  # 仅校验 [必填] 变量；[可选] 变量有默认值，缺失不影响启动
-  ENV_DIFF=$(comm -23 \
-    <(grep -E '^[A-Z_]+=' .env.example | grep '\[必填\]' | cut -d= -f1 | sort) \
-    <(grep -E '^[A-Z_]+=' .env | cut -d= -f1 | sort) \
-    2>/dev/null || true)
+  # Q19：必填键以 envSchema 为单一来源——原依赖 .env.example 的中文 [必填] 行内注释，
+  # 注释被机器化重排版即静默掏空门。schema 中无 default 且非 optional 的键即必填
+  REQUIRED_KEYS=$(pnpm --filter=@monoforge/server exec tsx -e \
+    "import { envSchema } from './src/config/env.ts'; const shape=(envSchema as any).shape ?? (envSchema as any)._def?.schema?.shape; console.log(Object.entries(shape).filter(([,s]:[string,any])=>!(s.isOptional?.() ?? false) && s._def?.typeName!=='ZodDefault').map(([k])=>k).join('\n'))" \
+    2>/dev/null | sed '/^$/d' | sort)
+  if [ -z "$REQUIRED_KEYS" ]; then
+    check_warn "无法从 env schema 读取必填键，回退 .env.example 的 [必填] 标记"
+    REQUIRED_KEYS=$(grep -E '^[A-Z_]+=' .env.example | grep '\[必填\]' | cut -d= -f1 | sort)
+  fi
 
-  if [ -z "$ENV_DIFF" ]; then
-    check_pass "根 .env 包含 .env.example 所有 [必填] 变量"
+  # 5a：schema 必填键必须全部在 .env.example 有文档（缺失即文档漂移，阻断）
+  EXAMPLE_KEYS=$(grep -E '^[A-Z_]+=' .env.example | cut -d= -f1 | sort)
+  EXAMPLE_DIFF=$(comm -23 <(echo "$REQUIRED_KEYS") <(echo "$EXAMPLE_KEYS") 2>/dev/null || true)
+  if [ -z "$EXAMPLE_DIFF" ]; then
+    check_pass ".env.example 已覆盖 env schema 的全部必填键"
   else
-    check_fail ".env 缺少以下 [必填] 变量（服务将启动失败）："
-    echo "$ENV_DIFF" | sed 's/^/    /'
+    check_fail ".env.example 缺少以下 env schema 必填键（文档漂移）："
+    echo "$EXAMPLE_DIFF" | sed 's/^/    /'
+  fi
+
+  # 5b：根 .env 必须包含全部必填键（开发机缺失，服务启动会失败）
+  if [ ! -f .env ]; then
+    check_warn "根目录 .env 不存在（开发环境必需，可从 .env.example 复制）"
+  else
+    ENV_DIFF=$(comm -23 <(echo "$REQUIRED_KEYS") \
+      <(grep -E '^[A-Z_]+=' .env | cut -d= -f1 | sort) \
+      2>/dev/null || true)
+    if [ -z "$ENV_DIFF" ]; then
+      check_pass "根 .env 包含 env schema 全部必填变量"
+    else
+      check_fail ".env 缺少以下必填变量（服务将启动失败）："
+      echo "$ENV_DIFF" | sed 's/^/    /'
+    fi
   fi
 fi
 
 section "6. 依赖安全扫描"
-echo "  → pnpm audit --prod..."
-if pnpm audit --prod > /tmp/audit.log 2>&1; then
+echo "  → pnpm audit --prod（官方 registry）..."
+# M1-M3 教训：内网 registry 无 audit 端点时"无结论"不等于"无漏洞"，必须实跑官方源
+if pnpm audit --prod --registry=https://registry.npmjs.org > /tmp/audit.log 2>&1; then
   check_pass "无已知高危依赖漏洞"
 else
   # 内网/镜像 registry 不实现 audit 端点（实测 501→404）：

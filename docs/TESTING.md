@@ -223,18 +223,19 @@ test('admin 查看用户列表', async ({ page }) => {
 
 ### CI 集成
 
-实际配置见 `.github/workflows/ci.yml`，共 7 个 job + 1 个聚合 build job（用例数以 CI 实跑为准，下同）：
+实际配置见 `.github/workflows/ci.yml`，共 8 个 job + 1 个聚合 build job（用例数以 CI 实跑为准，下同）：
 
 | Job | 内容 | 依赖 |
 |---|---|---|
 | `lint` | `pnpm lint`（Biome，`--error-on-warnings`：warning 级同样视为失败） | 无 |
 | `typecheck` | `tsc --noEmit`（shared + server + web + e2e；server/shared 追加 `-p tsconfig.test.json` 覆盖 spec/test） | 无 |
-| `security` | `bash scripts/security-check.sh` | 无 |
-| `unit-test` | `pnpm test`（Mock DB，三包 795 用例：server 556 + web 169 + shared 70） | 无 |
+| `security` | `bash scripts/security-check.sh`（第 6 项已改用官方 registry 实跑 audit） | 无 |
+| `audit` | `pnpm audit --prod --registry=https://registry.npmjs.org --audit-level=high`（官方源硬门，M1-M3 教训） | 无 |
+| `unit-test` | `pnpm test`（Mock DB，三包 807 用例：server 568 + web 169 + shared 70） | 无 |
 | `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，73 用例：71 冒烟 + 2 启动告警） | postgres + redis services |
 | `e2e-test` | `pnpm test:e2e`（Playwright，78 用例 / 14 个 spec） | postgres + redis services + playwright install |
 | `docker-smoke` | `docker build` + 起生产镜像 + 轮询 `/api/v1/health`（防镜像层故障逃逸，H1） | postgres + redis services |
-| `build` | `pnpm build` | 依赖前 7 个 job 全部通过 |
+| `build` | `pnpm build` | 依赖前 8 个 job 全部通过 |
 
 **push 时 4 个测试链路必须全量通过**：unit-test + smoke-test + e2e-test + security。
 
@@ -252,8 +253,8 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 2. **Biome lint**：`pnpm lint`
 3. **软删除过滤审计**：扫描 `apps/server/src` 下所有 `*.service.ts`（`audit.service.ts` 例外）的 `findFirst/findMany/count()` 是否有软删除过滤。采用函数级扫描（向前回溯 25 行 + 向后 8 行），识别 `notDeleted` / `maybeDeleted` / `includeDeleted` / `deletedFilter` 四种写法（过滤条件常预先计算为变量后复用）。白名单：`restore()` / `*Raw()` 方法与显式注明「故意不过滤」的查询需读取软删记录，属正确设计。非 service 直接查询（如 `db/seed.ts`、`audit.interceptor` 的 TABLE_MAP）不在扫描面，需人工评审
 4. **前端 catch 块审计**：扫描所有 `.tsx` 是否有 `catch {}` 不读 error
-5. **环境变量完整性**：对比根 `.env` 与 `.env.example` 的 `[必填]` 变量（项目采用单一根 `.env`，由 `apps/server/src/env-loader.ts` 加载；`[可选]` 变量有默认值，缺失不校验）
-6. **依赖安全扫描**：`pnpm audit --prod`（国内镜像源不实现 audit 端点时自动跳过，如需扫描请切换至官方 registry）
+5. **环境变量完整性（Q19）**：必填键从 `envSchema`（无 default 且非 optional）读取，校验 `.env.example` 文档覆盖 + 根 `.env` 齐全（项目采用单一根 `.env`，由 `apps/server/src/env-loader.ts` 加载）；不再依赖 `.env.example` 的中文 `[必填]` 注释
+6. **依赖安全扫描**：`pnpm audit --prod --registry=https://registry.npmjs.org`（官方源实跑；镜像源无 audit 端点时只能算"无结论"，CI 另有 `audit` job 硬门）
 7. **文档链接有效性**：检查所有 markdown 内部链接指向真实文件
 8. **Zod DTO 桥接审计**：扫描 controller 是否有裸 `@Body()`
 9. **废弃 API 调用扫描**：用 TypeScript compiler API 的 `DiagnosticTag.Deprecated` 扫描源码中调用了 `@deprecated` 符号的位置（`tsc --noEmit` 不会输出、但 IDE 会划删除线的项），脚本为 `scripts/check-deprecated.cjs`
@@ -268,15 +269,15 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 ### 数据隔离
 
 - 单测：全部 mock，不碰真实 DB
-- E2E：真实 DB；每次 `pnpm test:e2e` 启动前执行 `db:reset:e2e`（DROP schema 重建 + push + seed）——清理逻辑全走 API 软删，不重置则已删行逐轮累积，长跑后夹具行滚出查找上限产生确定性假红（M4）。注意 `uploads/` 与 `uploads-trash/` 磁盘文件不在重置范围，定期手工清空或重建 e2e 容器卷
+- E2E：真实 DB；每次 `pnpm test:e2e` 启动前执行 `db:reset:e2e`（DROP schema 重建 + push + seed）——清理逻辑全走 API 软删，不重置则已删行逐轮累积，长跑后夹具行滚出查找上限产生确定性假红（M4）。server 侧 `reuseExistingServer: false`（Q14）保证该命令每轮真实执行。上传产物独立到 `apps/e2e/uploads`（`UPLOAD_DIR`），global-teardown 每轮清空 `uploads/` 与 `uploads-trash/`（L21），不再累积磁盘副产物
 - 生产：禁止 `db:seed`（除非首次部署）
 
 ## CI/CD 集成
 
-实际 CI 配置见 `.github/workflows/ci.yml`，push 时触发 7 个并行 job（lint / typecheck / security / unit-test / smoke-test / e2e-test / docker-smoke），全部通过后聚合 build job 执行 `pnpm build`。
+实际 CI 配置见 `.github/workflows/ci.yml`，push 时触发 8 个并行 job（lint / typecheck / security / audit / unit-test / smoke-test / e2e-test / docker-smoke），全部通过后聚合 build job 执行 `pnpm build`。
 
 **4 个测试链路全量通过门槛**：
-- `unit-test`：`pnpm test`（server 556 + web 169 + shared 70，共 795 单测）
+- `unit-test`：`pnpm test`（server 568 + web 169 + shared 70，共 807 单测）
 - `smoke-test`：`pnpm --filter=server test:e2e:ci`（73 个：71 API 冒烟 + 2 启动告警）
 - `e2e-test`：`pnpm test:e2e`（78 个 Playwright 全链路）
 - `security`：`bash scripts/security-check.sh`（lint + typecheck + 软删除审计 + 依赖安全扫描）

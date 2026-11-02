@@ -9,6 +9,8 @@ dist
 .idea
 coverage
 **/coverage
+# L31：本地测试上传产物不进构建上下文（随历史膨胀层体积）
+apps/server/uploads*
 *.log
 .DS_Store
 README.md

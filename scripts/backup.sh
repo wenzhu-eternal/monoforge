@@ -18,6 +18,13 @@ DB_NAME="${POSTGRES_DB:-$(env_value POSTGRES_DB)}"
 : "${CONTAINER:=mf-postgres}"
 : "${DB_USER:=monoforge_user}"
 : "${DB_NAME:=monoforge_database}"
+
+# L20：与 restore.sh 同口径校验库名——原备份侧无校验，怪值库名会静默导错库
+if [[ ! "$DB_NAME" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]]; then
+  echo "❌ 非法数据库名: $DB_NAME（仅允许字母/数字/下划线/连字符，且不得以连字符开头）"
+  exit 1
+fi
+
 echo "目标: 容器=$CONTAINER 用户=$DB_USER 数据库=$DB_NAME"
 
 BACKUP_DIR="$(resolve_backup_dir)"

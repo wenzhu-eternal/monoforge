@@ -85,6 +85,8 @@ services:
     container_name: mf-app
     restart: unless-stopped
     ports:
+      # L19：默认绑 0.0.0.0 供 ngrok 直连；仅本机访问（或叠加 ALLOW_INSECURE_COOKIE
+      # 做 HTTP 调试）时建议改为 '127.0.0.1:9000:9000'，收窄明文 refresh cookie 暴露面
       - '9000:9000'
     environment:
       - NODE_ENV=production

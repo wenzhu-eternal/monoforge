@@ -83,7 +83,7 @@
 
 - 文件名清洗 + 随机化（防止覆盖和遍历）
 
-- DB schema：`id, filename (disk name), originalName, mimeType, size, path, uploadedBy (userId), createdAt`
+- DB schema：`id, filename (disk name), originalName, mimeType, size, path, trashPath (软删后隔离路径), uploadedBy (userId), deletedAt (软删时间), createdAt`
 
 ### 文件删除权限
 
@@ -92,6 +92,12 @@
 - **软删必须先抢 DB 行锁，再搬盘**：`files.service.remove` 先用条件更新（`WHERE deleted_at IS NULL` 且命中上传者/admin）抢到行，再 `safeMove` 到 `uploads-trash/{时间戳 base36}-{文件名头尾截断}`；rename 失败降级为留 `error_logs` 记录、DB 行仍标记删除（反竞态版，避免两个请求同时把同一文件搬两次）。文件不经静态目录对外托管：预览/下载统一走 `GET /files/:id/preview|download` 的鉴权端点，`uploads-trash/` 无任何 URL 可达路径。超 30 天的软删文件由每日 0:30 cron 物理清理（磁盘双路径 + DB 行，J3）
 
 ## 越权防护
+
+### 用户读侧 PII（L17）
+
+- `GET /users` 与 `GET /users/:id` 仅需 `USER_VIEW`：**非超管**响应中的 `email`/`phone` 由 service 层掩码（`a***@domain`、`138****5678`），超管返回原文；软删行仅超管可见
+- 掩码是读侧收敛，不改变写侧权限闸：`USER_UPDATE` 仍可编辑邮箱等字段，但"能查看列表"不再等于可批量导出全站 PII
+- 新增任何批量用户查询端点必须复用同一口径，禁止直接 `select email/phone` 下发
 
 ### 用户角色/状态变更（防提权）
 
@@ -259,6 +265,7 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 - **`audit_logs`**：无清理 cron，永久保留——长期取证的唯一入口（越权探测、登录/角色变更等）
 - **`error_logs`**：每日 1:30 cron 按 `created_at` 统一截断 30 天，**不区分 401/403/429/5xx**（取证行也不延长）。它是短周期排障窗口，不是长期证据链；需要跨月复盘的安全事件请查 `audit_logs`
 - **备份失败明细**：`pg_dump` 的 stderr 可能含 DB host/port/库名/用户名，只写服务端文件日志；入库 `error_logs` 的失败消息只保留退出码
+- **error_logs 的 url 只存路径（L18）**：`report`/`record` 两条入口在入库点统一剥离 query 串（`context.url` 同步处理），未来把敏感值放 query 的接口不会明文落库；body 侧仍由 `SanitizeBodyPipe` 词表掩码
 
 ## CORS
 

@@ -190,7 +190,14 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 
 ## 定时任务时区说明
 
-- `@Cron` 未传 `timeZone` 时按容器本地时区执行。`docker-compose.yml` 已为 `postgres`/`redis`/`e2e-postgres`/`app` 四个容器默认注入 `TZ=${TZ:-Asia/Shanghai}`（可用根 `.env` 的 `TZ` 覆盖），因此 compose 部署下表中"每天 0:30/1:30"等窗口**按北京时间**执行；仅裸 `docker run`/主机直跑且未透传 `TZ` 时，才按容器/系统默认（多为 UTC）理解，或改用 `@Cron('...', { timeZone: 'Asia/Shanghai' })` 显式指定。
+- `docker-compose.yml` 已为 `postgres`/`redis`/`e2e-postgres`/`app` 四个容器默认注入 `TZ=${TZ:-Asia/Shanghai}`（可用根 `.env` 的 `TZ` 覆盖）。
+- `ScheduleService` 的 5 个 `@Cron` **均显式传 `{ timeZone: 'Asia/Shanghai' }`（Q15）**——不再依赖容器 `TZ`；裸 `docker run`/主机直跑未注入 `TZ` 时，"每天 0 点备份/0:30 清理"仍按北京时间执行，不会漂到 UTC 的 8:00 早高峰。
+
+## 依赖安全基线
+
+- 传递依赖的已知漏洞修复线统一钉在 `pnpm-workspace.yaml` 的 `overrides`（pnpm 10 起不再读取根 `package.json` 的 `pnpm` 字段）：`proxy-addr>=2.0.8`、`multer>=2.5.0`、`engine.io>=6.6.10`、`socket.io-parser>=4.2.7`、`handlebars>=4.7.10`、`nodemailer>=10.3.1`、`axios>=1.20.0`、`body-parser>=2.4.0`、`zod>=4.6.6`、`qs>=6.16.1`、`follow-redirects>=1.16.2`、`seroval>=1.6.8`、`js-yaml>=4.3.2`
+- `pnpm security` 第 6 项与 CI `audit` job 均使用 `--registry=https://registry.npmjs.org` 实跑官方源；内网/镜像 registry 无 audit 端点时**"无结论"不等于"无漏洞"**，不得据此放行
+- 当前唯一残留为 `deepmerge`（`nestjs-zod` 传递依赖，无修复版本）low——原型污染需攻击者控制合并源，本仓无该调用面
 
 ## 测试环境限流说明
 
