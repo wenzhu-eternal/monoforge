@@ -274,7 +274,7 @@ test.describe('用户管理（admin 视角）', () => {
     expect(oldStatus).toBe(401)
   })
 
-  test('删除临时用户 → 成功', async ({ page }) => {
+  test('API 删除临时用户 → 200', async ({ page }) => {
     // 先用 API 创建一个临时用户（用户名用下划线，UsernameSchema 禁用连字符）
     const tempUsername = `${tempUserPrefix}_${Date.now()}`
     const { data: created } = await apiClient.post<{ id: number }>(

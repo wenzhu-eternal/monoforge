@@ -35,7 +35,8 @@ export interface PaginatedResponse<T> {
 export class ApiClient {
   private token: string | null = null
   private cookies: string[] = []
-  // token 复用：避免 e2e 套件内重复登录触发 ThrottlerGuard 限流（60s 内 10 次即限流）
+  // token 复用：避免 e2e 套件内重复登录触发 ThrottlerGuard 限流
+  // （login/register/send-code 各为独立 default 桶，THROTTLE_LOGIN_LIMIT 默认 5/min；e2e 内调为 1000）
   private lastUsername: string | null = null
   private lastUser: LoginResponse['user'] | null = null
   // L20：登录缓存时间戳，AT TTL=15min，超 10 分钟强制重登防止死 token 导致 401 连锁

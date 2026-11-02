@@ -1,7 +1,11 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 import { makeRunMarker } from './e2e-marker'
 
 const runMarker = makeRunMarker()
+// L21：e2e 上传产物独立到 apps/e2e/uploads（与 dev apps/server/uploads 隔离），
+// global-teardown 每轮清空，防软删 rename 与孤儿文件无界累积
+const e2eUploadDir = fileURLToPath(new URL('./uploads', import.meta.url))
 
 // M15：最终生效的 e2e 数据库连接串（E2E_DATABASE_URL > DATABASE_URL > 5433 默认）。
 // 非 5433 目标（如 shell 残留的 DEV DATABASE_URL）会把 db:push+seed 打进非 e2e 库——醒目警告。
@@ -91,9 +95,14 @@ export default defineConfig({
         MAIL_HOST: '',
         // L25：显式关闭公开注册（dev .env 可能残留 ALLOW_REGISTER=true），固定 404 负路径确定态
         ALLOW_REGISTER: 'false',
+        // L21：独立上传目录，teardown 清空不影响 dev 文件
+        UPLOAD_DIR: e2eUploadDir,
       },
       timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
+      // Q14：server 侧禁止复用——复用路径会整体跳过 webServer 命令内的 db:reset:e2e，
+      // 同 HEAD 长跑后软删行累积会把夹具行滚出翻页上限（确定性假红）。
+      // 本地 e2e 前须停掉 9000 上的 dev server，否则 Playwright 报端口占用（刻意 fail-fast）
+      reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
     },

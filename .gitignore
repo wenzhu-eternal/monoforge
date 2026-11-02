@@ -52,6 +52,9 @@ temp/
 # uploads - 默认忽略上传文件（如需入库，注释掉此行或改为 !uploads/.gitkeep）
 uploads/
 apps/server/uploads-trash/
+# L21：e2e 独立上传目录（Playwright UPLOAD_DIR，teardown 每轮清空）
+apps/e2e/uploads/
+apps/e2e/uploads-trash/
 
 # Database backups（本地临时数据，不进版本库）
 apps/server/backups/
