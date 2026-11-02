@@ -141,6 +141,10 @@ export class FilesService {
     }
 
     if (!created) {
+      // L7：returning 空属失败路径，与同函数其余失败分支同口径退日配额
+      if (quota?.consumed) {
+        await rollbackDailyQuotaQuietly(this.redisService, quota.key)
+      }
       await unlink(file.path).catch(() => {})
       throw new NotFoundException('文件上传失败')
     }
@@ -273,7 +277,10 @@ export class FilesService {
       .returning()
 
     if (!updated) {
-      return { message: `文件 ID ${id} 已删除` }
+      // L1：并发 restore 抢先清空 deletedAt 时条件更新命中 0 行——原返回"已删除"是伪成功，
+      // 实际文件未删；改为状态变更口径并留痕，与 postLock/M9 分支的 warn 对齐
+      this.logger.warn(`文件 ID ${id} remove 条件更新命中 0 行（疑似并发 restore），状态未变更`)
+      return { message: `文件 ID ${id} 状态已发生变更` }
     }
 
     // 抢锁成功后搬盘到预生成的 trashPath；搬盘失败保留 trashPath 记录，后续 restore 会重试搬盘
@@ -285,7 +292,7 @@ export class FilesService {
       .limit(1)
     if (!postLock.length) {
       this.logger.warn(`文件 ID ${id} remove 抢锁后行态已变更（疑似并发 restore），跳过搬盘`)
-      return { message: `文件 ID ${id} 已删除` }
+      return { message: `文件 ID ${id} 状态已发生变更` }
     }
     let moved = false
     try {
@@ -407,10 +414,12 @@ export class FilesService {
         } else {
           this.logger.warn(`磁盘文件恢复失败: ${err instanceof Error ? err.message : String(err)}`)
           // 搬盘失败：回滚 deletedAt 恢复为软删状态，保留 trashPath 让用户可重试
+          // L2：回滚写读取时持有的原 deletedAt——原写 now() 会让 29 天前软删的文件重新起算
+          // 30 天保留期，反复失败重试可无限推迟物理清理
           // 条件带 isNull(deletedAt)：若期间并发 remove 已重新软删（写入新 trashPath），不覆盖其状态
           await db
             .update(files)
-            .set({ deletedAt: new Date() })
+            .set({ deletedAt: file.deletedAt })
             .where(and(eq(files.id, id), isNull(files.deletedAt)))
           throw new BadRequestException('磁盘文件恢复失败，请重试')
         }

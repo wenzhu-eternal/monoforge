@@ -12,12 +12,19 @@ import type { User, UserListItem } from '@shared/schemas/user'
 import * as argon2 from 'argon2'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { maskEmail } from '@/common/utils/mail-utils'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { files, permissions as permissionsTable, rolePermissions, roles, users } from '@/db/schema'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 import { RedisService } from '@/modules/redis/redis.service'
+
+/** L17：手机号掩码（保留前 3 后 4）；长度不足 8 位整串隐藏 */
+function maskPhone(phone: string): string {
+  if (phone.length < 8) return '****'
+  return `${phone.slice(0, 3)}****${phone.slice(-4)}`
+}
 
 @Injectable()
 export class UsersService {
@@ -31,12 +38,13 @@ export class UsersService {
   async findAll(
     page = 1,
     pageSize = 10,
-    includeDeleted = false,
+    // L17：该参数即调用者是否超管（controller 透传）——同时决定软删行可见性与 PII 字段是否掩码
+    isAdmin = false,
   ): Promise<PaginatedResponse<UserListItem>> {
     const safePage = Math.max(1, page)
     const safePageSize = Math.min(Math.max(1, pageSize), 100)
     const offset = (safePage - 1) * safePageSize
-    const deletedFilter = maybeDeleted(users.deletedAt, includeDeleted)
+    const deletedFilter = maybeDeleted(users.deletedAt, isAdmin)
 
     const [items, countResult] = await Promise.all([
       db
@@ -77,11 +85,21 @@ export class UsersService {
     })
 
     return {
-      list,
+      // L17：非超管读侧掩码 email/phone——持 user:view 不等于可批量导出全站 PII
+      list: isAdmin ? list : list.map((row) => this.maskContactFields(row)),
       total,
       page: safePage,
       pageSize: safePageSize,
       totalPages: Math.ceil(total / safePageSize) || 1,
+    }
+  }
+
+  /** L17：读侧 PII 掩码（写侧仍按权限闸控制，管理端/超管读原文） */
+  private maskContactFields<T extends { email?: string | null; phone?: string | null }>(row: T): T {
+    return {
+      ...row,
+      email: row.email ? maskEmail(row.email) : row.email,
+      phone: row.phone ? maskPhone(row.phone) : row.phone,
     }
   }
 
@@ -104,8 +122,8 @@ export class UsersService {
     }
   }
 
-  async findById(id: number, includeDeleted = false): Promise<Omit<User, 'password'>> {
-    const deletedFilter = maybeDeleted(users.deletedAt, includeDeleted)
+  async findById(id: number, isAdmin = false): Promise<Omit<User, 'password'>> {
+    const deletedFilter = maybeDeleted(users.deletedAt, isAdmin)
     const user = await db.query.users.findFirst({
       where: and(eq(users.id, id), deletedFilter),
     })
@@ -115,7 +133,8 @@ export class UsersService {
     }
 
     const { password: _, ...userWithoutPassword } = user
-    return userWithoutPassword
+    // L17：非超管读侧掩码 email/phone（同 findAll）
+    return isAdmin ? userWithoutPassword : this.maskContactFields(userWithoutPassword)
   }
 
   async create(
@@ -218,7 +237,8 @@ export class UsersService {
       status?: boolean
       password?: string
       roleId?: number | null
-      // M1：受控强制改密标记（显式 false 供管理端解锁微信死锁；置 true 与重置密码同效）
+      // M1：受控强制改密标记（显式 false 供管理端解锁微信死锁；置 true 与重置密码同效——
+      // L3：均会吊销现有 token，避免旧 AT 在 15min 窗口内继续全功能）
       mustChangePassword?: boolean
     },
     caller?: { roleId?: number | null },
@@ -353,6 +373,23 @@ export class UsersService {
           'access token 吊销',
           'users.update',
           '密码已重置',
+        )
+      }
+
+      // L3：显式置 mustChangePassword=true 同属强制重登语义（新建弹窗已把该开关暴露为常规操作）——
+      // 原仅改 DB 标记，旧 AT 在 15min 内仍全功能；rawPassword 已覆盖的路径不重复吊销
+      if (data.mustChangePassword === true && !rawPassword) {
+        await this.retryAndLog(
+          () => this.redisService.deleteByPattern(`refresh:${id}:*`),
+          'refresh token 吊销',
+          'users.update',
+          '强制改密已开启',
+        )
+        await this.retryAndLog(
+          () => this.revokeAccessTokens(id),
+          'access token 吊销',
+          'users.update',
+          '强制改密已开启',
         )
       }
 

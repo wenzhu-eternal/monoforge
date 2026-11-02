@@ -88,6 +88,42 @@ describe('UsersService', () => {
 
       await expect(service.findById(999)).rejects.toThrow(NotFoundException)
     })
+
+    it('L17：非超管读侧掩码 email/phone', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        username: 'alice',
+        email: 'alice@example.com',
+        phone: '13812345678',
+        password: 'should-not-leak',
+        status: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never)
+
+      const result = await service.findById(1)
+
+      expect(result.email).toBe('a***@example.com')
+      expect(result.phone).toBe('138****5678')
+    })
+
+    it('L17：超管读侧返回 email/phone 原文', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        username: 'alice',
+        email: 'alice@example.com',
+        phone: '13812345678',
+        password: 'should-not-leak',
+        status: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never)
+
+      const result = await service.findById(1, true)
+
+      expect(result.email).toBe('alice@example.com')
+      expect(result.phone).toBe('13812345678')
+    })
   })
 
   describe('create', () => {
@@ -373,6 +409,37 @@ describe('UsersService', () => {
           message: expect.stringContaining('密码已重置'),
         }),
       )
+    })
+
+    it('L3：显式置 mustChangePassword=true 与重置密码同效，吊销活 token', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([
+              {
+                id: 2,
+                username: 'bob',
+                email: 'b@b.com',
+                password: 'hashed',
+                status: true,
+                mustChangePassword: true,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            ]),
+          }),
+        }),
+      } as never)
+
+      await service.update(2, { mustChangePassword: true })
+
+      expect(mockRedisService.deleteByPattern).toHaveBeenCalledWith('refresh:2:*')
+      expect(mockRedisService.scanKeys).toHaveBeenCalledWith('access:active:2:*')
     })
 
     it('非超管授予超管角色时抛 ForbiddenException', async () => {

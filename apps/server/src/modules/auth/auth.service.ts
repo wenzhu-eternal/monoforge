@@ -15,6 +15,7 @@ import type { RoleBrief } from '@shared/schemas/role'
 import * as argon2 from 'argon2'
 import { and, eq } from 'drizzle-orm'
 import { normalizeIpForKey } from '@/common/utils/ip-normalize'
+import { noteRedisDegraded, noteRedisRecovered } from '@/common/utils/redis-degradation'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
@@ -134,6 +135,7 @@ export class AuthService {
           [AuthService.LOGIN_FAIL_TTL, AuthService.LOGIN_FAIL_LIMIT],
         ),
       )
+      noteRedisRecovered()
       if (locked === 1) {
         this.logger.warn(
           `登录锁定触发: user=${username} ip=${ip ?? 'unknown'}（15min 内 10 次失败）`,
@@ -143,6 +145,8 @@ export class AuthService {
     } catch (error) {
       // 锁定（HttpException）原样上抛；Redis 故障降级放行（此时无计数亦无锁）
       if (error instanceof HttpException) throw error
+      // L5：登录锁是全仓唯一未接入聚合观测的降级点——长故障期间无限爆破不留降级告警
+      noteRedisDegraded('auth:login-fail')
     }
   }
 
@@ -221,14 +225,21 @@ export class AuthService {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
 
-    const tokens = await this.signTokenPair({
-      sub: user.id,
-      username: user.username,
-      roleId: user.roleId,
-      mustChangePassword: user.mustChangePassword,
-    })
-
-    await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)
+    let tokens: TokenPair
+    try {
+      tokens = await this.signTokenPair({
+        sub: user.id,
+        username: user.username,
+        roleId: user.roleId,
+        mustChangePassword: user.mustChangePassword,
+      })
+      await this.storeRefreshTokenForExternal(tokens.refreshToken, user.id)
+    } catch (err) {
+      // L6：getdel 已原子消耗旧 RT，此段失败会让旧 RT 永久失效、新 token 又未返回——
+      // 回填旧 RT（剩余 exp 为 TTL）让客户端可原样重试；回填失败仅降级告警
+      await this.restoreConsumedRefreshToken(payload)
+      throw err
+    }
 
     // L7：签发后复检——早退与落盘之间发生的登出拦不住（竞态设备 getdel 先于
     // deleteByPattern 完成、新 refresh 键晚于清理写入即存活）。令牌未出网关，
@@ -471,11 +482,13 @@ export class AuthService {
     try {
       await this.register(username, email, password)
     } catch (err) {
-      // L7：注册冲突（用户名/邮箱已占用）时回写验证码，TTL 延用，用户无需等 60s 发送限制即可重试
-      if (err instanceof ConflictException) {
-        // 验证码原 TTL 为 5 分钟，此处等长重设，避免用户重新获取前受 60s 发送限制
-        await this.redisService.set(`register:code:${email}`, code, 5 * 60)
-      }
+      // L11：验证码已被 getdel 消费，任何注册失败（含 DB 抖动）都按剩余 TTL 回填——
+      // 原仅 Conflict 回填，非冲突异常下用户必须等满 60s 发送冷却才能重试
+      await this.redisService.set(
+        `register:code:${email}`,
+        code,
+        remainingTtl > 0 ? remainingTtl : 5 * 60,
+      )
       throw err
     }
 
@@ -510,9 +523,37 @@ export class AuthService {
     ])
 
     // 记录活跃 access jti，供禁用/改角色/改密/删用户时批量吊销
-    await this.redisService.set(`access:active:${payload.sub}:${accessJti}`, '1', 15 * 60)
+    try {
+      await this.redisService.set(`access:active:${payload.sub}:${accessJti}`, '1', 15 * 60)
+    } catch (err) {
+      // L6：Redis 故障统一 503 口径（原裸 error 冒成 500），与 storeRefreshToken 一致
+      this.logger.error(
+        `记录活跃 access token 失败: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      noteRedisDegraded('auth:sign')
+      throw new ServiceUnavailableException('签发令牌失败')
+    }
 
     return { accessToken, refreshToken }
+  }
+
+  /** L6：refresh 尾段失败时回填已被 getdel 消耗的旧 RT（TTL 按 JWT exp 剩余，非重设 7d） */
+  private async restoreConsumedRefreshToken(payload: {
+    sub: number
+    jti?: string
+    exp?: number
+  }): Promise<void> {
+    if (!payload.jti) return
+    const remaining = (payload.exp ?? 0) - Math.floor(Date.now() / 1000)
+    if (remaining <= 0) return
+    try {
+      await this.redisService.setNx(`refresh:${payload.sub}:${payload.jti}`, '1', remaining)
+    } catch (err) {
+      this.logger.warn(
+        `回填被消耗的 refresh token 失败: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      noteRedisDegraded('auth:refresh-restore')
+    }
   }
 
   /**

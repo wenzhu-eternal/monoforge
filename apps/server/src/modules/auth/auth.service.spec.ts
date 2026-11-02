@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common'
+import { ServiceUnavailableException, UnauthorizedException } from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/db', () => ({
@@ -20,8 +20,15 @@ vi.mock('@/config/env', () => ({
   getEnv: vi.fn(() => ({ ADMIN_ROLE_ID: 1 })),
 }))
 
+// L5：降级观测断言——避免真实模块的 5 分钟阈值与 appendErrorLog 副作用
+vi.mock('@/common/utils/redis-degradation', () => ({
+  noteRedisDegraded: vi.fn(),
+  noteRedisRecovered: vi.fn(),
+}))
+
 const { db } = await import('@/db')
 const { AuthService } = await import('./auth.service')
+const { noteRedisDegraded } = await import('@/common/utils/redis-degradation')
 
 describe('AuthService（L7 登出失效时间戳）', () => {
   let service: InstanceType<typeof AuthService>
@@ -38,6 +45,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     scanKeys: ReturnType<typeof vi.fn>
     eval: ReturnType<typeof vi.fn>
     ttl: ReturnType<typeof vi.fn>
+    setNx: ReturnType<typeof vi.fn>
   }
   let errorLogsService: { record: ReturnType<typeof vi.fn> }
 
@@ -74,6 +82,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       scanKeys: vi.fn().mockResolvedValue([]),
       eval: vi.fn().mockResolvedValue(0),
       ttl: vi.fn().mockResolvedValue(300),
+      setNx: vi.fn().mockResolvedValue(true),
     }
     const configService = { get: vi.fn().mockReturnValue('secret') }
     errorLogsService = { record: vi.fn().mockResolvedValue(undefined) }
@@ -124,6 +133,51 @@ describe('AuthService（L7 登出失效时间戳）', () => {
 
     await expect(service.refresh('token')).rejects.toThrow(UnauthorizedException)
     expect(redisService.getdel).not.toHaveBeenCalled()
+  })
+
+  it('L6：getdel 后签发失败 → 回填旧 RT（TTL 按 exp 剩余，不重设 7d）', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 7,
+      username: 'u',
+      roleId: 1,
+      jti: 'refresh-jti',
+      iat: now,
+      exp: now + 3600,
+    })
+    jwtService.signAsync.mockRejectedValue(new Error('sign down'))
+
+    await expect(service.refresh('token')).rejects.toThrow('sign down')
+    expect(redisService.setNx).toHaveBeenCalledWith(
+      'refresh:7:refresh-jti',
+      '1',
+      expect.any(Number),
+    )
+    const ttl = redisService.setNx.mock.calls[0][2] as number
+    expect(ttl).toBeGreaterThan(3500)
+    expect(ttl).toBeLessThanOrEqual(3600)
+  })
+
+  it('L6：落 RT 失败 → 回填旧 RT 且统一 503 口径', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 7,
+      username: 'u',
+      roleId: 1,
+      jti: 'refresh-jti',
+      iat: now,
+      exp: now + 3600,
+    })
+    redisService.set.mockImplementation((key: string) =>
+      key.startsWith('refresh:') ? Promise.reject(new Error('redis down')) : Promise.resolve(),
+    )
+
+    await expect(service.refresh('token')).rejects.toThrow(ServiceUnavailableException)
+    expect(redisService.setNx).toHaveBeenCalledWith(
+      'refresh:7:refresh-jti',
+      '1',
+      expect.any(Number),
+    )
   })
 
   it('无登出记录 → 正常签发令牌对', async () => {
@@ -217,6 +271,19 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       )
       expect(redisService.set).toHaveBeenCalledWith('register:code:a@b.com', '123456', 5 * 60)
     })
+
+    it('L11：非 Conflict 失败同样按剩余 TTL 回填（DB 抖动不烧码）', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.ttl.mockResolvedValue(120)
+      stubPrivate('register', async () => {
+        throw new Error('db down')
+      })
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
+        'db down',
+      )
+      expect(redisService.set).toHaveBeenCalledWith('register:code:a@b.com', '123456', 120)
+    })
   })
 
   describe('getProfile（L19 /auth/me 配置派生字段）', () => {
@@ -282,6 +349,14 @@ describe('AuthService（L7 登出失效时间戳）', () => {
 
       // 走到密码校验（用户不存在 401），而非 redis 错误上抛
       await expect(service.login('u', 'pw', '1.2.3.4')).rejects.toThrow(UnauthorizedException)
+    })
+
+    it('L5: Redis 故障接入聚合降级观测', async () => {
+      redisService.eval.mockRejectedValue(new Error('redis down'))
+      vi.mocked(db.query.users.findFirst).mockResolvedValue(undefined as never)
+
+      await expect(service.login('u', 'pw', '1.2.3.4')).rejects.toThrow(UnauthorizedException)
+      expect(noteRedisDegraded).toHaveBeenCalledWith('auth:login-fail')
     })
   })
 })

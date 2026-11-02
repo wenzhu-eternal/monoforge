@@ -47,8 +47,8 @@ export class RoutesService {
       for (const handlerName of Object.getOwnPropertyNames(proto)) {
         if (handlerName === 'constructor') continue
 
-        // 跳过 getter/setter（如 AuthController.cookieSecure），
-        // 访问这类 accessor 会触发 getter 执行，而此时 this 上下文不对会导致崩溃
+        // 跳过 getter/setter：访问 accessor 会触发 getter 执行，
+        // 而此时 this 上下文不对会导致崩溃
         const descriptor = Object.getOwnPropertyDescriptor(proto, handlerName)
         if (descriptor && (descriptor.get || descriptor.set)) continue
 

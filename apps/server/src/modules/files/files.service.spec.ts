@@ -6,6 +6,7 @@ const mockFindFirst = vi.fn()
 const mockUpdate = vi.fn()
 const mockSelect = vi.fn()
 const mockDelete = vi.fn()
+const mockInsert = vi.fn()
 vi.mock('@/db', () => ({
   db: {
     query: {
@@ -16,6 +17,7 @@ vi.mock('@/db', () => ({
     update: (...args: unknown[]) => mockUpdate(...args),
     select: (...args: unknown[]) => mockSelect(...args),
     delete: (...args: unknown[]) => mockDelete(...args),
+    insert: (...args: unknown[]) => mockInsert(...args),
   },
 }))
 
@@ -224,6 +226,27 @@ describe('FilesService', () => {
       expect(mockRename.mock.calls[1]?.[1]).toBe('/uploads/a.png')
     })
 
+    it('L1：条件更新命中 0 行（并发 restore）→ 状态变更文案，不搬盘', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        path: '/uploads/a.png',
+        filename: 'a.png',
+        uploadedBy: 5,
+      })
+      mockUpdate.mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.remove(1, 5, false)
+
+      expect(result.message).toContain('状态已发生变更')
+      expect(mockRename).not.toHaveBeenCalled()
+    })
+
     it('磁盘 rename 失败 → 仅告警不阻断软删', async () => {
       mockFindFirst.mockResolvedValue({
         id: 1,
@@ -347,6 +370,36 @@ describe('FilesService', () => {
       expect(mockRename.mock.calls[1]).toEqual(['/uploads/a.png', '/uploads-trash/999-new.png'])
     })
 
+    it('L2：搬盘失败回滚写原 deletedAt，不重新起算 30 天保留期', async () => {
+      const originalDeletedAt = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000)
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        deletedAt: originalDeletedAt,
+        uploadedBy: 5,
+        trashPath: '/uploads-trash/123-a.png',
+        path: '/uploads/a.png',
+      })
+      mockRename.mockRejectedValue(new Error('rename failed'))
+      mockExistsSync.mockReturnValue(false)
+      const rollbackSet = vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      })
+      mockUpdate
+        .mockReturnValueOnce({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([{ id: 1, deletedAt: null }]),
+            }),
+          }),
+        } as never)
+        .mockReturnValueOnce({ set: rollbackSet } as never)
+
+      await expect(service.restore(1, 5, false)).rejects.toThrow('磁盘文件恢复失败')
+      expect(rollbackSet).toHaveBeenCalledWith(
+        expect.objectContaining({ deletedAt: originalDeletedAt }),
+      )
+    })
+
     it('trashPath 为空 → 仅恢复 DB，不还原磁盘', async () => {
       mockFindFirst.mockResolvedValue({
         id: 1,
@@ -401,6 +454,21 @@ describe('FilesService', () => {
     it('未传 uploadedBy 跳过配额（内部调用路径）', async () => {
       await expect(service.upload(file as never)).rejects.toThrow()
       expect(mockRedisQuota.eval).not.toHaveBeenCalled()
+    })
+
+    it('L7：insert returning 空 → 退日配额并清理临时文件', async () => {
+      mockRedisQuota.eval.mockResolvedValue(1)
+      mockInsert.mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([]),
+        }),
+      } as never)
+
+      await expect(service.upload(file as never, 7)).rejects.toThrow('文件上传失败')
+
+      // 第一次为 consume INCR，第二次为 rollback DECR
+      expect(mockRedisQuota.eval).toHaveBeenCalledTimes(2)
+      expect(mockUnlink).toHaveBeenCalledWith('/uploads/a.png')
     })
 
     it('M4 复现：配额检查抛 409（未扣额）时不触发 rollback，杜绝"注定失败请求退额"旁路', async () => {
