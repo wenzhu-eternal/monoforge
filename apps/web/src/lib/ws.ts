@@ -103,14 +103,13 @@ class WsClient {
 
     // M9：握手鉴权类失败先换 token——auth 回调让 socket.io 下一次内部重试即用新值
     this.socket.on('connect_error', (err: Error) => {
-      if (
-        this.refreshHandler &&
-        /token|jwt|auth|unauthor|forbidden|401/i.test(err.message) &&
-        Date.now() - this.lastRefreshAt > WsClient.REFRESH_COOLDOWN
-      ) {
-        this.lastRefreshAt = Date.now()
-        void this.refreshHandler().catch(() => null)
-      }
+      this.maybeRefreshToken(err)
+    })
+
+    // L24：网关主动拒绝时回传结构化 code（AUTH_FAILED/ACCOUNT_UNAVAILABLE/...）——
+    // 按码判定换信物，不再依赖后端中文文案；connect_error 保留文本匹配作兜底
+    this.socket.on('error', (payload: unknown) => {
+      if (payload && typeof payload === 'object') this.maybeRefreshToken(payload)
     })
 
     this.socket.on('pong', () => {
@@ -218,6 +217,26 @@ class WsClient {
 
   isConnected(): boolean {
     return !!this.socket?.connected
+  }
+
+  /** L24：只对鉴权类失败换 token；结构化 code 优先，缺失时回退文本匹配 */
+  private maybeRefreshToken(payload: {
+    message?: string
+    data?: { code?: string }
+    code?: string
+  }): void {
+    const code = payload.code ?? payload.data?.code
+    const isAuthFailure = code
+      ? code === 'AUTH_FAILED'
+      : /token|jwt|auth|unauthor|forbidden|401/i.test(payload.message ?? '')
+    if (
+      this.refreshHandler &&
+      isAuthFailure &&
+      Date.now() - this.lastRefreshAt > WsClient.REFRESH_COOLDOWN
+    ) {
+      this.lastRefreshAt = Date.now()
+      void this.refreshHandler().catch(() => null)
+    }
   }
 
   private startHeartbeat(): void {

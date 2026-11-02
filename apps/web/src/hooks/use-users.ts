@@ -8,6 +8,7 @@ import type {
 } from '@shared'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/store/auth-store'
 
 export const useUsers = (params: PaginationQuery) => {
   return useQuery({
@@ -61,7 +62,9 @@ export const useUpdateUser = () => {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       // M13：改了用户角色时刷新 auth.me，否则 30s 内菜单/守卫仍按旧权限放行
-      if (variables.data.roleId !== undefined) {
+      // L25：改的是自己（如昵称）时同样失效 me，否则 Header 最长 30s 仍显示旧昵称
+      const editingSelf = useAuthStore.getState().user?.id === variables.id
+      if (variables.data.roleId !== undefined || editingSelf) {
         queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
       }
       // L14：启停 Switch 直接改 status，仪表盘计数需同步失效（同 create/delete/restore 口径）
