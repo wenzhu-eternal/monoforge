@@ -1,6 +1,6 @@
 export * from './audit'
 export type { AuthResponse } from './auth'
-export { AuthResponseSchema, RefreshTokenResponseSchema, RefreshTokenSchema } from './auth'
+export { AuthResponseSchema, RefreshTokenResponseSchema } from './auth'
 export * from './dashboard'
 export * from './error-log'
 export * from './file'

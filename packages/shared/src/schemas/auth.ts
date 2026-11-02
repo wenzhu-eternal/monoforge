@@ -2,10 +2,6 @@ import { z } from 'zod'
 import { RoleBriefSchema } from './role'
 import { UserSchema } from './user'
 
-export const RefreshTokenSchema = z.object({
-  refreshToken: z.string(),
-})
-
 export const AuthResponseSchema = z.object({
   accessToken: z.string(),
   user: UserSchema.extend({

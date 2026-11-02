@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   boolean,
+  index,
   integer,
   pgTable,
   serial,
@@ -35,6 +36,8 @@ export const users = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    // L28：FK 列索引（PG 不自动创建）——roles.remove 的 roleId count 与按角色筛选免全表扫
+    index('idx_users_role_id').on(t.roleId),
     uniqueIndex('users_username_unique').on(t.username).where(sql`deleted_at IS NULL`),
     uniqueIndex('users_email_unique').on(t.email).where(sql`deleted_at IS NULL`),
     uniqueIndex('users_wechat_open_id_unique').on(t.wechatOpenId).where(sql`deleted_at IS NULL`),
