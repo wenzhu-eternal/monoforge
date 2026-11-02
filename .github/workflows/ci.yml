@@ -48,6 +48,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: bash scripts/security-check.sh
 
+  # 依赖审计：安全脚本第 6 项在无端点 registry 上只能"无结论"，此 job 用官方源硬门
+  # 内网 registry 掩盖了 proxy-addr/multer/engine.io 三条中危整整一轮审计
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # 现有唯一残留为 deepmerge low（无修复版本），故以 high 为门
+      - run: pnpm audit --prod --registry=https://registry.npmjs.org --audit-level=high
+
   # 单元测试：Mock DB，快速验证 service/controller 逻辑
   unit-test:
     runs-on: ubuntu-latest
@@ -185,7 +200,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, security, unit-test, smoke-test, e2e-test, docker-smoke]
+    needs: [lint, typecheck, security, audit, unit-test, smoke-test, e2e-test, docker-smoke]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
