@@ -11,8 +11,7 @@ import { expect, test } from '@playwright/test'
  *   - admin 上传 PNG → 列表显示
  *   - admin 禁用自己上传的文件 → 成功 + 状态变更
  *   - 上传者删除自己的文件（通过 API 验证 200）
- *   - 普通用户删除他人文件 → 403
- *   - admin 删除他人上传的文件 → 200
+ *   - admin 删除上传的文件（通过 API 验证 200）
  *   - 上传非法文件 → 失败提示
  */
 
@@ -88,7 +87,7 @@ test.describe('文件上传 + 软删', () => {
     expect(secondStatus).toBe(404)
   })
 
-  test('admin 通过 API 删除他人上传的文件 → 200', async () => {
+  test('admin 通过 API 删除上传的文件 → 200', async () => {
     const filePath = makePngFile(`e2e-admin-delete-${Date.now()}.png`)
     const { data: uploaded } = await apiClient.uploadFile(
       '/files/upload',

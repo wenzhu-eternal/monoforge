@@ -116,7 +116,9 @@ export default defineConfig({
         E2E_RUN_MARKER: runMarker,
       },
       timeout: 90_000,
-      reuseExistingServer: !process.env.CI,
+      // L13：与 server 侧对称禁止复用——本地 dev web 无 E2E_RUN_MARKER，
+      // 复用永远不会通过指纹校验；能命中的只有上轮残留进程（脏状态来源）
+      reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
     },

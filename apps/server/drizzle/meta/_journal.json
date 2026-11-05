@@ -36,6 +36,13 @@
       "when": 1793633125579,
       "tag": "0004_overrated_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793894490354,
+      "tag": "0005_lively_maestro",
+      "breakpoints": true
     }
   ]
 }

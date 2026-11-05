@@ -1,0 +1,1 @@
+CREATE INDEX "idx_error_logs_resolved_by" ON "error_logs" USING btree ("resolved_by");
