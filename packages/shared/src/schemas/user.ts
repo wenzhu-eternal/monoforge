@@ -35,23 +35,38 @@ export const PasswordSchema = z
   .max(100, '密码最多 100 个字符')
   .regex(/^(?=.*[a-zA-Z])(?=.*\d).+$/, '密码必须同时包含字母和数字')
 
+// H1：非超管读侧走 L17 掩码（`a***@example.com` / `138****5678`，短值退化为 `***` / `****`），
+// 读侧契约必须同时接受原文与掩码形态——否则全局 ZodSerializerInterceptor 运行时 parse 必 500
+const MaskedEmailSchema = z.union([
+  z.string().regex(/^.+?\*\*\*@.+$/, '邮箱掩码形态非法'),
+  z.literal('***'),
+])
+
+const MaskedPhoneSchema = z.union([
+  z.string().regex(/^[^\s]{3}\*{4}[^\s]{4}$/, '手机号掩码形态非法'),
+  z.literal('****'),
+])
+
+const ReadEmailSchema = z.union([z.string().email(), MaskedEmailSchema])
+const ReadPhoneSchema = z.union([
+  z.string().regex(/^1[3-9]\d{9}$/, '手机号格式不正确'),
+  MaskedPhoneSchema,
+])
+
 /**
  * L20：读侧契约是 DB 列的有损投影（剔除 password 等敏感列）+ 派生字段，勿据此反推 DDL——
  * - `roleName` / `roles` / `permissions` 为 join 角色/权限表派生的展示字段（非 users 列）
  * - `adminRoleId` / `isAdmin` 为 /auth/me 的配置派生字段，由服务端计算
  * - `mustChangePassword` 读侧带 default 属容差（服务端漏发时按 false），不是"未列即可省"的承诺
+ * - `email` / `phone` 读侧接受掩码形态（H1），写侧仍由 UserEmailSchema / PhoneSchema 严格校验
  */
 export const UserSchema = z.object({
   id: z.number().int().positive(),
   username: z.string().min(3).max(50),
-  email: z.string().email(),
+  email: ReadEmailSchema,
   nickname: z.string().max(50).nullable().optional(),
   avatar: z.string().nullable().optional(),
-  phone: z
-    .string()
-    .regex(/^1[3-9]\d{9}$/, '手机号格式不正确')
-    .nullable()
-    .optional(),
+  phone: ReadPhoneSchema.nullable().optional(),
   roleId: z.number().int().positive().nullable().optional(),
   status: z.boolean(),
   mustChangePassword: z.boolean().default(false),
@@ -93,7 +108,7 @@ export const CreateUserSchema = z.strictObject({
   username: UsernameSchema,
   email: UserEmailSchema,
   password: PasswordSchema,
-  // L19：DB nickname 可空，契约同步开放置空（清空须显式 null）
+  // L19：DB nickname 可空，契约同步开放置空（清空须显式 null；前端 ''.→null，契约本身不拒绝空串）
   nickname: z.string().max(50).nullable().optional(),
   phone: PhoneSchema,
   // 角色: 仅 USER_ROLE_MANAGE 权限可指定，其余调用方由服务端默认分配普通角色

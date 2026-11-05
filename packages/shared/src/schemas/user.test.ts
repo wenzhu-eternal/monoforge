@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { CreateUserSchema, LoginSchema, PhoneSchema, UpdateUserSchema, UserSchema } from './user'
+import {
+  CreateUserSchema,
+  LoginSchema,
+  PhoneSchema,
+  UpdateUserSchema,
+  UserListItemSchema,
+  UserSchema,
+} from './user'
 
 describe('PhoneSchema', () => {
   it('接受合法中国大陆手机号', () => {
@@ -137,8 +144,9 @@ describe('UpdateUserSchema', () => {
     ).toBe(false)
   })
 
-  it('L19：nickname 与 DB 同步开放置空（null 通过，空串仍拒）', () => {
+  it('L19：nickname 开放置空（null 通过；空串由前端映射为 null，契约本身放行）', () => {
     expect(UpdateUserSchema.safeParse({ nickname: null }).success).toBe(true)
+    expect(UpdateUserSchema.safeParse({ nickname: '' }).success).toBe(true)
     expect(
       CreateUserSchema.safeParse({
         username: 'user1',
@@ -184,5 +192,41 @@ describe('UserSchema', () => {
   it('缺少必填字段失败', () => {
     const r = UserSchema.safeParse({ id: 1, username: 'alice' })
     expect(r.success).toBe(false)
+  })
+})
+
+describe('H1：读侧掩码形态契约', () => {
+  const base = {
+    id: 1,
+    username: 'alice',
+    email: 'a***@example.com',
+    phone: '138****5678',
+    status: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+
+  it('UserSchema 接受非超管掩码行', () => {
+    expect(UserSchema.safeParse(base).success).toBe(true)
+  })
+
+  it('UserListItemSchema 接受非超管掩码行（serializer 主入口）', () => {
+    expect(UserListItemSchema.safeParse({ ...base, roleName: 'user' }).success).toBe(true)
+  })
+
+  it('短值退化掩码形态也接受', () => {
+    expect(UserSchema.safeParse({ ...base, email: '***', phone: '****' }).success).toBe(true)
+  })
+
+  it('读侧放宽不反蚀写侧：非法原文仍被拒绝', () => {
+    expect(
+      CreateUserSchema.safeParse({
+        username: 'u1',
+        email: 'a***@example.com',
+        password: 'Pass1234',
+      }).success,
+    ).toBe(false)
+    expect(UpdateUserSchema.safeParse({ email: 'a***@example.com' }).success).toBe(false)
+    expect(UpdateUserSchema.safeParse({ phone: '138****5678' }).success).toBe(false)
   })
 })
