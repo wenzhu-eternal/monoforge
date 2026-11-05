@@ -227,6 +227,13 @@ describe('env 上线防线（L24）', () => {
       }).BACKUP_CMD,
     ).toContain('{filepath}')
     expect(envSchema.safeParse({ ...baseEnv, BACKUP_CMD: 'pg_dump -d d' }).success).toBe(false)
+    // M4：模板误给占位符加引号会让路径带字面引号，重定向必 ENOENT——启动即拒
+    expect(
+      envSchema.safeParse({ ...baseEnv, BACKUP_CMD: 'pg_dump -d d > "{filepath}"' }).success,
+    ).toBe(false)
+    expect(
+      envSchema.safeParse({ ...baseEnv, BACKUP_CMD: "pg_dump -d d > '{filepath}'" }).success,
+    ).toBe(false)
     for (const unsafe of [
       'pg_dump {filepath}; rm -rf /',
       'pg_dump {filepath} && rm -rf /',

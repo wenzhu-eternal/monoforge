@@ -30,7 +30,24 @@ echo "目标: 容器=$CONTAINER 用户=$DB_USER 数据库=$DB_NAME"
 BACKUP_DIR="$(resolve_backup_dir)"
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S).sql"
+TMP_FILE="$BACKUP_FILE.tmp"
+MIN_BYTES="${BACKUP_MIN_BYTES:-$(env_value BACKUP_MIN_BYTES)}"
+: "${MIN_BYTES:=1024}"
 echo "备份目录: $BACKUP_DIR"
 
-docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" > "$BACKUP_FILE"
-echo "备份完成: $BACKUP_FILE"
+# M5：与后端 cron 同口径——先写 .tmp，校验大小后再 rename 定稿。
+# 原实现直接 `> "$BACKUP_FILE"`，pg_dump 失败时 set -e 中止但 0 字节 .sql 已落盘，
+# 反而成为 mtime 最新文件，restore 默认拾取后"恢复成功"的是空库
+trap 'rm -f "$TMP_FILE"' EXIT
+
+docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" > "$TMP_FILE"
+
+SIZE=$(wc -c < "$TMP_FILE" | tr -d ' ')
+if [ "$SIZE" -lt "$MIN_BYTES" ]; then
+  echo "❌ 备份产物过小（$SIZE B < 下限 $MIN_BYTES B），疑似截断或空产物"
+  exit 1
+fi
+
+mv "$TMP_FILE" "$BACKUP_FILE"
+trap - EXIT
+echo "备份完成: $BACKUP_FILE ($SIZE B)"

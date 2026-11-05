@@ -151,6 +151,20 @@ export class ScheduleService implements OnApplicationBootstrap {
       const hours = (Date.now() - lastRun) / 3_600_000
       if (hours <= BACKUP_FRESHNESS_MAX_HOURS) return
 
+      // L3：跨 0:00 的手动备份会让 cron busy 早退（不记 dailyBackup 心跳），
+      // 此时若手动备份仍在新鲜窗口内则降级为 warn，不误报"定时备份未执行"
+      const manualRaw = await this.redisService.get(`${LAST_RUN_KEY_PREFIX}manualBackup`)
+      const manualLast = manualRaw ? Date.parse(manualRaw) : Number.NaN
+      if (
+        !Number.isNaN(manualLast) &&
+        (Date.now() - manualLast) / 3_600_000 <= BACKUP_FRESHNESS_MAX_HOURS
+      ) {
+        this.logger.warn(
+          `定时备份已 ${hours.toFixed(1)} 小时未成功，但 ${manualRaw} 有成功的手动备份，暂不告警`,
+        )
+        return
+      }
+
       const now = new Date()
       const pad = (n: number) => String(n).padStart(2, '0')
       const alertKey = `${BACKUP_MISSING_ALERT_KEY_PREFIX}${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
@@ -505,6 +519,11 @@ export class ScheduleService implements OnApplicationBootstrap {
       // 不会再出现"半截 .sql"（文件不存在/删失败均忽略，不影响错误上报链路）
       if (tmpFilepath) {
         await unlink(tmpFilepath).catch(() => null)
+        // M4：BACKUP_CMD 误给占位符加引号时，shell 会重定向到带字面引号的路径；
+        // cleanOldBackups 只认 backup-*.sql，这类孤儿需在失败路径一并清理
+        if (getEnv().BACKUP_CMD) {
+          await unlink(`'${tmpFilepath}'`).catch(() => null)
+        }
       }
       // 入库记录异常（兜底 try-catch，避免异常记录本身失败时变成未处理 rejection）
       try {

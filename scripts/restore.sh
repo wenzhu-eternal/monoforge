@@ -55,6 +55,17 @@ if [ ! -f "$BACKUP_FILE" ]; then
   exit 1
 fi
 
+# M5：空/超小产物拒绝——空文件经 ON_ERROR_STOP 恢复 0 语句仍 exit 0，
+# 会打印"✅ 恢复完成"但 DROP 重建后的库是空库；显式指定时同样校验
+FILE_BYTES=$(wc -c < "$BACKUP_FILE" | tr -d ' ')
+MIN_BYTES="${BACKUP_MIN_BYTES:-$(env_value BACKUP_MIN_BYTES)}"
+: "${MIN_BYTES:=1024}"
+if [ "$FILE_BYTES" -lt "$MIN_BYTES" ]; then
+  echo "❌ 备份文件过小（$FILE_BYTES B < 下限 $MIN_BYTES B），疑似空/截断产物，已拒绝恢复: $BACKUP_FILE"
+  echo "   如确认该文件有效，请显式指定其他备份路径或调低 BACKUP_MIN_BYTES"
+  exit 1
+fi
+
 FILE_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
 echo "📂 即将恢复备份: $BACKUP_FILE ($FILE_SIZE)"
 echo "⚠️  此操作会 DROP 并重建数据库 $DB_NAME"

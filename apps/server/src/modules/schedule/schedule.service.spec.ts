@@ -685,6 +685,18 @@ describe('ScheduleService', () => {
       expect(errorLogsService.record).not.toHaveBeenCalled()
     })
 
+    it('L3：cron 心跳超 25h 但手动备份仍新鲜 → 降级 warn 不误报', async () => {
+      mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
+      redisService.get.mockImplementation((key: string) =>
+        Promise.resolve(key.endsWith('manualBackup') ? hoursAgo(2) : hoursAgo(26)),
+      )
+
+      await service.checkBackupFreshness()
+
+      expect(errorLogsService.record).not.toHaveBeenCalled()
+      expect(redisService.setNx).not.toHaveBeenCalled()
+    })
+
     it('L5：无基线（新部署/心跳键丢失）→ 记一次低等级告警，当日去重', async () => {
       mockGetEnv.mockReturnValue({ ENABLE_BACKUP: true })
       redisService.get.mockResolvedValue(null)
@@ -749,5 +761,18 @@ describe('ScheduleService', () => {
         expect.objectContaining({ message: expect.stringContaining('超过 25 小时') }),
       )
     })
+  })
+
+  it('L5：5 个 @Cron 均钉 Asia/Shanghai 时区（防止误删 timeZone 回到 UTC）', async () => {
+    // node:fs 在本 spec 被 mock，取真实实现读源码
+    const { readFileSync } = await vi.importActual<typeof import('node:fs')>('node:fs')
+    const src = readFileSync(new URL('./schedule.service.ts', import.meta.url), 'utf8')
+    const decorators = [...src.matchAll(/@Cron\(([^)]*)\)/g)]
+
+    expect(decorators).toHaveLength(5)
+    for (const [, args] of decorators) {
+      expect(args).toContain('timeZone: CRON_TIME_ZONE')
+    }
+    expect(src).toMatch(/CRON_TIME_ZONE = 'Asia\/Shanghai'/)
   })
 })

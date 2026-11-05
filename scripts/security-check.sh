@@ -137,11 +137,11 @@ else
     2>/dev/null | sed '/^$/d' | sort)
   if [ -z "$REQUIRED_KEYS" ]; then
     check_warn "无法从 env schema 读取必填键，回退 .env.example 的 [必填] 标记"
-    REQUIRED_KEYS=$(grep -E '^[A-Z_]+=' .env.example | grep '\[必填\]' | cut -d= -f1 | sort)
+    REQUIRED_KEYS=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env.example | grep '\[必填\]' | cut -d= -f1 | sort)
   fi
 
   # 5a：schema 必填键必须全部在 .env.example 有文档（缺失即文档漂移，阻断）
-  EXAMPLE_KEYS=$(grep -E '^[A-Z_]+=' .env.example | cut -d= -f1 | sort)
+  EXAMPLE_KEYS=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env.example | cut -d= -f1 | sort)
   EXAMPLE_DIFF=$(comm -23 <(echo "$REQUIRED_KEYS") <(echo "$EXAMPLE_KEYS") 2>/dev/null || true)
   if [ -z "$EXAMPLE_DIFF" ]; then
     check_pass ".env.example 已覆盖 env schema 的全部必填键"
@@ -155,7 +155,7 @@ else
     check_warn "根目录 .env 不存在（开发环境必需，可从 .env.example 复制）"
   else
     ENV_DIFF=$(comm -23 <(echo "$REQUIRED_KEYS") \
-      <(grep -E '^[A-Z_]+=' .env | cut -d= -f1 | sort) \
+      <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env | cut -d= -f1 | sort) \
       2>/dev/null || true)
     if [ -z "$ENV_DIFF" ]; then
       check_pass "根 .env 包含 env schema 全部必填变量"
@@ -176,8 +176,8 @@ else
   # 旧 pnpm 返回 ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS，新版本返回 ERR_PNPM_AUDIT_BAD_RESPONSE——
   # 两者都属"无法审计"而非"真有漏洞"，原先只识别前者，后者落进低/中危分支，
   # 把检查失败包装成疑似已检查。用 warn（不阻断 gate）并明确告知无结论
-  if grep -q -E 'ERR_PNPM_AUDIT_(ENDPOINT_NOT_EXISTS|BAD_RESPONSE)' /tmp/audit.log; then
-    check_warn "当前 registry 不支持 audit 端点，依赖审计无结论（非漏洞；如需扫描请切换官方 registry）"
+  if grep -q -E 'ERR_PNPM_AUDIT_(ENDPOINT_NOT_EXISTS|BAD_RESPONSE)|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|ERR_PNPM_META_FETCH_FAIL' /tmp/audit.log; then
+    check_warn "依赖审计无结论（registry audit 端点不可用或网络故障，非漏洞；如需扫描请切换官方 registry）"
   elif grep -q -E '(high|critical)' /tmp/audit.log; then
     check_fail "发现高危依赖漏洞（见 /tmp/audit.log）"
     grep -E '(high|critical)' /tmp/audit.log | head -10
