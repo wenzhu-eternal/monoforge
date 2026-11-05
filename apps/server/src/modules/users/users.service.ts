@@ -13,6 +13,8 @@ import * as argon2 from 'argon2'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { isAdminUser } from '@/common/utils/is-admin'
 import { maskEmail } from '@/common/utils/mail-utils'
+import { retryOnce } from '@/common/utils/retry-once'
+import { revokeActiveAccessTokens } from '@/common/utils/token-revocation'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
@@ -276,6 +278,8 @@ export class UsersService {
       (data.password !== undefined ||
         data.status !== undefined ||
         data.email !== undefined ||
+        // L1：phone 与 email 同属联系方式（短信/找回链路前件），保护圈需一致
+        data.phone !== undefined ||
         data.mustChangePassword !== undefined)
     if ((touchesAdminRole || editsAdminSensitive) && !isAdminUser(caller)) {
       throw new ForbiddenException('仅超级管理员可变更超管账号的敏感信息')
@@ -327,7 +331,7 @@ export class UsersService {
           '用户已禁用',
         )
         await this.retryAndLog(
-          () => this.revokeAccessTokens(id),
+          () => revokeActiveAccessTokens(this.redisService, id),
           'access token 吊销',
           'users.update',
           '用户已禁用',
@@ -337,7 +341,7 @@ export class UsersService {
       // 角色变更时吊销 access token（用户需用 refresh 重新签发走新角色）+ 失效旧/新角色权限缓存
       if (data.roleId !== undefined && data.roleId !== existingUser.roleId) {
         await this.retryAndLog(
-          () => this.revokeAccessTokens(id),
+          () => revokeActiveAccessTokens(this.redisService, id),
           'access token 吊销',
           'users.update',
           '角色已变更',
@@ -369,7 +373,7 @@ export class UsersService {
           '密码已重置',
         )
         await this.retryAndLog(
-          () => this.revokeAccessTokens(id),
+          () => revokeActiveAccessTokens(this.redisService, id),
           'access token 吊销',
           'users.update',
           '密码已重置',
@@ -386,7 +390,7 @@ export class UsersService {
           '强制改密已开启',
         )
         await this.retryAndLog(
-          () => this.revokeAccessTokens(id),
+          () => revokeActiveAccessTokens(this.redisService, id),
           'access token 吊销',
           'users.update',
           '强制改密已开启',
@@ -434,21 +438,6 @@ export class UsersService {
   }
 
   /**
-   * 批量吊销用户活跃 access token：读活跃 jti → 写黑名单 → 清活跃记录
-   * 与 AuthService.revokeAllAccessTokens 逻辑一致，内联以避免模块循环依赖
-   */
-  private async revokeAccessTokens(userId: number): Promise<void> {
-    const activeKeys = await this.redisService.scanKeys(`access:active:${userId}:*`)
-    if (activeKeys.length === 0) return
-    const prefix = `access:active:${userId}:`
-    for (const key of activeKeys) {
-      const jti = key.slice(prefix.length)
-      await this.redisService.set(`access:${userId}:${jti}`, '1', 15 * 60)
-    }
-    await this.redisService.deleteByPattern(`access:active:${userId}:*`)
-  }
-
-  /**
    * L9：DB 已提交后的 Redis 操作统一降级——失败重试一次，仍失败写 error_logs 留痕，
    * 不让缓存/吊销故障把已成功的业务请求反报为 500。
    */
@@ -458,26 +447,21 @@ export class UsersService {
     context: string,
     outcome: string,
   ): Promise<void> {
+    const retryErr = await retryOnce(fn)
+    if (retryErr === null) return
+
+    const message = `${context} ${what} 失败（重试后仍失败），${outcome}: ${
+      retryErr instanceof Error ? retryErr.message : String(retryErr)
+    }`
+    // 留痕自身失败只能降级 logger——业务已成功，不能因审计写失败再抛 500
     try {
-      await fn()
-    } catch {
-      try {
-        await fn()
-      } catch (retryErr) {
-        const message = `${context} ${what} 失败（重试后仍失败），${outcome}: ${
-          retryErr instanceof Error ? retryErr.message : String(retryErr)
-        }`
-        // 留痕自身失败只能降级 logger——业务已成功，不能因审计写失败再抛 500
-        try {
-          await this.errorLogsService.record({ message, internal: true })
-        } catch (recordErr) {
-          this.logger.warn(
-            `${context} ${what} 失败留痕写入失败: ${
-              recordErr instanceof Error ? recordErr.message : String(recordErr)
-            }`,
-          )
-        }
-      }
+      await this.errorLogsService.record({ message, internal: true })
+    } catch (recordErr) {
+      this.logger.warn(
+        `${context} ${what} 失败留痕写入失败: ${
+          recordErr instanceof Error ? recordErr.message : String(recordErr)
+        }`,
+      )
     }
   }
 
@@ -519,7 +503,7 @@ export class UsersService {
     }
 
     // 改密后吊销所有 token，强制重新登录
-    // L9：先写 logout:at 时间戳作为兜底——若后续 Redis 抖动导致 revokeAccessTokens 失败，
+    // L9：先写 logout:at 时间戳作为兜底——若后续 Redis 抖动导致 access token 吊销失败，
     // 用户重试时 refresh 早退仍可检测到此时间戳，防止旧 token 续命
     // L3：兜底本身失败必须留痕——Nest logger 不进文件日志也不进 error_logs，
     // 半开 Redis 下旧 refresh 可续命 7d 且零审计痕迹，故与下方吊销链路同走 retryAndLog
@@ -529,7 +513,7 @@ export class UsersService {
       'changePassword',
       '密码已改',
     )
-    // L8/L9：deleteByPattern/revokeAccessTokens Redis 抖动降级重试，仍失败记 error_logs 留痕
+    // L8/L9：deleteByPattern/access token 吊销 Redis 抖动降级重试，仍失败记 error_logs 留痕
     await this.retryAndLog(
       () => this.redisService.deleteByPattern(`refresh:${userId}:*`),
       'refresh token 吊销',
@@ -537,7 +521,7 @@ export class UsersService {
       '密码已改',
     )
     await this.retryAndLog(
-      () => this.revokeAccessTokens(userId),
+      () => revokeActiveAccessTokens(this.redisService, userId),
       'access token 吊销',
       'changePassword',
       '密码已改',
@@ -611,7 +595,7 @@ export class UsersService {
       '用户已删除',
     )
     await this.retryAndLog(
-      () => this.revokeAccessTokens(id),
+      () => revokeActiveAccessTokens(this.redisService, id),
       'access token 吊销',
       'users.remove',
       '用户已删除',

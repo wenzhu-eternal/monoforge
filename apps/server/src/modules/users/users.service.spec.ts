@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common'
+import { UserListItemSchema, UserSchema } from '@shared/schemas/user'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock argon2
@@ -105,6 +106,8 @@ describe('UsersService', () => {
 
       expect(result.email).toBe('a***@example.com')
       expect(result.phone).toBe('138****5678')
+      // H1：掩码行必须能过读侧契约，否则全局 ZodSerializerInterceptor 运行时 parse 抛 500
+      expect(UserSchema.safeParse(result).success).toBe(true)
     })
 
     it('L17：超管读侧返回 email/phone 原文', async () => {
@@ -123,6 +126,46 @@ describe('UsersService', () => {
 
       expect(result.email).toBe('alice@example.com')
       expect(result.phone).toBe('13812345678')
+    })
+  })
+
+  describe('findAll', () => {
+    it('H1：非超管掩码行可过列表契约（serializer 主链路）', async () => {
+      const row = {
+        id: 1,
+        username: 'alice',
+        email: 'alice@example.com',
+        nickname: null,
+        avatar: null,
+        phone: '13812345678',
+        roleId: 1,
+        status: true,
+        deletedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        roleName: 'user',
+      }
+      const listChain = {
+        from: vi.fn().mockReturnThis(),
+        leftJoin: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        offset: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockResolvedValue([row]),
+      }
+      const countChain = {
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([{ count: 1 }]),
+      }
+      vi.mocked(mockDb.select)
+        .mockReturnValueOnce(listChain as never)
+        .mockReturnValueOnce(countChain as never)
+
+      const result = await service.findAll(1, 10, false)
+
+      expect(result.list[0]?.email).toBe('a***@example.com')
+      expect(result.list[0]?.phone).toBe('138****5678')
+      expect(UserListItemSchema.safeParse(result.list[0]).success).toBe(true)
     })
   })
 
@@ -525,6 +568,21 @@ describe('UsersService', () => {
         ForbiddenException,
       )
       await expect(service.update(1, { mustChangePassword: false }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+    })
+
+    it('L1: 非超管改超管 phone 被拒（与 email 同属敏感联系方式）', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        email: 'root@b.com',
+        roleId: 1,
+      } as never)
+
+      await expect(service.update(1, { phone: '13800138000' }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+      await expect(service.update(1, { phone: null }, { roleId: 2 })).rejects.toThrow(
         ForbiddenException,
       )
     })
