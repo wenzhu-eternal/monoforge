@@ -52,6 +52,74 @@ function fire(socket: Socket, event: string, ...args: unknown[]): void {
   for (const h of handlers) h(...args)
 }
 
+describe('M2/M3：踢线错误码分流与刷新冷却', () => {
+  let refreshHandler: ReturnType<typeof vi.fn>
+
+  let clockBase = 0
+
+  beforeEach(() => {
+    // 冷却判定依赖 Date.now()：每次 install 都从严格递增的基准起算，避免跨用例残留的时间戳互拦
+    clockBase += 60_000
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+      now: Date.now() + clockBase,
+    })
+    wsClient.disconnect()
+    // reconnectAttempts 仅在 connect 事件归零：建一次并触发 connect 再断开
+    wsClient.connect('reset')
+    fire(sockets.at(-1) as Socket, 'connect')
+    wsClient.disconnect()
+    ioMock.mockClear()
+    sockets.length = 0
+    refreshHandler = vi.fn().mockResolvedValue('new-token')
+    wsClient.setTokenProvider(() => 'tok', refreshHandler as never)
+  })
+
+  afterEach(() => {
+    wsClient.disconnect()
+    wsClient.setTokenProvider(null)
+    vi.useRealTimers()
+  })
+
+  it('M2：AUTH_FAILED 踢线只刷新一次（error 与 disconnect 共用冷却）', async () => {
+    wsClient.connect('tok')
+    fire(lastSocket(), 'error', { code: 'AUTH_FAILED' })
+    fire(lastSocket(), 'disconnect', 'io server disconnect')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(refreshHandler).toHaveBeenCalledTimes(1)
+    expect(ioMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('M2：ACCOUNT_UNAVAILABLE 踢线不换信物，仅重连', async () => {
+    wsClient.connect('tok')
+    fire(lastSocket(), 'error', { code: 'ACCOUNT_UNAVAILABLE' })
+    fire(lastSocket(), 'disconnect', 'io server disconnect')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(refreshHandler).not.toHaveBeenCalled()
+    expect(ioMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('M3：500ms 内重复鉴权失败走冷却，只刷新一次', async () => {
+    wsClient.connect('tok')
+    fire(lastSocket(), 'error', { code: 'AUTH_FAILED' })
+    await vi.advanceTimersByTimeAsync(500)
+    fire(lastSocket(), 'error', { code: 'AUTH_FAILED' })
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(refreshHandler).toHaveBeenCalledTimes(1)
+  })
+
+  it('M3：无结构化 code 时文本兜底（token 失效仍换信物）', async () => {
+    wsClient.connect('tok')
+    fire(lastSocket(), 'error', { message: 'invalid token' })
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(refreshHandler).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('wsClient 手动重连（M6 终态）', () => {
   beforeEach(() => {
     vi.useFakeTimers()

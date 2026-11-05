@@ -1,7 +1,7 @@
 import type { Notification, WebSocketMe, WebSocketNotifyResult, WebSocketOnline } from '@shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, refreshAccessToken } from '@/lib/api'
+import { api, authRedirect, refreshAccessToken } from '@/lib/api'
 import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { wsClient } from '@/lib/ws'
 import { useAuthStore } from '@/store/auth-store'
@@ -45,7 +45,7 @@ export function useWebSocket() {
           // 网络/限流/5xx 保留 null 由退避重连接管，不误登出
           if ((err as { response?: { status?: number } })?.response?.status === 401) {
             clearUserScopedState()
-            window.location.href = '/login'
+            authRedirect.to('/login')
           }
           return null
         }

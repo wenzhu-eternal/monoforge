@@ -1,3 +1,4 @@
+import { UsernameSchema } from '@shared'
 import { describe, expect, it } from 'vitest'
 import {
   emailRule,
@@ -5,6 +6,7 @@ import {
   notifyTitleRule,
   passwordRule,
   phoneRule,
+  schemaLengthRule,
   usernameRule,
 } from './form-rules'
 
@@ -138,6 +140,29 @@ describe('form-rules', () => {
     it('非数字被拒', async () => {
       const err = await runRuleReject(phoneRule, 'abcdefghijk')
       expect((err as Error).message).toContain('手机号')
+    })
+  })
+
+  describe('schemaLengthRule（读 shared schema 的 min/max）', () => {
+    const rule = schemaLengthRule(UsernameSchema, '用户名')
+
+    it('长度边界内通过（3 与 50）', async () => {
+      await expect(runRule(rule, 'abc')).resolves.toBe(true)
+      await expect(runRule(rule, 'a'.repeat(50))).resolves.toBe(true)
+    })
+
+    it('低于 min 被拒', async () => {
+      const err = await runRuleReject(rule, 'ab')
+      expect((err as Error).message).toContain('至少 3')
+    })
+
+    it('超过 max 被拒', async () => {
+      const err = await runRuleReject(rule, 'a'.repeat(51))
+      expect((err as Error).message).toContain('最多 50')
+    })
+
+    it('空值交给 required 控制，validator 放行', async () => {
+      await expect(runRule(rule, '')).resolves.toBe(true)
     })
   })
 

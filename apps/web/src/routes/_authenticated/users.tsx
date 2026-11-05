@@ -259,7 +259,8 @@ export function UsersContent() {
         // 编辑时仅提交 schema 允许的字段，避免携带 avatar/roleName/roles 等
         // 额外字段触发 Zod 校验失败（avatar 必须是合法 URL）
         const updateData: UpdateUser = {
-          nickname: values.nickname,
+          // L12：清空昵称提交 null（契约要求显式 null，'' 会作为空串落库并进 audit old/new）
+          nickname: values.nickname || null,
         }
         // M3：改他人手机号后端要求 USER_ROLE_MANAGE（L7 闸）——无权限/未变更时不提交，
         // 否则"仅改昵称"也会因恒带 phone 整弹窗 403；清空提交 null（'' 会被 regex 拒 400）
@@ -299,7 +300,8 @@ export function UsersContent() {
           username: values.username,
           email: values.email,
           password: values.password,
-          nickname: values.nickname,
+          // L12：同编辑口径，清空昵称提交 null 而非空串
+          nickname: values.nickname || null,
           // L13：未填/清空统一提交 null（'' 会被 regex 拒 400）
           phone: values.phone || null,
         }

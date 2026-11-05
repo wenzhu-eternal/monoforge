@@ -24,6 +24,11 @@ class WsClient {
   private refreshHandler: (() => Promise<string | null>) | null = null
   // M9：connect_error 刷新冷却（socket.io 每次内部重试都回调，防 refresh 连发）
   private lastRefreshAt = 0
+  // M2：当前 socket 最近一次鉴权/踢线错误码——disconnect 分支据此判定是否需要换信物，
+  // 避免非鉴权类踢线（连接数超限/账号不可用）白烧一次 refresh 轮换
+  private lastSocketErrorCode: string | undefined
+  // M2：在途换信物任务——disconnect 需等它完成后才排重连
+  private pendingRefresh: Promise<string | null> | null = null
   // M9：手动重连路径退避计数（原固定 1s 间隔无限踢-连，服务端持续拒时风暴）
   private reconnectAttempts = 0
   private static readonly MAX_RECONNECT = 5
@@ -80,6 +85,9 @@ class WsClient {
       reconnectionDelayMax: 10_000,
     })
 
+    // M2：错误码按 socket 生命周期重置，避免上一轮踢线码影响本次 disconnect 判定
+    this.lastSocketErrorCode = undefined
+
     this.socket.on('connect', () => {
       this.reconnectAttempts = 0
       this.startHeartbeat()
@@ -90,11 +98,11 @@ class WsClient {
       // M5：服务端主动断开（jti 吊销/账号状态变更）属 io server disconnect，
       // socket.io v4 不会自动重连，必须手动恢复
       // M9：先换新 token 再排退避重连——store 里的 token 与被踢同源，只重连即死循环
+      // M2：仅 AUTH_FAILED 才换信物（与 error 事件共用冷却），其余码直接重连
       if (reason === 'io server disconnect') {
-        if (this.refreshHandler) {
-          void this.refreshHandler()
-            .catch(() => null)
-            .finally(() => this.scheduleReconnect(1000))
+        const refreshing = this.maybeRefreshToken({ code: this.lastSocketErrorCode })
+        if (refreshing && this.pendingRefresh) {
+          void this.pendingRefresh.finally(() => this.scheduleReconnect(1000))
         } else {
           this.scheduleReconnect(1000)
         }
@@ -102,14 +110,19 @@ class WsClient {
     })
 
     // M9：握手鉴权类失败先换 token——auth 回调让 socket.io 下一次内部重试即用新值
-    this.socket.on('connect_error', (err: Error) => {
+    this.socket.on('connect_error', (err: Error & { data?: { code?: string } }) => {
+      this.lastSocketErrorCode = err.data?.code
       this.maybeRefreshToken(err)
     })
 
     // L24：网关主动拒绝时回传结构化 code（AUTH_FAILED/ACCOUNT_UNAVAILABLE/...）——
     // 按码判定换信物，不再依赖后端中文文案；connect_error 保留文本匹配作兜底
     this.socket.on('error', (payload: unknown) => {
-      if (payload && typeof payload === 'object') this.maybeRefreshToken(payload)
+      if (payload && typeof payload === 'object') {
+        const p = payload as { code?: string; data?: { code?: string } }
+        this.lastSocketErrorCode = p.code ?? p.data?.code
+        this.maybeRefreshToken(p)
+      }
     })
 
     this.socket.on('pong', () => {
@@ -219,12 +232,12 @@ class WsClient {
     return !!this.socket?.connected
   }
 
-  /** L24：只对鉴权类失败换 token；结构化 code 优先，缺失时回退文本匹配 */
+  /** L24/M2：只对鉴权类失败换 token；结构化 code 优先，缺失时回退文本匹配。返回是否发起刷新 */
   private maybeRefreshToken(payload: {
     message?: string
     data?: { code?: string }
     code?: string
-  }): void {
+  }): boolean {
     const code = payload.code ?? payload.data?.code
     const isAuthFailure = code
       ? code === 'AUTH_FAILED'
@@ -235,8 +248,10 @@ class WsClient {
       Date.now() - this.lastRefreshAt > WsClient.REFRESH_COOLDOWN
     ) {
       this.lastRefreshAt = Date.now()
-      void this.refreshHandler().catch(() => null)
+      this.pendingRefresh = this.refreshHandler().catch(() => null)
+      return true
     }
+    return false
   }
 
   private startHeartbeat(): void {

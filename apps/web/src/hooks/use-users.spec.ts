@@ -14,12 +14,14 @@ vi.mock('@/lib/api', () => ({
   api: apiMock,
 }))
 
+import { useAuthStore } from '@/store/auth-store'
 import { renderHookWithQuery, waitFor } from '@/test/utils'
 import { useCreateUser, useDeleteUser, useUpdateUser, useUser, useUsers } from './use-users'
 
 describe('use-users hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useAuthStore.setState({ user: null })
   })
 
   describe('useUsers', () => {
@@ -142,6 +144,17 @@ describe('use-users hooks', () => {
 
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['users'] })
       expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['auth', 'me'] })
+    })
+
+    it('M3：改自己（同 id）的非角色字段 → 仍失效 auth.me（Header 昵称即时刷新）', async () => {
+      apiMock.patch.mockResolvedValue({ data: { code: 200, data: { id: 1 } } })
+      useAuthStore.setState({ user: { id: 1 } as never })
+      const { result, queryClient } = renderHookWithQuery(() => useUpdateUser())
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+      await result.current.mutateAsync({ id: 1, data: { nickname: '新昵称' } })
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['auth', 'me'] })
     })
   })
 })

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // vi.mock 被 hoist，需用 vi.hoisted 创建 mock 对象
-const { wsMock, apiMock, refreshMock } = vi.hoisted(() => ({
+const { wsMock, apiMock, refreshMock, redirectMock } = vi.hoisted(() => ({
   wsMock: {
     connect: vi.fn(),
     disconnect: vi.fn(),
@@ -15,10 +15,16 @@ const { wsMock, apiMock, refreshMock } = vi.hoisted(() => ({
     post: vi.fn(),
   },
   refreshMock: vi.fn(),
+  redirectMock: { to: vi.fn() },
 }))
 
 vi.mock('@/lib/ws', () => ({ wsClient: wsMock }))
-vi.mock('@/lib/api', () => ({ api: apiMock, refreshAccessToken: refreshMock }))
+vi.mock('@/lib/api', () => ({
+  api: apiMock,
+  refreshAccessToken: refreshMock,
+  // L14：登出跳转统一走 authRedirect 出口
+  authRedirect: redirectMock,
+}))
 
 import { useAuthStore } from '@/store/auth-store'
 import { renderHookWithQuery } from '@/test/utils'
@@ -44,6 +50,7 @@ describe('useWebSocket（M6/J2）', () => {
     const result = await getRefreshHandler()()
 
     expect(result).toBeNull()
+    expect(redirectMock.to).toHaveBeenCalledWith('/login')
     // clearUserScopedState 生效：认证态清空，token 为空后 scheduleReconnect 不再建连
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
     expect(useAuthStore.getState().token).toBeNull()

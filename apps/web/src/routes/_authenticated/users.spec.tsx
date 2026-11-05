@@ -159,6 +159,14 @@ describe('M2：自改不上送 roleId/status（后端对自改 roleId 一律 403
     expect(data.roleId).toBe(2)
     expect(data.status).toBe(true)
   })
+
+  it('L12：清空昵称提交 null 而非空串（契约要求显式置空）', async () => {
+    render(<UsersContent />)
+
+    const data = await submitNickname(1, '')
+
+    expect(data.nickname).toBeNull()
+  })
 })
 
 describe('M3：手机号提交门控（后端对他人 phone 要求 USER_ROLE_MANAGE）', () => {
