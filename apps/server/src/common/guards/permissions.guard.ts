@@ -11,6 +11,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import type { Request } from 'express'
 import { PERMISSIONS_KEY } from '@/common/decorators/permissions.decorator'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { noteRedisDegraded } from '@/common/utils/redis-degradation'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
 import { permissions, rolePermissions, roles, users } from '@/db/schema'
@@ -99,7 +100,13 @@ export class PermissionsGuard implements CanActivate {
     // 查询用户权限码，优先走 Redis 缓存
     const cacheKey = this.getPermissionCacheKey(userRecord.roleId)
     let permissionCodes: string[] | null = null
-    const cached = await this.redisService.get(cacheKey)
+    // L2：缓存读故障降级直查 DB（本守卫本就 fail-closed），仅补降级观测
+    let cached: string | null = null
+    try {
+      cached = await this.redisService.get(cacheKey)
+    } catch {
+      noteRedisDegraded('auth:permission-cache')
+    }
     if (cached) {
       try {
         permissionCodes = JSON.parse(cached) as string[]
@@ -170,7 +177,10 @@ export class PermissionsGuard implements CanActivate {
     const normalize = (r: string) => (r.endsWith('/') && r.length > 1 ? r.slice(0, -1) : r)
     if (normalize(pattern) === normalize(route)) return true
     if (pattern.endsWith('*')) {
-      return route.startsWith(pattern.slice(0, -1))
+      // L4：通配分支同样做尾斜杠归一——'GET /files/*' 需覆盖根路径 'GET /files'，
+      // 同时避免归一后的前缀把 '/filesystem' 误当成 '/files' 子树
+      const rawPrefix = pattern.slice(0, -1)
+      return normalize(route) === normalize(rawPrefix) || route.startsWith(rawPrefix)
     }
     if (!pattern.includes('/:')) return false
 

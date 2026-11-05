@@ -16,6 +16,8 @@ import * as argon2 from 'argon2'
 import { and, eq } from 'drizzle-orm'
 import { normalizeIpForKey } from '@/common/utils/ip-normalize'
 import { noteRedisDegraded, noteRedisRecovered } from '@/common/utils/redis-degradation'
+import { retryOnce } from '@/common/utils/retry-once'
+import { revokeActiveAccessTokens } from '@/common/utils/token-revocation'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { isUniqueViolation, notDeleted } from '@/db/helpers'
@@ -165,6 +167,16 @@ export class AuthService {
     }
   }
 
+  /** L2：refresh 链 Redis 读故障统一 503 口径（与签发段一致），并计入降级观测 */
+  private async withRefreshRedis<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn()
+    } catch {
+      noteRedisDegraded('auth:refresh')
+      throw new ServiceUnavailableException('认证服务暂不可用，请稍后重试')
+    }
+  }
+
   async refresh(refreshToken: string): Promise<TokenPair> {
     let payload: {
       sub: number
@@ -187,7 +199,9 @@ export class AuthService {
     // L7：登出失效时间戳早退——签发时间早于最近一次登出的 token 一律拒绝
     //（iat 为秒、时间戳为毫秒，按 iat 该秒末尾比较：同秒内重新登录的新 token 放行，
     // 严格比较会把"登出后同一秒登录"误判为吊销）
-    const logoutAt = Number((await this.redisService.get(`logout:at:${payload.sub}`)) ?? 0)
+    const logoutAt = Number(
+      (await this.withRefreshRedis(() => this.redisService.get(`logout:at:${payload.sub}`))) ?? 0,
+    )
     if (logoutAt > 0 && (payload.iat ?? 0) * 1000 + 999 < logoutAt) {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
@@ -196,7 +210,7 @@ export class AuthService {
     // 原顺序先 getdel，DB 抖动抛 503 时旧 RT 已销毁且新 token 未返回，客户端被迫重登
     //（多端共享 RT 的部署下放大为一次全员强制重登）
     const refreshKey = `refresh:${payload.sub}:${payload.jti}`
-    const storedPre = await this.redisService.get(refreshKey)
+    const storedPre = await this.withRefreshRedis(() => this.redisService.get(refreshKey))
     if (storedPre !== '1') {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
@@ -220,7 +234,7 @@ export class AuthService {
     }
 
     // 原子 getdel 复核并作废旧 token：并发重放时只有一个请求能拿到 '1'
-    const stored = await this.redisService.getdel(refreshKey)
+    const stored = await this.withRefreshRedis(() => this.redisService.getdel(refreshKey))
     if (stored !== '1') {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
@@ -244,7 +258,9 @@ export class AuthService {
     // L7：签发后复检——早退与落盘之间发生的登出拦不住（竞态设备 getdel 先于
     // deleteByPattern 完成、新 refresh 键晚于清理写入即存活）。令牌未出网关，
     // 直接作废不返回即可（孤儿键 7d 自然过期）
-    const logoutAtFinal = Number((await this.redisService.get(`logout:at:${user.id}`)) ?? 0)
+    const logoutAtFinal = Number(
+      (await this.withRefreshRedis(() => this.redisService.get(`logout:at:${user.id}`))) ?? 0,
+    )
     if (logoutAtFinal > 0 && (payload.iat ?? 0) * 1000 + 999 < logoutAtFinal) {
       throw new UnauthorizedException(ErrorMessages[ErrorCodes.INVALID_TOKEN])
     }
@@ -268,48 +284,31 @@ export class AuthService {
       'refresh token 吊销',
     )
     // 批量吊销全部活跃 access token（多设备/refresh 轮换后遗留的旧 token 一并拉黑，TTL=15min 与 token 有效期一致）
-    await this.retryAndRecord(() => this.revokeAllAccessTokens(userId), 'access token 拉黑')
+    await this.retryAndRecord(
+      () => revokeActiveAccessTokens(this.redisService, userId),
+      'access token 拉黑',
+    )
 
     return { message: '退出登录成功' }
   }
 
   /** 单段重试一次，仍失败写 error_logs 留痕；留痕自身失败降级 logger（业务已成功不回滚） */
   private async retryAndRecord(fn: () => Promise<unknown>, what: string): Promise<void> {
-    try {
-      await fn()
-    } catch {
-      try {
-        await fn()
-      } catch (retryErr) {
-        const message = `退出登录 ${what} 失败（重试后仍失败）: ${
-          retryErr instanceof Error ? retryErr.message : String(retryErr)
-        }`
-        try {
-          await this.errorLogsService.record({ message, internal: true })
-        } catch (recordErr) {
-          this.logger.warn(
-            `退出登录失败留痕写入失败: ${
-              recordErr instanceof Error ? recordErr.message : String(recordErr)
-            }`,
-          )
-        }
-      }
-    }
-  }
+    const retryErr = await retryOnce(fn)
+    if (retryErr === null) return
 
-  /**
-   * 批量吊销用户活跃 access token：读活跃 jti → 写黑名单 → 清活跃记录
-   * 与 UsersService.revokeAccessTokens 逻辑一致，内联以避免模块循环依赖
-   */
-  private async revokeAllAccessTokens(userId: number): Promise<void> {
-    const activeKeys = await this.redisService.scanKeys(`access:active:${userId}:*`)
-    if (activeKeys.length === 0) return
-    const prefix = `access:active:${userId}:`
-    for (const key of activeKeys) {
-      const jti = key.slice(prefix.length)
-      await this.redisService.set(`access:${userId}:${jti}`, '1', 15 * 60)
+    const message = `退出登录 ${what} 失败（重试后仍失败）: ${
+      retryErr instanceof Error ? retryErr.message : String(retryErr)
+    }`
+    try {
+      await this.errorLogsService.record({ message, internal: true })
+    } catch (recordErr) {
+      this.logger.warn(
+        `退出登录失败留痕写入失败: ${
+          recordErr instanceof Error ? recordErr.message : String(recordErr)
+        }`,
+      )
     }
-    await this.redisService.deleteByPattern(`access:active:${userId}:*`)
   }
 
   async getProfile(userId: number): Promise<

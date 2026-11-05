@@ -128,6 +128,13 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     expect(redisService.getdel).not.toHaveBeenCalled()
   })
 
+  it('L2：refresh 链 Redis 读故障 → 统一 503 而非 500', async () => {
+    redisService.get.mockRejectedValueOnce(new Error('redis down'))
+
+    await expect(service.refresh('token')).rejects.toThrow(ServiceUnavailableException)
+    expect(redisService.getdel).not.toHaveBeenCalled()
+  })
+
   it('L2：状态校验失败（禁用）同样不消耗 RT', async () => {
     vi.mocked(db.query.users.findFirst).mockResolvedValue({ ...userRow, status: false } as never)
 

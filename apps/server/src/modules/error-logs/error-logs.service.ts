@@ -10,6 +10,7 @@ import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { appendErrorLog } from '@/common/logger'
 import { normalizeIpForKey } from '@/common/utils/ip-normalize'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { noteRedisDegraded } from '@/common/utils/redis-degradation'
 import { db } from '@/db'
 import { isUniqueViolation, maybeDeleted, notDeleted } from '@/db/helpers'
 import { trackDbWrite } from '@/db/pending-writes'
@@ -78,7 +79,12 @@ export class ErrorLogsService {
       await this.enforceDailyIpLimit(params.ip)
     }
 
-    return this.insertLog(params)
+    // M1：公开上报的 statusCode 由客户端自填——>=400 会被 isForensicLog 判定为取证行，
+    // 匿名即可种出持 error_log:manage 的委托管理员删不掉的行；仅保留 <400 的前端语义值
+    const reportedStatusCode =
+      params.statusCode !== undefined && params.statusCode < 400 ? params.statusCode : undefined
+
+    return this.insertLog({ ...params, statusCode: reportedStatusCode })
   }
 
   /**
@@ -173,6 +179,8 @@ export class ErrorLogsService {
       )) as number
       return n <= threshold
     } catch {
+      // L2：Redis 故障降级放行（宁可多记不漏记），同时接入聚合观测
+      noteRedisDegraded('error-logs:record')
       return true
     }
   }
@@ -431,7 +439,8 @@ export class ErrorLogsService {
       }
     } catch (err) {
       if (err instanceof ConflictException) throw err
-      // Redis 异常时降级放行，避免阻塞主流程
+      // L2：Redis 异常时降级放行，避免阻塞主流程；接入聚合观测
+      noteRedisDegraded('error-logs:daily-ip')
     }
   }
 

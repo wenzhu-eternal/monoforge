@@ -98,7 +98,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // 先写文件日志兜底（无论 DB 是否成功都不丢）
     if (shouldRecordToDb) {
       const stack = exception instanceof Error ? exception.stack : undefined
-      appendErrorLog(`${request.method} ${request.url} [${status}] ${message}`, stack)
+      // L18 对齐：文件日志与 DB 落库同口径剥离 query，避免敏感参数进主机日志
+      appendErrorLog(
+        `${request.method} ${request.url?.split('?')[0]} [${status}] ${message}`,
+        stack,
+      )
     }
 
     // 异步入库错误日志（不阻塞响应），白名单过滤与缓存交给 ErrorLogsService

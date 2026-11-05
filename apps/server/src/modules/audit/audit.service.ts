@@ -4,6 +4,7 @@ import type { PaginatedResponse } from '@shared/schemas/pagination'
 import { and, count, desc, eq, sql } from 'drizzle-orm'
 import { appendErrorLog } from '@/common/logger'
 import { normalizeIpForKey } from '@/common/utils/ip-normalize'
+import { noteRedisDegraded } from '@/common/utils/redis-degradation'
 import { db } from '@/db'
 import { trackDbWrite } from '@/db/pending-writes'
 import { auditLogs, users } from '@/db/schema'
@@ -87,7 +88,8 @@ export class AuditService {
       )) as number
       return n <= limit
     } catch {
-      // Redis 故障降级放行（宁多记不漏记）
+      // Redis 故障降级放行（宁多记不漏记），并接入聚合观测避免长故障期静默
+      noteRedisDegraded('audit:record')
       return true
     }
   }

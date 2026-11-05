@@ -74,7 +74,7 @@ export class MailService {
       return await this.redisService.setNx(`mail:limit:${to}`, '1', 60)
     } catch {
       // Redis 异常时降级放行，避免阻塞主流程
-      this.logger.warn(`邮件限流锁获取失败，降级放行: ${to}`)
+      this.logger.warn(`邮件限流锁获取失败，降级放行: ${maskEmail(to)}`)
       return true
     }
   }
@@ -231,7 +231,7 @@ export class MailService {
     attachments: Attachment[] = [],
   ): Promise<void> {
     if (!this.transporter) {
-      this.logger.warn(`邮件服务未配置，跳过发送: ${subject} -> ${to}`)
+      this.logger.warn(`邮件服务未配置，跳过发送: ${subject} -> ${maskEmail(to)}`)
       return
     }
 
@@ -254,7 +254,7 @@ export class MailService {
 
   private async sendHtml(to: string, subject: string, html: string): Promise<void> {
     if (!this.transporter) {
-      this.logger.warn(`邮件服务未配置，跳过发送: ${subject} -> ${to}`)
+      this.logger.warn(`邮件服务未配置，跳过发送: ${subject} -> ${maskEmail(to)}`)
       return
     }
 
@@ -274,7 +274,7 @@ export class MailService {
 
   private async send(to: string, subject: string, text: string): Promise<void> {
     if (!this.transporter) {
-      this.logger.warn(`邮件服务未配置，跳过发送: ${subject} -> ${to}`)
+      this.logger.warn(`邮件服务未配置，跳过发送: ${subject} -> ${maskEmail(to)}`)
       return
     }
 

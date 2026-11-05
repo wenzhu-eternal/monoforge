@@ -116,6 +116,29 @@ describe('ErrorLogsService', () => {
       expect(mockDb.insert).toHaveBeenCalled()
     })
 
+    it('M1：公开上报的 statusCode 不得伪造取证签名（>=400 一律丢弃）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      vi.mocked(mockDb.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      } as never)
+      const valuesMock = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([{ id: 1 }]),
+      })
+      vi.mocked(mockDb.insert).mockReturnValue({ values: valuesMock } as never)
+
+      await service.report({ message: 'boom', statusCode: 500 })
+      expect(valuesMock.mock.calls[0]?.[0]).toMatchObject({ statusCode: undefined })
+
+      await service.report({ message: 'favicon 404', statusCode: 404 })
+      expect(valuesMock.mock.calls[1]?.[0]).toMatchObject({ statusCode: undefined })
+
+      // 前端语义值（<400，如网络错误 0）保留，便于排查
+      await service.report({ message: 'network error', statusCode: 0 })
+      expect(valuesMock.mock.calls[2]?.[0]).toMatchObject({ statusCode: 0 })
+    })
+
     it('缓存中 isActive=false 的规则不匹配（停用规则不生效）', async () => {
       redisServiceMock.get.mockResolvedValue(
         JSON.stringify([{ pattern: 'ECONNRESET', matchType: 'message', isActive: false }]),
