@@ -7,7 +7,7 @@
 3. **禁止后端绕过 zod 自定义 DTO** - 使用 `nestjs-zod` 桥接，详见「Zod DTO 桥接」章节
 4. **错误码集中到 shared** - 前后端共享 `@shared/constants/errors`
 5. **写侧 schema 一律 `z.strictObject`**（Create/Update/入参型）——普通 `z.object` 会把调用方多传的字段静默 strip，产生「200 假成功零生效」（如把 `permissionIds` 误传进建角色）。读侧/聚合投影 schema 维持 `z.object`（需要容忍服务端漏发的展示字段）
-6. **DB nullable 列必须在写侧契约留出显式置空通道**：补 `.nullable()`（清空传 `null`），空串仍拒；新增 nullable 列时同步检查 Create/Update 两处 schema
+6. **DB nullable 列必须在写侧契约留出显式置空通道**：补 `.nullable()`（清空传 `null`）；格式绑定字段（email/phone/username 等 regex 字段）空串仍拒，自由文本（nickname/description）允许空串但前端应统一提交 `null`，避免 `''` 落库；新增 nullable 列时同步检查 Create/Update 两处 schema
 
 ## 命名规范
 

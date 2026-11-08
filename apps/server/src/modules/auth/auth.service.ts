@@ -122,7 +122,8 @@ export class AuthService {
    * M2：登录失败按 ip+username 计数封顶（防零成本定向锁死任意账号，含 admin）。
    * L3：检查与计数合并为单次 Lua——旧实现先 GET 读后放行（check-then-act），并发错误
    * 密码全读到同一旧值，封顶退化为"10 个串行批次"；INCR+首带 EXPIRE 原子无计数竞态。
-   * "尝试即计数"与原"失败才计数"等效：成功登录 clearLoginFailures 清零。
+   * L4："尝试即计数"比旧"失败才计数"更严格、并非等效：第 11 次即使密码正确也返回 429，
+   * 成功登录后才 clearLoginFailures 清零；不要按"等效论据"把它重构回失败才计数。
    * Redis 故障降级放行（登录是核心路径，不因缓存抖动锁死用户）；触发锁定打告警供追踪。
    */
   private async enforceLoginAttemptLimit(username: string, ip?: string): Promise<void> {

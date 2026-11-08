@@ -35,7 +35,7 @@
 
 - 刷新流程：旧 refresh 验证 → Redis 删除旧 refresh → 签发新 access + refresh → 新 refresh 存 Redis（轮换）
 
-- **登出批量吊销**：logout 删除 Redis 中全部 refresh（`refresh:{userId}:*`）外，还必须 `revokeAllAccessTokens`——扫描 `access:active:{userId}:*` 活跃索引，逐个把 jti 写入 `access:{userId}:{jti}` 黑名单（TTL = access 剩余有效期），再删除索引。仅吊销当前请求的 token 会放行其他设备的活跃 access token
+- **登出批量吊销**：logout 删除 Redis 中全部 refresh（`refresh:{userId}:*`）外，还必须 `revokeActiveAccessTokens`（`apps/server/src/common/utils/token-revocation.ts`）——扫描 `access:active:{userId}:*` 活跃索引，逐个把 jti 写入 `access:{userId}:{jti}` 黑名单（TTL = access 剩余有效期），再删除索引。仅吊销当前请求的 token 会放行其他设备的活跃 access token
 
 - **前端登出必须清空查询缓存**：后端吊销 token 只解决服务端会话，客户端 React Query 缓存仍在内存中（默认 `gcTime` 5 分钟）。若登出只清 zustand，下一个用户在同一浏览器标签登录后，会先渲染上一个用户的 `users`/`files`/`error-logs` 等缓存数据，造成跨账号数据泄漏。统一走 `clearUserScopedState()`（`apps/web/src/lib/auth-cleanup.ts`）：同时执行 `useAuthStore.logout()` + `queryClient.clear()`。**所有登出入口（用户主动登出、改密后登出、refresh 失败、bootstrapAuth 失败）必须调用该函数，禁止直接调 `logout()`**
 
@@ -96,6 +96,7 @@
 ### 用户读侧 PII（L17）
 
 - `GET /users` 与 `GET /users/:id` 仅需 `USER_VIEW`：**非超管**响应中的 `email`/`phone` 由 service 层掩码（`a***@domain`、`138****5678`），超管返回原文；软删行仅超管可见
+- 短值退化形态（L25）：邮箱本地部分为空/超短时退化为 `***`，手机号不足 8 位时整串为 `****`——读侧契约 union 同样接受这两种形态（否则 serializer 运行时 parse 抛 500）
 - 掩码是读侧收敛，不改变写侧权限闸：`USER_UPDATE` 仍可编辑邮箱等字段，但"能查看列表"不再等于可批量导出全站 PII
 - 新增任何批量用户查询端点必须复用同一口径，禁止直接 `select email/phone` 下发
 

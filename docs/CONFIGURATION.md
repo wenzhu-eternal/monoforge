@@ -145,7 +145,7 @@ export const SendVerificationCodeMailSchema = z.object({
 
 ### 错误处理
 
-- `mail.service` 的 `send`/`sendHtml` catch 必须 `throw new Error(...)`，不能吞错
+- `mail.service` 的 `send`/`sendHtml` catch 必须抛 `ServiceUnavailableException`（503），不能吞错
 - `loadTemplates` 的 catch 与代码口径一致：告警并降级纯文本 fallback（模板缺失不阻塞启动；发信时由纯文本模板兜底），不是 fail-fast
 - 让上层 controller 处理响应和 toast
 
@@ -192,10 +192,11 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 
 - `docker-compose.yml` 已为 `postgres`/`redis`/`e2e-postgres`/`app` 四个容器默认注入 `TZ=${TZ:-Asia/Shanghai}`（可用根 `.env` 的 `TZ` 覆盖）。
 - `ScheduleService` 的 5 个 `@Cron` **均显式传 `{ timeZone: 'Asia/Shanghai' }`（Q15）**——不再依赖容器 `TZ`；裸 `docker run`/主机直跑未注入 `TZ` 时，"每天 0 点备份/0:30 清理"仍按北京时间执行，不会漂到 UTC 的 8:00 早高峰。
+- **进程本地日界与 cron 口径存在刻意差异（L3）**：配额日界、告警去重键、错误上报日限按进程本地时区滚动（`TZ` 未注入时等于 UTC），而 cron 固定北京时间——运维按"备份日"解读"今日配额"时存在 8 小时错位。生产容器已默认注入 `TZ=Asia/Shanghai`（见上一条），裸机部署须自行导出同名环境变量以对齐。
 
 ## 依赖安全基线
 
-- 传递依赖的已知漏洞修复线统一钉在 `pnpm-workspace.yaml` 的 `overrides`（pnpm 10 起不再读取根 `package.json` 的 `pnpm` 字段）：`proxy-addr>=2.0.8`、`multer>=2.5.0`、`engine.io>=6.6.10`、`socket.io-parser>=4.2.7`、`handlebars>=4.7.10`、`nodemailer>=10.3.1`、`axios>=1.20.0`、`body-parser>=2.4.0`、`zod>=4.6.6`、`qs>=6.16.1`、`follow-redirects>=1.16.2`、`seroval>=1.6.8`、`js-yaml>=4.3.2`
+- 传递依赖的已知漏洞修复线统一钉在 `pnpm-workspace.yaml` 的 `overrides`（pnpm 10 起不再读取根 `package.json` 的 `pnpm` 字段）：`proxy-addr>=2.0.8`、`multer>=2.5.0`、`engine.io>=6.6.10`、`socket.io-parser>=4.2.7`、`handlebars>=4.7.10`、`nodemailer>=10.3.1`、`axios>=1.20.0`、`body-parser>=2.4.0`、`zod>=4.6.6`、`qs>=6.16.1`、`follow-redirects>=1.16.2`、`seroval>=1.6.8`、`seroval-plugins>=1.6.8`、`js-yaml>=4.3.2`、`esbuild>=0.25.0`
 - `pnpm security` 第 6 项与 CI `audit` job 均使用 `--registry=https://registry.npmjs.org` 实跑官方源；内网/镜像 registry 无 audit 端点时**"无结论"不等于"无漏洞"**，不得据此放行
 - 当前唯一残留为 `deepmerge`（`nestjs-zod` 传递依赖，无修复版本）low——原型污染需攻击者控制合并源，本仓无该调用面
 

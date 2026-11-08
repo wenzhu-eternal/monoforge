@@ -5,7 +5,7 @@
 | 层级 | 目的 | 速度 | 依赖 | 命令 |
 |---|---|---|---|---|
 | 单元测试（unit） | 验证 service/controller 单一函数逻辑 | 快（ms） | Mock DB/Redis | `pnpm test` |
-| E2E 冒烟测试（smoke） | 验证后端**16 模块核心 CRUD 与鉴权链路**端到端可用 | 中（s） | 真实 DB | `pnpm --filter=server test:e2e` |
+| E2E 冒烟测试（smoke） | 验证后端**15 个对外 HTTP controller 模块核心 CRUD 与鉴权链路**端到端可用 | 中（s） | 真实 DB | `pnpm --filter=server test:e2e` |
 | 全链路 e2e（Playwright） | 验证前端 UI + 后端 API 全链路（含角色绑定/权限守卫/WebSocket） | 慢（s） | 真实 DB + 浏览器 | `pnpm test:e2e` |
 | 安全/规范检测 | 代码静态扫描 | 快（ms） | 无 | `pnpm security` |
 
@@ -52,7 +52,7 @@ pnpm --filter=web test:coverage
 
 ### 定位
 
-**核心 API 冒烟**：覆盖后端 16 个模块的核心 CRUD 与鉴权链路（71 个用例，实触 61 个端点；restore 系、个人改密、通知已读/删除等边缘端点未纳入），验证端到端可用。覆盖：
+**核心 API 冒烟**：覆盖后端 15 个对外 HTTP controller 模块的核心 CRUD 与鉴权链路（`modules/` 目录共 17 个模块，其中 2 个无对外 controller；71 个用例，实触 61 个端点；restore 系、个人改密、通知已读/删除等边缘端点未纳入），验证端到端可用。覆盖：
 
 1. **健康检查**：`/api/v1/health` 返回 200
 2. **认证**：login 成功返回 access_token，错误密码 401；`/auth/me` 返回当前用户；refresh/logout 全流程
