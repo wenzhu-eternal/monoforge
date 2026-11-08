@@ -231,7 +231,7 @@ test('admin 查看用户列表', async ({ page }) => {
 | `typecheck` | `tsc --noEmit`（shared + server + web + e2e；server/shared 追加 `-p tsconfig.test.json` 覆盖 spec/test） | 无 |
 | `security` | `bash scripts/security-check.sh`（第 6 项已改用官方 registry 实跑 audit） | 无 |
 | `audit` | `pnpm audit --prod --registry=https://registry.npmjs.org --audit-level=high`（官方源硬门，M1-M3 教训） | 无 |
-| `unit-test` | `pnpm test`（Mock DB，三包 827 用例：server 574 + web 179 + shared 74） | 无 |
+| `unit-test` | `pnpm test`（Mock DB，三包 856 用例：server 590 + web 192 + shared 74） | 无 |
 | `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，73 用例：71 冒烟 + 2 启动告警） | postgres + redis services |
 | `e2e-test` | `pnpm test:e2e`（Playwright，78 用例 / 14 个 spec） | postgres + redis services + playwright install |
 | `docker-smoke` | `docker build` + 起生产镜像 + 轮询 `/api/v1/health`（防镜像层故障逃逸，H1） | postgres + redis services |
@@ -277,7 +277,7 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 实际 CI 配置见 `.github/workflows/ci.yml`，push 时触发 8 个并行 job（lint / typecheck / security / audit / unit-test / smoke-test / e2e-test / docker-smoke），全部通过后聚合 build job 执行 `pnpm build`。
 
 **4 个测试链路全量通过门槛**：
-- `unit-test`：`pnpm test`（server 574 + web 179 + shared 74，共 827 单测）
+- `unit-test`：`pnpm test`（server 590 + web 192 + shared 74，共 856 单测）
 - `smoke-test`：`pnpm --filter=server test:e2e:ci`（73 个：71 API 冒烟 + 2 启动告警）
 - `e2e-test`：`pnpm test:e2e`（78 个 Playwright 全链路）
 - `security`：`bash scripts/security-check.sh`（lint + typecheck + 软删除审计 + 依赖安全扫描）
