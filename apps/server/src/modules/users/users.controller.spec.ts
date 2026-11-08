@@ -395,4 +395,20 @@ describe('UsersController', () => {
       expect(service.remove).not.toHaveBeenCalled()
     })
   })
+
+  describe('restore', () => {
+    it('L10：透传调用者给 service（复权需按角色权限集校验）', async () => {
+      const currentUser = {
+        sub: 2,
+        username: 'operator',
+        email: 'operator@test.com',
+        roleId: 2,
+      } as TokenPayload
+      vi.mocked(service.restore).mockResolvedValue({ id: 5 } as never)
+
+      await controller.restore(5, currentUser)
+
+      expect(service.restore).toHaveBeenCalledWith(5, currentUser)
+    })
+  })
 })

@@ -257,6 +257,79 @@ describe('ErrorLogsService', () => {
       expect((valuesCall.context as Record<string, unknown>).url).toBe('/api/v1/users')
     })
 
+    it('M2：匿名 401 的大 body 不落库（防匿名稳态写放大）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      redisServiceMock.eval.mockResolvedValue(3)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 9 }]),
+        }),
+      } as never)
+
+      await service.record({
+        message: 'Unauthorized',
+        statusCode: 401,
+        url: '/api/v1/users',
+        method: 'POST',
+        context: {
+          method: 'POST',
+          url: '/api/v1/users',
+          body: { payload: 'x'.repeat(100_000) },
+        },
+      })
+
+      const valuesCall = vi.mocked(mockDb.insert).mock.results[0].value.values.mock
+        .calls[0][0] as Record<string, unknown>
+      expect(valuesCall.context).toEqual({ method: 'POST', url: '/api/v1/users' })
+    })
+
+    it('M2：认证态 4xx 超限 context 截断至 4KB 保留片段', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      redisServiceMock.eval.mockResolvedValue(3)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 10 }]),
+        }),
+      } as never)
+
+      await service.record({
+        message: 'Forbidden',
+        statusCode: 403,
+        url: '/api/v1/users',
+        method: 'POST',
+        userId: 1,
+        context: { body: { payload: 'y'.repeat(100_000) } },
+      })
+
+      const valuesCall = vi.mocked(mockDb.insert).mock.results[0].value.values.mock
+        .calls[0][0] as Record<string, unknown>
+      expect(JSON.stringify(valuesCall.context).length).toBeLessThanOrEqual(4096)
+      expect(valuesCall.context).toMatchObject({ truncated: true })
+    })
+
+    it('M2：匿名 5xx 超限同样截断（不因匿名而整体丢弃取证堆栈）', async () => {
+      redisServiceMock.get.mockResolvedValue(null)
+      redisServiceMock.eval.mockResolvedValue(3)
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: 11 }]),
+        }),
+      } as never)
+
+      await service.record({
+        message: 'Internal Server Error',
+        statusCode: 500,
+        url: '/api/v1/files/upload',
+        method: 'POST',
+        context: { body: { payload: 'z'.repeat(100_000) } },
+      })
+
+      const valuesCall = vi.mocked(mockDb.insert).mock.results[0].value.values.mock
+        .calls[0][0] as Record<string, unknown>
+      expect(JSON.stringify(valuesCall.context).length).toBeLessThanOrEqual(4096)
+      expect(valuesCall.context).toMatchObject({ truncated: true })
+    })
+
     it('M6：4xx 封顶键含来源维度——不同用户/IP 各自独立计数，不共享同一预算', async () => {
       redisServiceMock.get.mockResolvedValue(null)
       redisServiceMock.eval.mockResolvedValue(3)

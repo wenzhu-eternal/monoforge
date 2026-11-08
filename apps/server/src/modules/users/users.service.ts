@@ -604,7 +604,7 @@ export class UsersService {
     return { message: `用户 ID ${id} 已删除` }
   }
 
-  async restore(id: number): Promise<Omit<User, 'password'>> {
+  async restore(id: number, caller?: { roleId?: number | null }): Promise<Omit<User, 'password'>> {
     const existingUser = await db.query.users.findFirst({
       where: eq(users.id, id),
     })
@@ -615,6 +615,12 @@ export class UsersService {
 
     if (!existingUser.deletedAt) {
       throw new ConflictException('用户未被删除，无需恢复')
+    }
+
+    // L10：复权等于恢复该账号原有权限集——只验 user:delete 会让委托运维以最低敏感码
+    // 复活"被软删隔离的高权账号"（旧密码哈希原样复活可登录），需与 create/update 同口径
+    if (existingUser.roleId !== null) {
+      await this.assertRoleWithinCallerScope(existingUser.roleId, caller)
     }
 
     const duplicateUsername = await db.query.users.findFirst({

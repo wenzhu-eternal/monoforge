@@ -62,11 +62,20 @@ vi.mock('@/hooks/use-users', () => {
   }
   const self = { ...other, id: 7, username: 'me', email: 'm@example.com', nickname: 'Me' }
   const third = { ...other, id: 3, username: 'third', email: 't@example.com', nickname: 'Third' }
+  // M1：非超管读侧掩码形态（后端对一切非 ADMIN_ROLE_ID 者掩码 email/phone）
+  const masked = {
+    ...other,
+    id: 4,
+    username: 'masked',
+    email: 'a***@example.com',
+    phone: '138****5678',
+    nickname: 'Masked',
+  }
   const pendingDelete = (id: number) =>
     new Promise<void>((resolve) => state.deleteCalls.push({ id, resolve }))
   return {
     useUsers: () => ({
-      data: { list: [other, self, third], total: 3 },
+      data: { list: [other, self, third, masked], total: 4 },
       isLoading: false,
       isError: false,
       error: null,
@@ -166,6 +175,67 @@ describe('M2：自改不上送 roleId/status（后端对自改 roleId 一律 403
     const data = await submitNickname(1, '')
 
     expect(data.nickname).toBeNull()
+  })
+})
+
+describe('M1：非超管掩码回显不得被写侧校验卡死', () => {
+  beforeEach(() => {
+    state.me = { id: 7, adminRoleId: 1 }
+    state.updatePayloads = []
+  })
+
+  async function submitOnMaskedRow(nickname: string) {
+    await openEditModal(3)
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: nickname } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    return payload.data
+  }
+
+  it('无 user:role_manage 打开掩码用户仅改昵称 → 不触发表单校验且不提交 email/phone', async () => {
+    state.granted = [PermissionCodes.USER_UPDATE]
+    render(<UsersContent />)
+
+    await openEditModal(3)
+    const emailInput = screen.getByLabelText('邮箱')
+    expect(emailInput).toHaveValue('')
+    expect(emailInput).toHaveAttribute('placeholder', '原值已脱敏，留空保持不变')
+
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: '掩码新昵称' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    expect(payload.data.nickname).toBe('掩码新昵称')
+    expect(payload.data).not.toHaveProperty('email')
+    expect(payload.data).not.toHaveProperty('phone')
+  })
+
+  it('持 user:role_manage 打开掩码用户仅改昵称 → 同样可保存（管理权限不等于原文可见）', async () => {
+    state.granted = [PermissionCodes.USER_UPDATE, PermissionCodes.USER_ROLE_MANAGE]
+    render(<UsersContent />)
+
+    const data = await submitOnMaskedRow('管理新昵称')
+
+    expect(data.nickname).toBe('管理新昵称')
+    expect(data).not.toHaveProperty('email')
+    expect(data).not.toHaveProperty('phone')
+  })
+
+  it('掩码用户手填新邮箱 → 仅提交新值（掩码原值不直通后端）', async () => {
+    state.granted = [PermissionCodes.USER_UPDATE, PermissionCodes.USER_ROLE_MANAGE]
+    render(<UsersContent />)
+
+    await openEditModal(3)
+    fireEvent.change(screen.getByLabelText('邮箱'), { target: { value: 'new@example.com' } })
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: '新昵称' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    expect(payload.data.email).toBe('new@example.com')
   })
 })
 

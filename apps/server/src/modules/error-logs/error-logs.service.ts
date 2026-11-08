@@ -62,6 +62,38 @@ function isForensicLog(statusCode: number | null | undefined): boolean {
   return statusCode === 401 || statusCode === 403 || statusCode === 429 || statusCode >= 500
 }
 
+// M2：context 落库容量纪律——单个匿名 4xx 请求即可携带 ~100KB body（Express 默认 limit）
+const MAX_CONTEXT_CHARS = 4 * 1024
+const ANONYMOUS_FORENSIC_STATUS = new Set([401, 403, 429])
+
+function isAnonymousForensic(statusCode?: number, userId?: number): boolean {
+  return (
+    (!userId || userId <= 0) &&
+    statusCode !== undefined &&
+    ANONYMOUS_FORENSIC_STATUS.has(statusCode)
+  )
+}
+
+/** M2：匿名取证行不存 body（取证价值趋零）；其余序列化超限只留截断片段 */
+function limitContext(
+  context: Record<string, unknown> | undefined,
+  statusCode?: number,
+  userId?: number,
+): Record<string, unknown> | undefined {
+  if (!context) return undefined
+  if (isAnonymousForensic(statusCode, userId)) {
+    const { body: _body, ...rest } = context
+    return rest
+  }
+  const serialized = JSON.stringify(context)
+  if (serialized.length <= MAX_CONTEXT_CHARS) return context
+  return {
+    truncated: true,
+    originalSize: serialized.length,
+    preview: serialized.slice(0, MAX_CONTEXT_CHARS - 128),
+  }
+}
+
 @Injectable()
 export class ErrorLogsService {
   constructor(private readonly redisService: RedisService) {}
@@ -124,7 +156,7 @@ export class ErrorLogsService {
       const is5xx = params.statusCode >= 500
       const allowed = await this.enforceRecordMinuteCap(
         params.statusCode,
-        safeUrl,
+        params.method,
         params.userId,
         params.ip,
         is5xx ? 200 : 20,
@@ -149,27 +181,27 @@ export class ErrorLogsService {
   }
 
   /**
-   * record() 分钟级封顶：key=状态码+端点路径+来源+分钟，超 20 条丢弃。
+   * record() 分钟级封顶：key=状态码+请求方法+来源+分钟，超阈值丢弃。
    * Redis 故障降级放行（宁可多记不漏记）。
+   * M2：路径维度折叠到方法维度——按路径分桶时攻击者轮换 URL 取并集可绕过封顶。
    */
   private async enforceRecordMinuteCap(
     statusCode: number,
-    url?: string,
+    method?: string,
     userId?: number,
     ip?: string,
     threshold: number = 20,
   ): Promise<boolean> {
     try {
       // L7：单 Lua 脚本原子 INCR+EXPIRE，避免两步之间进程崩溃导致 key 永驻
-      // P2-6：数字段折叠为 :id，避免 /users/1…/99999 打爆 key 空间
-      const path = ((url ?? 'unknown').split('?')[0] ?? 'unknown').replace(/\d+/g, ':id')
+      const methodKey = method?.toUpperCase() ?? 'unknown'
       // M6：来源维度入键——原键按 (statusCode, path) 全局共享、无来源，已认证低权攻击者
       // 先对目标端点刷 20 次烧干本分钟预算，随后同端点的越权探测第 21 条起静默丢弃且
       // 4xx 无 IP 维度无法事后归因。来源入键后各用户/IP 独立计数，攻击者烧穿不影响取证。
       // 已认证按 userId（精确），匿名按归一 IP（/24 网段，复用 M5 归一防 key 爆炸）
       const source = userId && userId > 0 ? `u${userId}` : `ip${normalizeIpForKey(ip)}`
       const minute = new Date().toISOString().slice(0, 16)
-      const key = `err:record:${statusCode}:${path}:${source}:${minute}`
+      const key = `err:record:${statusCode}:${methodKey}:${source}:${minute}`
       const n = (await this.redisService.eval(
         `local n = redis.call('INCR', KEYS[1])
          if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
@@ -190,10 +222,11 @@ export class ErrorLogsService {
   ): Promise<{ id?: number; skipped?: boolean; reason?: string }> {
     // L18：report/record 两条入口统一在入库点剥离 query（含 context.url）
     const url = params.url?.split('?')[0]
-    const context =
+    const rawContext =
       params.context && typeof params.context.url === 'string'
         ? { ...params.context, url: params.context.url.split('?')[0] }
         : params.context
+    const context = limitContext(rawContext, params.statusCode, params.userId)
     const [created] = await db
       .insert(errorLogs)
       .values({

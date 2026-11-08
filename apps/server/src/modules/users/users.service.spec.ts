@@ -876,6 +876,86 @@ describe('UsersService', () => {
     })
   })
 
+  describe('restore', () => {
+    const deletedUser = {
+      id: 5,
+      username: 'former-admin',
+      email: 'former@example.com',
+      roleId: 9,
+      deletedAt: new Date(),
+    }
+
+    // 上一用例残留的 mockResolvedValueOnce 队列会污染后续用例（clearAllMocks 不清实现队列）
+    beforeEach(() => {
+      vi.mocked(mockDb.query.users.findFirst).mockReset()
+      vi.mocked(mockDb.query.roles.findFirst).mockReset()
+      vi.mocked(mockDb.select).mockReset()
+      vi.mocked(mockDb.update).mockReset()
+    })
+
+    function mockRestoreLookups(targetPerms: string[], callerPerms: string[]) {
+      vi.mocked(mockDb.query.users.findFirst)
+        .mockResolvedValueOnce(deletedUser as never)
+        .mockResolvedValue(undefined)
+      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 9, deletedAt: null } as never)
+      vi.mocked(mockDb.select)
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(targetPerms.map((permission) => ({ permission }))),
+          }),
+        } as never)
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(callerPerms.map((permission) => ({ permission }))),
+          }),
+        } as never)
+    }
+
+    it('L10：非超管恢复权限集超出自身的账号 → ForbiddenException', async () => {
+      mockRestoreLookups(['user:view', 'user:role_manage'], ['user:view', 'user:delete'])
+
+      await expect(service.restore(5, { roleId: 2 })).rejects.toThrow(ForbiddenException)
+      expect(mockDb.update).not.toHaveBeenCalled()
+    })
+
+    it('L10：目标角色权限 ⊆ 调用者 → 恢复成功', async () => {
+      mockRestoreLookups(['user:view'], ['user:view', 'user:delete'])
+      const restored = { ...deletedUser, deletedAt: null }
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([restored]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.restore(5, { roleId: 2 })
+
+      expect(result.username).toBe('former-admin')
+    })
+
+    it('L10：恢复无角色账号不做域校验（零权限不构成提权）', async () => {
+      vi.mocked(mockDb.query.users.findFirst)
+        .mockResolvedValueOnce({ ...deletedUser, roleId: null } as never)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi
+              .fn()
+              .mockResolvedValue([{ ...deletedUser, roleId: null, deletedAt: null }]),
+          }),
+        }),
+      } as never)
+
+      const result = await service.restore(5, { roleId: 2 })
+
+      expect(result.id).toBe(5)
+      expect(mockDb.select).not.toHaveBeenCalled()
+    })
+  })
+
   describe('getStats', () => {
     it('返回总用户数和活跃用户数', async () => {
       vi.mocked(mockDb.select)

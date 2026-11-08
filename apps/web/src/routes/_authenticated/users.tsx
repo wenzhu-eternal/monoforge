@@ -41,6 +41,11 @@ import { PermissionCodes } from '@/lib/permissions'
 
 const { Title } = Typography
 
+/** M1：读侧掩码值（含 *）不得灌进以写侧 schema 为 validator 的表单 */
+function isMaskedValue(value?: string | null): boolean {
+  return typeof value === 'string' && value.includes('*')
+}
+
 export const Route = createFileRoute('/_authenticated/users')({
   component: UsersPage,
 })
@@ -87,6 +92,9 @@ export function UsersContent() {
   const { data: me } = useCurrentUser()
   // L8：与后端 403 同条件——改自己须走 /me/password，改他人须 USER_ROLE_MANAGE
   const isSelf = editingUser != null && me?.id === editingUser.id
+  // M1：非超管读侧 email/phone 是掩码形态，回填进写侧校验表单会必然校验失败
+  const emailMasked = editingUser != null && isMaskedValue(editingUser.email)
+  const phoneMasked = editingUser != null && isMaskedValue(editingUser.phone)
 
   const [form] = Form.useForm<
     CreateUser & UpdateUser & { roleId?: number; mustChangePassword?: boolean }
@@ -210,9 +218,11 @@ export function UsersContent() {
     // 仅写入表单需要的字段，避免 avatar/roles/permissions/createdAt 等污染 form store
     form.setFieldsValue({
       username: user.username,
-      email: user.email,
+      // M1：掩码值不回填——写侧 UserEmailSchema/PhoneSchema 会拒绝 `a***@example.com`，
+      // 回填后连"只改昵称"都无法通过表单校验
+      email: isMaskedValue(user.email) ? undefined : user.email,
       nickname: user.nickname ?? undefined,
-      phone: user.phone ?? undefined,
+      phone: isMaskedValue(user.phone) ? undefined : (user.phone ?? undefined),
       roleId: user.roles?.[0]?.id,
       status: user.status,
       // M3：首登强制改密当前值（微信占位密码死锁的解锁入口）
@@ -265,11 +275,15 @@ export function UsersContent() {
         // M3：改他人手机号后端要求 USER_ROLE_MANAGE（L7 闸）——无权限/未变更时不提交，
         // 否则"仅改昵称"也会因恒带 phone 整弹窗 403；清空提交 null（'' 会被 regex 拒 400）
         const nextPhone = values.phone || null
-        if ((canManageRole || isSelf) && nextPhone !== (editingUser.phone || null)) {
+        // M1：掩码回显时表单为空，留空视为未修改；非掩码按原值比对
+        const phoneUnchanged = phoneMasked
+          ? values.phone === undefined
+          : nextPhone === (editingUser.phone || null)
+        if ((canManageRole || isSelf) && !phoneUnchanged) {
           updateData.phone = nextPhone
         }
-        // 邮箱/角色/状态变更后端要求 USER_ROLE_MANAGE，无权限时不提交避免 403
-        if (canManageRole) {
+        // L13：邮箱仅在值实际变更时提交——掩码原值不得直通后端，未填即不修改
+        if (canManageRole && values.email !== undefined && values.email !== editingUser.email) {
           updateData.email = values.email
         }
         // M2：自改 roleId/status 后端一律 403（不比对是否同值），isSelf 时不提交——
@@ -419,9 +433,15 @@ export function UsersContent() {
               <Form.Item
                 name="email"
                 label="邮箱"
-                rules={[{ required: true, message: '请输入邮箱' }, emailRule]}
+                // M1：掩码回显不挂必填/严格校验——原值已脱敏，留空即保持不变
+                rules={
+                  emailMasked ? [emailRule] : [{ required: true, message: '请输入邮箱' }, emailRule]
+                }
               >
-                <Input disabled={!canManageRole} />
+                <Input
+                  disabled={!canManageRole}
+                  placeholder={emailMasked ? '原值已脱敏，留空保持不变' : undefined}
+                />
               </Form.Item>
               <Form.Item
                 name="password"
@@ -452,7 +472,10 @@ export function UsersContent() {
             rules={[phoneRule]}
             extra={editingUser && !canManageRole && !isSelf ? '无权限修改他人手机号' : undefined}
           >
-            <Input placeholder="选填" disabled={!!editingUser && !canManageRole && !isSelf} />
+            <Input
+              placeholder={phoneMasked ? '原值已脱敏，留空保持不变' : '选填'}
+              disabled={!!editingUser && !canManageRole && !isSelf}
+            />
           </Form.Item>
           <Form.Item
             name="roleId"

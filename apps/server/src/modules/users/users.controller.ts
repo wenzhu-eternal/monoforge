@@ -243,6 +243,7 @@ export class UsersController {
   @ApiOperation({ summary: '恢复已删除用户' })
   @ZodSerializerDto(UserSchema)
   async restore(@Param('id', ParseIntPipe) id: number, @CurrentUser() currentUser: TokenPayload) {
-    return this.usersService.restore(id)
+    // L10：透传调用者，restore 需按"角色权限集 ⊆ 调用者"复权（同 create/update 口径）
+    return this.usersService.restore(id, currentUser)
   }
 }
