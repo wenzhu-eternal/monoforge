@@ -11,6 +11,8 @@ import { apiClient } from './api'
 
 const E2E_PREFIX = 'e2e-'
 const E2E_USER_PREFIX = 'e2e_'
+// L19：通知标题前缀（websocket e2e 用 "e2e " 开头）
+const E2E_NOTIFICATION_PREFIX = 'e2e '
 
 // 夹具账号：global-setup 创建后长期复用，cleanup 不应清理
 const PROTECTED_USERS: Set<string> = new Set([normalUser.username, targetUser.username])
@@ -119,6 +121,17 @@ export async function cleanupTempErrorLogs() {
 }
 
 /**
+ * 清理当前登录用户 e2e 前缀的临时通知（L19）
+ * notifications 是个人资源，只清理当前会话自己的列表；websocket 用例按身份分别调用
+ */
+export async function cleanupTempNotifications() {
+  const notifications = await fetchAllPages<{ id: number; title: string }>('/notifications')
+  for (const n of notifications.filter((n) => n.title.startsWith(E2E_NOTIFICATION_PREFIX))) {
+    await apiClient.delete(`/notifications/${n.id}`).catch(() => {})
+  }
+}
+
+/**
  * 全量清理（global-teardown 调用）
  */
 export async function cleanupAll() {
@@ -128,4 +141,5 @@ export async function cleanupAll() {
   await cleanupTempPermissions().catch(() => {})
   await cleanupTempWhitelists().catch(() => {})
   await cleanupTempErrorLogs().catch(() => {})
+  await cleanupTempNotifications().catch(() => {})
 }

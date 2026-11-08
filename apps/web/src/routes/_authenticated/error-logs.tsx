@@ -658,11 +658,13 @@ export function WhitelistTab() {
       // M7：校验失败 reject 的 {errorFields} 必须在 try 内吞掉——原先在 try 之外直呼，
       // unhandledrejection 会被全局错误处理器上报入库，污染监控并消耗上报限流额度
       const values = await form.validateFields()
+      // L14：清空描述提交 null 而非空串（'' 会原样落库）
+      const payload = { ...values, description: values.description || null }
       if (editingId) {
-        await updateMutation.mutateAsync({ id: editingId, data: values })
+        await updateMutation.mutateAsync({ id: editingId, data: payload })
         messageApi.success('更新成功')
       } else {
-        await createMutation.mutateAsync(values)
+        await createMutation.mutateAsync(payload)
         messageApi.success('创建成功')
       }
       setModalOpen(false)

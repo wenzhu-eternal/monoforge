@@ -260,13 +260,15 @@ export function PermissionCodesContent() {
 
   const handleSubmit = async (values: { code: string; name: string; description?: string }) => {
     try {
+      // L14：清空描述提交 null 而非空串（'' 会原样落库）
+      const payload = { ...values, description: values.description || null }
       if (editingPermission) {
         // L22：编辑时 code 不可改（后端一旦收紧即 400），仅提交允许字段（对齐 users 编辑仅提交 schema 字段）
-        const { code: _code, ...rest } = values
+        const { code: _code, ...rest } = payload
         await updatePermission.mutateAsync({ id: editingPermission.id, data: rest })
         messageApi.success('更新成功')
       } else {
-        await createPermission.mutateAsync(values)
+        await createPermission.mutateAsync(payload)
         messageApi.success('创建成功')
       }
       setIsModalOpen(false)

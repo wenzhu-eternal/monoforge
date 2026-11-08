@@ -287,11 +287,13 @@ export function RolesContent() {
 
   const handleRoleSubmit = async (values: CreateRole | UpdateRole) => {
     try {
+      // L14：清空描述提交 null 而非空串（'' 会原样落库并在读侧显示空白）
+      const payload = { ...values, description: values.description || null }
       if (editingRole) {
-        await updateRole.mutateAsync({ id: editingRole.id, data: values as UpdateRole })
+        await updateRole.mutateAsync({ id: editingRole.id, data: payload as UpdateRole })
         messageApi.success('更新成功')
       } else {
-        await createRole.mutateAsync(values as CreateRole)
+        await createRole.mutateAsync(payload as CreateRole)
         messageApi.success('创建成功')
       }
       setIsRoleModalOpen(false)

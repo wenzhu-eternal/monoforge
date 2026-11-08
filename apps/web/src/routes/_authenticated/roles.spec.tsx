@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   allRolePerms: [] as Array<{ roleId: number; permission: string }>,
   allRolePermsError: false,
   deleteCalls: [] as { id: number; resolve: () => void }[],
+  createPayloads: [] as Record<string, unknown>[],
 }))
 
 vi.mock('antd', async (importOriginal) => {
@@ -56,7 +57,12 @@ vi.mock('@/hooks/use-roles', () => ({
     error: null,
     isSuccess: true,
   }),
-  useCreateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateRole: () => ({
+    mutateAsync: async (data: Record<string, unknown>) => {
+      state.createPayloads.push(data)
+    },
+    isPending: false,
+  }),
   useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteRole: () => ({
     mutateAsync: (id: number) =>
@@ -182,5 +188,43 @@ describe('L19：权限标签失败态可辨', () => {
 
     expect((await screen.findAllByText('加载失败')).length).toBeGreaterThan(0)
     expect(screen.queryByText('无查看权限')).not.toBeInTheDocument()
+  })
+})
+
+describe('L14：角色描述置空口径', () => {
+  beforeEach(() => {
+    state.createPayloads = []
+    state.permsQuery = { data: [], isFetching: false, isError: false }
+  })
+
+  async function openCreateModal() {
+    render(
+      <ConfigProvider locale={zhCN}>
+        <RolesContent />
+      </ConfigProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '新建角色' }))
+    await screen.findByLabelText('角色名')
+  }
+
+  it('描述留空 → 提交 null 而非空串', async () => {
+    await openCreateModal()
+
+    fireEvent.change(screen.getByLabelText('角色名'), { target: { value: '新角色' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.createPayloads).toHaveLength(1))
+
+    expect(state.createPayloads[0]?.description).toBeNull()
+  })
+
+  it('填写描述 → 原值提交', async () => {
+    await openCreateModal()
+
+    fireEvent.change(screen.getByLabelText('角色名'), { target: { value: '新角色' } })
+    fireEvent.change(screen.getByLabelText('描述'), { target: { value: '测试角色' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.createPayloads).toHaveLength(1))
+
+    expect(state.createPayloads[0]?.description).toBe('测试角色')
   })
 })

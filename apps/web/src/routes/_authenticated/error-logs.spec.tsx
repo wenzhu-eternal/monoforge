@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   resolveCalls: [] as PendingCall[],
   updateCalls: [] as PendingCall[],
   logsParams: [] as LogsParams[],
+  createWhitelistPayloads: [] as Record<string, unknown>[],
 }))
 
 vi.mock('antd', async (importOriginal) => {
@@ -120,7 +121,12 @@ vi.mock('@/hooks/use-logs', () => {
       isError: false,
       error: null,
     }),
-    useCreateWhitelist: () => ({ isPending: false, mutateAsync: vi.fn() }),
+    useCreateWhitelist: () => ({
+      isPending: false,
+      mutateAsync: async (data: Record<string, unknown>) => {
+        state.createWhitelistPayloads.push(data)
+      },
+    }),
     useUpdateWhitelist: () => pendingMutation(state.updateCalls),
     useDeleteWhitelist: () => ({ isPending: false, mutateAsync: vi.fn() }),
     useRestoreWhitelist: () => ({ isPending: false, mutateAsync: vi.fn() }),
@@ -238,5 +244,28 @@ describe('L12：搜索框清空后同步清过滤词', () => {
     await waitFor(() => {
       expect(state.logsParams.at(-1)?.keyword).toBeUndefined()
     })
+  })
+})
+
+describe('L14：白名单说明置空口径', () => {
+  beforeEach(() => {
+    state.createWhitelistPayloads = []
+  })
+
+  it('说明留空 → 提交 null 而非空串', async () => {
+    render(<WhitelistTab />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '新增白名单' }))
+    fireEvent.change(await screen.findByLabelText('匹配模式'), {
+      target: { value: 'TEST_PATTERN' },
+    })
+    fireEvent.mouseDown(screen.getByLabelText('匹配类型'))
+    // 选中项与下拉项同文案：取最后一个即 dropdown option
+    const matchTypeOptions = await screen.findAllByText('消息（错误消息包含）')
+    fireEvent.click(matchTypeOptions.at(-1) as HTMLElement)
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /OK|确\s*定/ }))
+
+    await waitFor(() => expect(state.createWhitelistPayloads).toHaveLength(1))
+    expect(state.createWhitelistPayloads[0]?.description).toBeNull()
   })
 })

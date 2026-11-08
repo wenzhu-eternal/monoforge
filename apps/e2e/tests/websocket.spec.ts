@@ -1,7 +1,7 @@
 import { adminUser, normalUser } from '@e2e/fixtures/users'
 import { apiClient } from '@e2e/helpers/api'
 import { loginAsAdmin, loginAsNormalUser } from '@e2e/helpers/auth'
-import { fetchAllPages } from '@e2e/helpers/cleanup'
+import { cleanupTempNotifications, fetchAllPages } from '@e2e/helpers/cleanup'
 import { expect, test } from '@playwright/test'
 
 /**
@@ -23,6 +23,13 @@ test.beforeAll(async () => {
   adminUserId = users.find((u) => u.username === adminUser.username)?.id ?? 1
   normalUserId = users.find((u) => u.username === normalUser.username)?.id ?? 0
   if (!normalUserId) throw new Error('普通用户未创建，请检查 global-setup')
+})
+
+// L19：本文件每轮落库通知，同轮内累积会淹没未来通知页——按身份清掉自己列表里的 e2e 标题
+test.afterAll(async () => {
+  await apiClient.login(normalUser.username, normalUser.password)
+  await cleanupTempNotifications().catch(() => {})
+  await apiClient.login(adminUser.username, adminUser.password)
 })
 
 test.describe('WebSocket 通知', () => {

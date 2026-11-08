@@ -13,7 +13,7 @@ export const Route = createFileRoute('/setup')({
   component: SetupPage,
 })
 
-function SetupPage() {
+export function SetupPage() {
   const navigate = useNavigate()
   const { data: status, isLoading } = useSetupStatus()
   const setupMutation = useSetup()
@@ -38,7 +38,8 @@ function SetupPage() {
     nickname?: string
   }) => {
     try {
-      await setupMutation.mutateAsync(values)
+      // L14：清空昵称提交 null 而非空串（'' 会原样落库）
+      await setupMutation.mutateAsync({ ...values, nickname: values.nickname || null })
       messageApi.success('系统初始化成功，请登录')
       navigate({ to: '/login', replace: true })
     } catch (error: unknown) {

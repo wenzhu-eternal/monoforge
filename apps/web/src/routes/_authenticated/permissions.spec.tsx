@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   },
   deleteCalls: [] as PendingCall[],
   restoreCalls: [] as PendingCall[],
+  createPayloads: [] as Record<string, unknown>[],
 }))
 
 vi.mock('antd', async (importOriginal) => {
@@ -86,7 +87,12 @@ vi.mock('@/hooks/use-permissions', () => {
       isSuccess: true,
     }),
     useRoutes: () => state.routes,
-    useCreatePermission: () => ({ isPending: false, mutateAsync: vi.fn() }),
+    useCreatePermission: () => ({
+      isPending: false,
+      mutateAsync: async (data: Record<string, unknown>) => {
+        state.createPayloads.push(data)
+      },
+    }),
     useUpdatePermission: () => ({ isPending: false, mutateAsync: vi.fn() }),
     useDeletePermission: () => pendingMutation(state.deleteCalls),
     useRestorePermission: () => pendingMutation(state.restoreCalls),
@@ -183,5 +189,41 @@ describe('L5/L6：权限管理页面', () => {
         'ant-btn-loading',
       )
     })
+  })
+})
+
+describe('L14：权限描述置空口径', () => {
+  beforeEach(() => {
+    state.routes = { data: [], isLoading: false, isError: false, error: null }
+    state.createPayloads = []
+  })
+
+  async function openCreateModal() {
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '新建权限' }))
+    await screen.findByLabelText('权限码')
+  }
+
+  it('描述留空 → 提交 null 而非空串', async () => {
+    await openCreateModal()
+
+    fireEvent.change(screen.getByLabelText('权限码'), { target: { value: 'test:view' } })
+    fireEvent.change(screen.getByLabelText('权限名'), { target: { value: '测试权限' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.createPayloads).toHaveLength(1))
+
+    expect(state.createPayloads[0]?.description).toBeNull()
+  })
+
+  it('填写描述 → 原值提交', async () => {
+    await openCreateModal()
+
+    fireEvent.change(screen.getByLabelText('权限码'), { target: { value: 'test:view' } })
+    fireEvent.change(screen.getByLabelText('权限名'), { target: { value: '测试权限' } })
+    fireEvent.change(screen.getByLabelText('描述'), { target: { value: '说明文本' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.createPayloads).toHaveLength(1))
+
+    expect(state.createPayloads[0]?.description).toBe('说明文本')
   })
 })
