@@ -264,6 +264,21 @@ describe('拦截器 401 处置矩阵', () => {
     expect(redirectSpy).not.toHaveBeenCalled()
   })
 
+  it('L18：改密页 GET 403 不整页跳 /403（避免丢失改密表单）', async () => {
+    const redirectSpy = vi.spyOn(authRedirect, 'to').mockImplementation(() => undefined)
+    api.defaults.adapter = async (config) => {
+      throw err403(config as InternalAxiosRequestConfig)
+    }
+
+    window.history.pushState({}, '', '/change-password')
+    try {
+      await expect(api.get('/api/v1/users')).rejects.toMatchObject({ response: { status: 403 } })
+      expect(redirectSpy).not.toHaveBeenCalled()
+    } finally {
+      window.history.pushState({}, '', '/')
+    }
+  })
+
   it('L27：业务 401 + MUST_CHANGE_PASSWORD → 前置改密分支，不刷新不清态', async () => {
     useAuthStore.setState({ token: 'valid-token', isAuthenticated: true })
     const redirectSpy = vi.spyOn(authRedirect, 'to').mockImplementation(() => undefined)

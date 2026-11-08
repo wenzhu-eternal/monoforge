@@ -5,6 +5,8 @@ const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     get: vi.fn(),
     put: vi.fn(),
+    post: vi.fn(),
+    delete: vi.fn(),
   },
 }))
 
@@ -14,7 +16,13 @@ vi.mock('@/lib/api', () => ({
 
 import { useAuthStore } from '@/store/auth-store'
 import { renderHookWithQuery, waitFor } from '@/test/utils'
-import { useAllPermissions, useRolePermissions, useUpdateRolePermissions } from './use-permissions'
+import {
+  useAllPermissions,
+  useDeletePermission,
+  useRestorePermission,
+  useRolePermissions,
+  useUpdateRolePermissions,
+} from './use-permissions'
 
 describe('use-permissions 辅助查询（M5 门控）', () => {
   beforeEach(() => {
@@ -74,5 +82,23 @@ describe('use-permissions 辅助查询（M5 门控）', () => {
     })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['role-permissions'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['auth', 'me'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['audit-logs'] })
+  })
+
+  it('L15：删/恢复权限 → 失效 role-permissions 与 audit-logs', async () => {
+    apiMock.delete.mockResolvedValue({ data: { code: 200, data: { message: 'ok' } } })
+    apiMock.post.mockResolvedValue({ data: { code: 200, data: { id: 1 } } })
+
+    const del = renderHookWithQuery(() => useDeletePermission())
+    const delSpy = vi.spyOn(del.queryClient, 'invalidateQueries')
+    await del.result.current.mutateAsync(1)
+    expect(delSpy).toHaveBeenCalledWith({ queryKey: ['role-permissions'] })
+    expect(delSpy).toHaveBeenCalledWith({ queryKey: ['audit-logs'] })
+
+    const restore = renderHookWithQuery(() => useRestorePermission())
+    const restoreSpy = vi.spyOn(restore.queryClient, 'invalidateQueries')
+    await restore.result.current.mutateAsync(1)
+    expect(restoreSpy).toHaveBeenCalledWith({ queryKey: ['role-permissions'] })
+    expect(restoreSpy).toHaveBeenCalledWith({ queryKey: ['audit-logs'] })
   })
 })

@@ -207,10 +207,12 @@ api.interceptors.response.use(
     // 自行展示无权限，菜单照常显示，不整页跳转。
     // 例外2（M13）：写操作 403 多为按钮点击与权限回收的竞态，整页跳 /403 会丢列表/搜索
     // 语境——交给调用方 catch 展示错误即可，仅读操作 403 视为视图级无权限跳转
+    // L18：改密页同样豁免——must-change 用户任何 GET 403 都会整页跳走并丢表单
     if (
       error.response?.status === 403 &&
       !window.location.pathname.startsWith('/403') &&
       !window.location.pathname.startsWith('/login') &&
+      !window.location.pathname.startsWith('/change-password') &&
       !(originalRequest as ApiRequestConfig | undefined)?.skipForbiddenRedirect &&
       originalRequest?.method?.toUpperCase() === 'GET'
     ) {

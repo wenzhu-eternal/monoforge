@@ -100,9 +100,13 @@ class WsClient {
       // M9：先换新 token 再排退避重连——store 里的 token 与被踢同源，只重连即死循环
       // M2：仅 AUTH_FAILED 才换信物（与 error 事件共用冷却），其余码直接重连
       if (reason === 'io server disconnect') {
-        const refreshing = this.maybeRefreshToken({ code: this.lastSocketErrorCode })
-        if (refreshing && this.pendingRefresh) {
-          void this.pendingRefresh.finally(() => this.scheduleReconnect(1000))
+        this.maybeRefreshToken({ code: this.lastSocketErrorCode })
+        // L16：error 已发起刷新并进入冷却时，本次 maybeRefreshToken 不再发起新刷新——
+        // 只要鉴权码对应的刷新仍在途，就必须等它完成再重连，否则用旧 token 多被拒一次
+        const awaitingRefresh =
+          this.pendingRefresh !== null && this.lastSocketErrorCode === 'AUTH_FAILED'
+        if (awaitingRefresh) {
+          void this.pendingRefresh?.finally(() => this.scheduleReconnect(1000))
         } else {
           this.scheduleReconnect(1000)
         }

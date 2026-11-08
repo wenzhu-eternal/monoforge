@@ -118,6 +118,27 @@ describe('M2/M3：踢线错误码分流与刷新冷却', () => {
 
     expect(refreshHandler).toHaveBeenCalledTimes(1)
   })
+
+  it('L16：error 已发起刷新时，disconnect 等待在途刷新完成再重连', async () => {
+    let resolveRefresh: (v: string | null) => void = () => {}
+    refreshHandler.mockImplementationOnce(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveRefresh = resolve
+        }),
+    )
+    wsClient.connect('tok')
+    fire(lastSocket(), 'error', { code: 'AUTH_FAILED' })
+    fire(lastSocket(), 'disconnect', 'io server disconnect')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    // 刷新在途：不得用旧 token 抢先重连（否则会多被拒一次）
+    expect(ioMock).toHaveBeenCalledTimes(1)
+
+    resolveRefresh('new-token')
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(ioMock).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('wsClient 手动重连（M6 终态）', () => {
