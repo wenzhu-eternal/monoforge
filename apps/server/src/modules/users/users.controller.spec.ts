@@ -250,6 +250,35 @@ describe('UsersController', () => {
       expect(service.hasPermission).toHaveBeenCalledWith(1, PermissionCodes.USER_ROLE_MANAGE)
       expect(service.create).toHaveBeenCalledWith(dto, currentUser)
     })
+
+    it('L11：无 USER_ROLE_MANAGE 时新建账号写 phone → 403（与 update 他人 phone 同口径）', async () => {
+      const dto = {
+        username: 'x',
+        email: 'x@test.com',
+        password: 'Pass1234',
+        phone: '13800138000',
+      }
+      vi.mocked(service.hasPermission).mockResolvedValue(false)
+
+      await expect(controller.create(dto, currentUser)).rejects.toThrow(ForbiddenException)
+      expect(service.create).not.toHaveBeenCalled()
+      expect(redisService.eval).toHaveBeenCalledTimes(2)
+    })
+
+    it('L11：持 USER_ROLE_MANAGE 时新建账号可写 phone', async () => {
+      const dto = {
+        username: 'x',
+        email: 'x@test.com',
+        password: 'Pass1234',
+        phone: '13800138000',
+      }
+      vi.mocked(service.hasPermission).mockResolvedValue(true)
+      vi.mocked(service.create).mockResolvedValue({ id: 9 } as never)
+
+      await controller.create(dto, currentUser)
+
+      expect(service.create).toHaveBeenCalledWith(dto, currentUser)
+    })
   })
 
   describe('update', () => {

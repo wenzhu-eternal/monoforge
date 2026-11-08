@@ -124,6 +124,17 @@ export class UsersController {
           throw new ForbiddenException('指定强制改密标记需要更高权限')
         }
       }
+      // L11：新建即写 phone 与 update 改他人 phone 同口径——手机号是短信/找回链路前件，
+      // 仅持 user:create 的委托不得对新建账号写入任意号码（与 L7 闸自相矛盾）
+      if (createUserDto.phone !== undefined) {
+        const canManage = await this.usersService.hasPermission(
+          currentUser.sub,
+          PermissionCodes.USER_ROLE_MANAGE,
+        )
+        if (!canManage) {
+          throw new ForbiddenException('指定手机号需要更高权限')
+        }
+      }
       return await this.usersService.create(createUserDto, currentUser)
     } catch (err) {
       // L1：建号失败（403 越权/409 重复等）退还配额——原实现只扣不退，
