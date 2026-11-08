@@ -199,6 +199,7 @@ ngrok 部署的完整流程、关键约束和验证步骤详见 [DEPLOYMENT.md](
 - 传递依赖的已知漏洞修复线统一钉在 `pnpm-workspace.yaml` 的 `overrides`（pnpm 10 起不再读取根 `package.json` 的 `pnpm` 字段）：`proxy-addr>=2.0.8`、`multer>=2.5.0`、`engine.io>=6.6.10`、`socket.io-parser>=4.2.7`、`handlebars>=4.7.10`、`nodemailer>=10.3.1`、`axios>=1.20.0`、`body-parser>=2.4.0`、`zod>=4.6.6`、`qs>=6.16.1`、`follow-redirects>=1.16.2`、`seroval>=1.6.8`、`seroval-plugins>=1.6.8`、`js-yaml>=4.3.2`、`esbuild>=0.25.0`
 - `pnpm security` 第 6 项与 CI `audit` job 均使用 `--registry=https://registry.npmjs.org` 实跑官方源；内网/镜像 registry 无 audit 端点时**"无结论"不等于"无漏洞"**，不得据此放行
 - 当前唯一残留为 `deepmerge`（`nestjs-zod` 传递依赖，无修复版本）low——原型污染需攻击者控制合并源，本仓无该调用面
+- `pnpm security` 第 6 项同时扫描全量依赖树（含 devDependencies）用于观察：dev 树仍有高危残留（构建/测试工具链，不进生产门禁），输出为 warn 不阻断；新增 dev 依赖时关注该警告
 
 ## 测试环境限流说明
 

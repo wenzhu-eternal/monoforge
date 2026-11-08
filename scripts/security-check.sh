@@ -167,22 +167,50 @@ else
 fi
 
 section "6. 依赖安全扫描"
-echo "  → pnpm audit --prod（官方 registry）..."
+echo "  → pnpm audit --json（官方 registry，结构化解级）..."
 # M1-M3 教训：内网 registry 无 audit 端点时"无结论"不等于"无漏洞"，必须实跑官方源
-if pnpm audit --prod --registry=https://registry.npmjs.org > /tmp/audit.log 2>&1; then
-  check_pass "无已知高危依赖漏洞"
-else
-  # 内网/镜像 registry 不实现 audit 端点（实测 501→404）：
-  # 旧 pnpm 返回 ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS，新版本返回 ERR_PNPM_AUDIT_BAD_RESPONSE——
-  # 两者都属"无法审计"而非"真有漏洞"，原先只识别前者，后者落进低/中危分支，
-  # 把检查失败包装成疑似已检查。用 warn（不阻断 gate）并明确告知无结论
-  if grep -q -E 'ERR_PNPM_AUDIT_(ENDPOINT_NOT_EXISTS|BAD_RESPONSE)|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|ERR_PNPM_META_FETCH_FAIL' /tmp/audit.log; then
+AUDIT_NET_ERROR_RE='ERR_PNPM_AUDIT_(ENDPOINT_NOT_EXISTS|BAD_RESPONSE)|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|ERR_PNPM_META_FETCH_FAIL'
+
+# L12：按 metadata.vulnerabilities 结构化取数——原文本 grep (high|critical) 会被
+# advisory 标题/包名中的关键词假红，且 pnpm 输出格式变化即假绿
+audit_count() {
+  node -e '
+    const fs = require("fs")
+    try {
+      const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+      const v = j.metadata?.vulnerabilities ?? {}
+      const keys = process.argv[2] === "high" ? ["high", "critical"] : ["low", "moderate", "info"]
+      process.stdout.write(String(keys.reduce((n, k) => n + (v[k] ?? 0), 0)))
+    } catch {
+      process.stdout.write("parse_error")
+    }
+  ' "$1" "$2"
+}
+
+# set -e 下 audit 发现漏洞会以 1 退出——必须显式兜住，后续按 JSON 判级
+pnpm audit --json --prod --registry=https://registry.npmjs.org > /tmp/audit-prod.json 2>/tmp/audit-prod.err || true
+PROD_HIGH=$(audit_count /tmp/audit-prod.json high)
+PROD_LOW=$(audit_count /tmp/audit-prod.json low)
+
+if [ "$PROD_HIGH" = "parse_error" ]; then
+  if grep -q -E "$AUDIT_NET_ERROR_RE" /tmp/audit-prod.err /tmp/audit-prod.json 2>/dev/null; then
     check_warn "依赖审计无结论（registry audit 端点不可用或网络故障，非漏洞；如需扫描请切换官方 registry）"
-  elif grep -q -E '(high|critical)' /tmp/audit.log; then
-    check_fail "发现高危依赖漏洞（见 /tmp/audit.log）"
-    grep -E '(high|critical)' /tmp/audit.log | head -10
   else
-    check_warn "有低/中危依赖漏洞（见 /tmp/audit.log）"
+    check_warn "依赖审计输出无法解析（无结论，见 /tmp/audit-prod.err）"
+  fi
+elif [ "$PROD_HIGH" -gt 0 ] 2>/dev/null; then
+  check_fail "生产依赖树存在 ${PROD_HIGH} 个高危/严重漏洞（见 /tmp/audit-prod.json）"
+else
+  check_warn "生产依赖树有 ${PROD_LOW} 个低/中危漏洞（见 /tmp/audit-prod.json）"
+fi
+
+# 全量（含 devDependencies）覆盖：不进入门禁，仅提示 dev 树的高危残留
+pnpm audit --json --registry=https://registry.npmjs.org > /tmp/audit-full.json 2>/tmp/audit-full.err || true
+FULL_HIGH=$(audit_count /tmp/audit-full.json high)
+if [ "$FULL_HIGH" != "parse_error" ] && [ "$PROD_HIGH" != "parse_error" ]; then
+  DEV_HIGH=$((FULL_HIGH - PROD_HIGH))
+  if [ "$DEV_HIGH" -gt 0 ]; then
+    check_warn "devDependencies 依赖树另有 ${DEV_HIGH} 个高危/严重漏洞（不进生产门禁，见 /tmp/audit-full.json）"
   fi
 fi
 
@@ -219,11 +247,16 @@ echo "  → 扫描 controller 是否有裸 @Body()..."
 
 RAW_BODY_ISSUES=""
 while IFS= read -r file; do
-  # 查找 @Body() 后没接 DTO 类型的（裸 @Body() 或 @Body() data: any）
-  RAW=$(grep -n -E '@Body\(\)\s+\w+:\s*(any|object|Record)' "$file" || true)
-  if [ -n "$RAW" ]; then
-    RAW_BODY_ISSUES="${RAW_BODY_ISSUES}\n${file}:\n${RAW}\n"
-  fi
+  # L12：原正则只匹配裸 any/object/Record，真正要防的"未挂 Zod DTO 的伪 interface 类型"
+  # 完全漏过（对新代码零防护力）。改为反查：@Body() 的类型参数必须以 Dto 结尾
+  while IFS= read -r line; do
+    TYPE=$(printf '%s' "$line" | sed -E 's/.*@Body\(\)[[:space:]]*[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*([A-Za-z0-9_]+).*/\1/')
+    if [[ "$TYPE" != *Dto ]]; then
+      RAW_BODY_ISSUES="${RAW_BODY_ISSUES}\n${file}:\n  ${line}"
+    fi
+  done < <(
+    grep -n -E '@Body\(\)[[:space:]]*[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*[A-Za-z0-9_]+' "$file" || true
+  )
 done < <(find apps/server/src/modules -name "*.controller.ts" -type f)
 
 if [ -z "$RAW_BODY_ISSUES" ]; then
