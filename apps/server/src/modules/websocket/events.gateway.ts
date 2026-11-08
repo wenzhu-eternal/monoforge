@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common'
+import { Logger, ServiceUnavailableException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import {
@@ -13,6 +13,7 @@ import {
 import { and, eq } from 'drizzle-orm'
 import type { Server, Socket } from 'socket.io'
 import { isAdminUser } from '@/common/utils/is-admin'
+import { noteRedisDegraded } from '@/common/utils/redis-degradation'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
 import { notDeleted } from '@/db/helpers'
@@ -314,8 +315,14 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * 获取全局在线用户 ID 列表（扫描 Redis ws:online:* keys）
    */
   async getOnlineUserIds(): Promise<number[]> {
-    const keys = await this.redisService.scanKeys('ws:online:*')
-    return keys.map((k) => Number.parseInt(k.split(':').pop() ?? '0', 10)).filter((n) => n > 0)
+    try {
+      const keys = await this.redisService.scanKeys('ws:online:*')
+      return keys.map((k) => Number.parseInt(k.split(':').pop() ?? '0', 10)).filter((n) => n > 0)
+    } catch {
+      // L9：在线列表是 Redis 派生态——故障期 fail-closed 并归因降级（原裸 error 冒成 500）
+      noteRedisDegraded('websocket:online-list')
+      throw new ServiceUnavailableException('在线用户查询暂不可用，请稍后重试')
+    }
   }
 
   /**

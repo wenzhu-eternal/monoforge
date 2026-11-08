@@ -13,6 +13,7 @@ import type { WechatLoginType } from '@shared/schemas/wechat'
 import * as argon2 from 'argon2'
 import type { AxiosInstance } from 'axios'
 import { and, eq } from 'drizzle-orm'
+import { noteRedisDegraded } from '@/common/utils/redis-degradation'
 import { stripHtml } from '@/common/utils/strip-html'
 import { getEnv } from '@/config/env'
 import { db } from '@/db'
@@ -109,7 +110,13 @@ export class WechatService {
 
     const state = randomUUID()
     // 缓存 state，回调时校验，防 CSRF
-    await this.redisService.set(`wechat:state:${state}`, '1', WechatService.STATE_TTL)
+    try {
+      await this.redisService.set(`wechat:state:${state}`, '1', WechatService.STATE_TTL)
+    } catch {
+      // L9：fail-closed 方向正确，但需归因 Redis 降级并统一 503（原裸 error 冒成 500）
+      noteRedisDegraded('wechat:state-store')
+      throw new ServiceUnavailableException('生成微信登录二维码失败，请稍后重试')
+    }
 
     const redirectUri = this.configService.get<string>('WECHAT_REDIRECT_URI') ?? ''
     const qrCodeUrl = new URL('https://open.weixin.qq.com/connect/qrconnect')
@@ -148,7 +155,14 @@ export class WechatService {
         throw new UnauthorizedException('微信登录失败: 缺少 state')
       }
       // getdel 原子取出并删除，防并发重放（与 refresh token 轮换同模式）
-      const cached = await this.redisService.getdel(`wechat:state:${state}`)
+      let cached: string | null
+      try {
+        cached = await this.redisService.getdel(`wechat:state:${state}`)
+      } catch {
+        // L9：state 校验依赖 Redis——故障期 fail-closed 并归因降级
+        noteRedisDegraded('wechat:state-consume')
+        throw new ServiceUnavailableException('微信登录暂不可用，请稍后重试')
+      }
       if (!cached) {
         throw new UnauthorizedException('微信登录失败: state 无效或已过期')
       }

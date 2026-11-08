@@ -25,6 +25,11 @@ vi.mock('@/config/env', () => ({
   getEnv: vi.fn(() => ({ DEFAULT_USER_ROLE_ID: 2 })),
 }))
 
+const mockNoteRedisDegraded = vi.fn()
+vi.mock('@/common/utils/redis-degradation', () => ({
+  noteRedisDegraded: (...args: unknown[]) => mockNoteRedisDegraded(...args),
+}))
+
 const { db: mockDb } = await import('@/db')
 
 import { WechatService } from './wechat.service'
@@ -48,6 +53,7 @@ describe('WechatService', () => {
     const redisService = {
       set: vi.fn().mockResolvedValue(undefined),
       get: vi.fn().mockResolvedValue(null),
+      getdel: vi.fn().mockResolvedValue('1'),
       del: vi.fn().mockResolvedValue(undefined),
     }
     const authService = {
@@ -101,6 +107,14 @@ describe('WechatService', () => {
       // 读取了 redirect URI
       expect(configService.get).toHaveBeenCalledWith('WECHAT_REDIRECT_URI')
     })
+
+    it('L9：state 写入 Redis 失败 → 503 且归因降级', async () => {
+      const { service, redisService } = buildService(true)
+      redisService.set.mockRejectedValueOnce(new Error('redis down'))
+
+      await expect(service.getQrCode()).rejects.toThrow(ServiceUnavailableException)
+      expect(mockNoteRedisDegraded).toHaveBeenCalledWith('wechat:state-store')
+    })
   })
 
   describe('login - requireEnabled 防护', () => {
@@ -118,6 +132,16 @@ describe('WechatService', () => {
       await expect(service.login('some-code', 'miniprogram')).rejects.toThrow(
         ServiceUnavailableException,
       )
+    })
+
+    it('L9：state 消费 Redis 失败 → 503 且归因降级（原裸 error 冒成 500）', async () => {
+      const { service, redisService } = buildService(true)
+      redisService.getdel.mockRejectedValueOnce(new Error('redis down'))
+
+      await expect(service.login('some-code', 'qrcode', 'state-1')).rejects.toThrow(
+        ServiceUnavailableException,
+      )
+      expect(mockNoteRedisDegraded).toHaveBeenCalledWith('wechat:state-consume')
     })
   })
 

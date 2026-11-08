@@ -420,7 +420,13 @@ export class AuthService {
     // 邮件发送失败仅 warn，不影响主流程
     const code = randomInt(0, 999999).toString().padStart(6, '0')
     const expiresIn = 5 * 60
-    await this.redisService.set(`register:code:${email}`, code, expiresIn)
+    try {
+      await this.redisService.set(`register:code:${email}`, code, expiresIn)
+    } catch (err) {
+      // L2：冷却锁已抢但验证码未落地——不回收会让用户整 60s 无法重发（对齐 mail 释放补偿）
+      await this.redisService.del(`register:code:limit:${email}`).catch(() => {})
+      throw err
+    }
     if (!existingEmail) {
       // 异步发信——不阻塞响应，失败仅告警
       this.mailService
@@ -483,11 +489,31 @@ export class AuthService {
     } catch (err) {
       // L11：验证码已被 getdel 消费，任何注册失败（含 DB 抖动）都按剩余 TTL 回填——
       // 原仅 Conflict 回填，非冲突异常下用户必须等满 60s 发送冷却才能重试
-      await this.redisService.set(
-        `register:code:${email}`,
-        code,
-        remainingTtl > 0 ? remainingTtl : 5 * 60,
-      )
+      try {
+        await this.redisService.set(
+          `register:code:${email}`,
+          code,
+          remainingTtl > 0 ? remainingTtl : 5 * 60,
+        )
+      } catch (redisErr) {
+        // L1：回填失败是善后动作——不能顶替原始业务异常（否则 4xx 变 500 误判错误因），
+        // 且需留痕并归因 Redis 降级，避免故障期散落无观测
+        noteRedisDegraded('auth:register-code-backfill')
+        await this.errorLogsService
+          .record({
+            message: `注册验证码回填失败: ${
+              redisErr instanceof Error ? redisErr.message : String(redisErr)
+            }`,
+            internal: true,
+          })
+          .catch((recordErr) =>
+            this.logger.warn(
+              `注册验证码回填失败留痕写入失败: ${
+                recordErr instanceof Error ? recordErr.message : String(recordErr)
+              }`,
+            ),
+          )
+      }
       throw err
     }
 

@@ -234,6 +234,17 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     )
   })
 
+  describe('sendRegisterCode（L2 冷却锁回滚）', () => {
+    it('验证码写入失败 → 回收 60s 冷却锁并抛出原始异常', async () => {
+      redisService.setNx.mockResolvedValue(true)
+      redisService.set.mockRejectedValueOnce(new Error('redis down'))
+      vi.mocked(db.query.users.findFirst).mockResolvedValue(undefined)
+
+      await expect(service.sendRegisterCode('a@b.com')).rejects.toThrow('redis down')
+      expect(redisService.del).toHaveBeenCalledWith('register:code:limit:a@b.com')
+    })
+  })
+
   describe('registerWithCode（L1 验证码原子消费）', () => {
     function stubPrivate(name: string, impl: () => Promise<unknown>) {
       const self = service as unknown as Record<string, ReturnType<typeof vi.fn>>
@@ -290,6 +301,23 @@ describe('AuthService（L7 登出失效时间戳）', () => {
         'db down',
       )
       expect(redisService.set).toHaveBeenCalledWith('register:code:a@b.com', '123456', 120)
+    })
+
+    it('L1：回填失败不顶替原始异常，且归因 Redis 降级并留痕', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.ttl.mockResolvedValue(120)
+      redisService.set.mockRejectedValueOnce(new Error('redis down'))
+      stubPrivate('register', async () => {
+        throw new Error('db down')
+      })
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
+        'db down',
+      )
+      expect(noteRedisDegraded).toHaveBeenCalledWith('auth:register-code-backfill')
+      expect(errorLogsService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ internal: true }),
+      )
     })
   })
 

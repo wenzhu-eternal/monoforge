@@ -15,9 +15,17 @@ const logger = new Logger('RedisDegradation')
 
 let degradedSince: number | null = null
 let lastUpgradeLogAt = 0
+let lastScopeAt = 0
 
 export function noteRedisDegraded(scope: string): void {
   const now = Date.now()
+  // L8：距上次降级触发超过阈值视为新一轮故障——静默站点整日零调用时，旧时间戳会让
+  // 下一次瞬时故障按"已持续 N 分钟"升级告警（方向正确但时长归因失真）
+  if (degradedSince !== null && now - lastScopeAt > UPGRADE_AFTER_MS) {
+    degradedSince = now
+    lastUpgradeLogAt = 0
+  }
+  lastScopeAt = now
   if (degradedSince === null) {
     degradedSince = now
     return
@@ -40,6 +48,7 @@ export function noteRedisDegraded(scope: string): void {
 export function noteRedisRecovered(): void {
   degradedSince = null
   lastUpgradeLogAt = 0
+  lastScopeAt = 0
 }
 
 /** 测试用：读取内部状态 */
