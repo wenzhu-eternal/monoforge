@@ -7,6 +7,7 @@ const mockUpdate = vi.fn()
 const mockSelect = vi.fn()
 const mockDelete = vi.fn()
 const mockInsert = vi.fn()
+const mockTransaction = vi.fn()
 vi.mock('@/db', () => ({
   db: {
     query: {
@@ -18,6 +19,7 @@ vi.mock('@/db', () => ({
     select: (...args: unknown[]) => mockSelect(...args),
     delete: (...args: unknown[]) => mockDelete(...args),
     insert: (...args: unknown[]) => mockInsert(...args),
+    transaction: (...args: unknown[]) => mockTransaction(...args),
   },
 }))
 
@@ -84,6 +86,19 @@ describe('FilesService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // P2-15：默认传入"用户存续"的行锁结果，insert 仍走 mockInsert
+    mockTransaction.mockImplementation(async (cb: (t: unknown) => Promise<unknown>) =>
+      cb({
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              for: async () => [{ id: 1 }],
+            }),
+          }),
+        }),
+        insert: (...args: unknown[]) => mockInsert(...args),
+      }),
+    )
     mockMkdir.mockResolvedValue(undefined)
     mockRename.mockResolvedValue(undefined)
     mockUnlink.mockResolvedValue(undefined)
@@ -95,6 +110,49 @@ describe('FilesService', () => {
       record: vi.fn().mockResolvedValue(undefined),
     }
     service = new FilesService(mockRedisQuota as never, mockErrorLogsService as never)
+  })
+
+  describe('upload', () => {
+    it('P2-15：用户已软删 → Conflict，清理临时文件', async () => {
+      const mockOpen = vi.fn().mockResolvedValue({
+        read: vi.fn().mockImplementation((buffer: Buffer) => {
+          buffer.set([0x89, 0x50, 0x4e, 0x47])
+          return Promise.resolve([4, {}])
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+        stat: vi.fn().mockResolvedValue({ size: 1, isFile: () => true }),
+      })
+      vi.spyOn(require('node:fs/promises'), 'open').mockImplementation(mockOpen)
+
+      const tx = {
+        select: vi.fn(() => ({
+          from: () => ({
+            where: () => ({
+              // FOR KEY SHARE 行锁复核未命中存续用户
+              for: async () => [],
+            }),
+          }),
+        })),
+        insert: vi.fn(),
+      }
+      mockTransaction.mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx))
+
+      await expect(
+        service.upload(
+          {
+            originalname: 'a.png',
+            mimetype: 'image/png',
+            size: 10,
+            path: '/uploads/a.png',
+          } as never,
+          9,
+        ),
+      ).rejects.toThrow(ConflictException)
+
+      expect(tx.select).toHaveBeenCalled()
+      expect(tx.insert).not.toHaveBeenCalled()
+      expect(mockUnlink).toHaveBeenCalledWith('/uploads/a.png')
+    })
   })
 
   describe('remove', () => {

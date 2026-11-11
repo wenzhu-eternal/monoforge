@@ -412,11 +412,17 @@ export class AuthService {
       throw new ConflictException('验证码发送过于频繁，请 60 秒后重试')
     }
 
-    const existingEmail = await db.query.users.findFirst({
-      where: and(eq(users.email, email), notDeleted(users.deletedAt)),
-    })
-
     // L1：已注册邮箱也写验证码、未注册邮箱也写验证码，与未注册路径耗时一致，防掐表枚举。
+    const existingEmail = await db.query.users
+      .findFirst({
+        where: and(eq(users.email, email), notDeleted(users.deletedAt)),
+      })
+      .catch(async (err: unknown) => {
+        // P2-05：查库失败时验证码不会落地，冷却锁必须一并释放——原实现只在 set 失败分支补偿，
+        // 查询异常会让用户在剩余 60s 内无法重试
+        await this.redisService.del(`register:code:limit:${email}`).catch(() => {})
+        throw err
+      })
     // J1：已注册邮箱跳过真实投递（60s 锁 + 统一响应先于投递，跳过不泄露新信息，防出站邮件放大器）；
     // 邮件发送失败仅 warn，不影响主流程
     const code = randomInt(0, 999999).toString().padStart(6, '0')
@@ -453,37 +459,73 @@ export class AuthService {
     ip?: string,
   ): Promise<TokenPair & { user: Omit<User, 'password'> }> {
     const codeKey = `register:code:${email}`
+    const attemptKey = `register:code:attempts:${email}`
     // L11：先读剩余 TTL 再 getdel——getdel 后 key 已删除无从查询，原实现错码回填恒设满 5 分钟，
     // 等于每次输错都把验证码余量续满（配合 60s 取码锁可无限延长有效窗口）
-    const remainingTtl = await this.redisService.ttl(codeKey)
-    // L1：check-and-consume 必须单点原子——原"先 GET 判等、再 getdel 丢弃返回值"在并发下
-    // 两个请求都能通过 GET，第二个 getdel 拿 null 却继续注册
-    const consumed = await this.redisService.getdel(codeKey)
+    // P1-04：ttl/getdel 任一不可用即无法完成校验——明确 503，不把未校验请求当成"验证码错误"
+    let remainingTtl: number
+    let consumed: string | null
+    try {
+      remainingTtl = await this.redisService.ttl(codeKey)
+      // L1：check-and-consume 必须单点原子——原"先 GET 判等、再 getdel 丢弃返回值"在并发下
+      // 两个请求都能通过 GET，第二个 getdel 拿 null 却继续注册
+      consumed = await this.redisService.getdel(codeKey)
+    } catch (err) {
+      noteRedisDegraded('auth:register-code-verify')
+      this.logger.warn(`注册验证码校验不可用: ${err instanceof Error ? err.message : String(err)}`)
+      throw new ServiceUnavailableException('验证码服务暂时不可用，请稍后重试')
+    }
+
     if (!consumed || consumed !== code) {
       // 输入错误时回填：错码也会被 getdel 取走，回填避免一次输错烧毁有效验证码
-      // L11：按剩余余量回填（-1 永久 / -2 不存在时退回原有效期）
+      // P1-04：回填失败说明有效码已丢失、计数无法可靠推进，按服务端故障返回 503 并留痕
       if (consumed) {
-        await this.redisService.set(codeKey, consumed, remainingTtl > 0 ? remainingTtl : 5 * 60)
+        try {
+          await this.restoreRegisterCode(codeKey, consumed, remainingTtl)
+        } catch (err) {
+          noteRedisDegraded('auth:register-code-backfill')
+          this.logger.warn(
+            `注册验证码回填失败: ${err instanceof Error ? err.message : String(err)}`,
+          )
+          throw new ServiceUnavailableException('验证码服务暂时不可用，请稍后重试')
+        }
       }
       // 验证码尝试次数限制：5 次失败后删除验证码并重置计数，攻击者需重新获取（受 60s 发送限制）
       // Lua 保证 INCR + 首次 EXPIRE 原子，避免进程在两步之间崩溃导致计数永驻
-      const attemptKey = `register:code:attempts:${email}`
-      const attempts = (await this.redisService.eval(
-        `local n = redis.call('INCR', KEYS[1])
+      let attempts: number
+      try {
+        attempts = (await this.redisService.eval(
+          `local n = redis.call('INCR', KEYS[1])
          if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
          return n`,
-        [attemptKey],
-        [300],
-      )) as number
+          [attemptKey],
+          [300],
+        )) as number
+      } catch (err) {
+        noteRedisDegraded('auth:register-code-attempts')
+        this.logger.warn(
+          `注册验证码尝试计数不可用: ${err instanceof Error ? err.message : String(err)}`,
+        )
+        throw new ServiceUnavailableException('验证码服务暂时不可用，请稍后重试')
+      }
       if (attempts >= 5) {
-        await this.redisService.del(`register:code:${email}`)
+        await this.redisService.del(codeKey)
         await this.redisService.del(attemptKey)
         throw new UnauthorizedException('验证码错误次数过多，请重新获取')
       }
       throw new UnauthorizedException('验证码无效或已过期')
     }
 
-    await this.redisService.del(`register:code:attempts:${email}`)
+    // P1-04：计数清理属善后动作——失败不能中断已通过校验的注册（原实现直接抛出，
+    // 有效码已消费且不会回填，用户须等满 60s 冷却才能重试）
+    try {
+      await this.redisService.del(attemptKey)
+    } catch (err) {
+      noteRedisDegraded('auth:register-code-attempts-reset')
+      this.logger.warn(
+        `注册验证码尝试计数清理失败: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
 
     try {
       await this.register(username, email, password)
@@ -491,11 +533,7 @@ export class AuthService {
       // L11：验证码已被 getdel 消费，任何注册失败（含 DB 抖动）都按剩余 TTL 回填——
       // 原仅 Conflict 回填，非冲突异常下用户必须等满 60s 发送冷却才能重试
       try {
-        await this.redisService.set(
-          `register:code:${email}`,
-          code,
-          remainingTtl > 0 ? remainingTtl : 5 * 60,
-        )
+        await this.restoreRegisterCode(codeKey, code, remainingTtl)
       } catch (redisErr) {
         // L1：回填失败是善后动作——不能顶替原始业务异常（否则 4xx 变 500 误判错误因），
         // 且需留痕并归因 Redis 降级，避免故障期散落无观测
@@ -519,6 +557,20 @@ export class AuthService {
     }
 
     return this.login(username, password, ip)
+  }
+
+  /**
+   * P1-04：验证码回填统一入口——只在剩余有效期仍有效时恢复，且用 SETNX 恢复，
+   * 不覆盖并发重发产生的新码、不复活已过期的旧码
+   */
+  private async restoreRegisterCode(
+    codeKey: string,
+    code: string,
+    remainingTtl: number,
+  ): Promise<void> {
+    // -2：getdel 之后已过期，不得复活；-1：无 TTL（异常态），退回原有效期
+    if (remainingTtl !== -1 && remainingTtl <= 0) return
+    await this.redisService.setNx(codeKey, code, remainingTtl > 0 ? remainingTtl : 5 * 60)
   }
 
   /**

@@ -34,6 +34,8 @@ describe('RolePermissionsService', () => {
   const adminCaller = { userId: 1, roleId: 1, isAdmin: true }
   const editorCaller = { userId: 2, roleId: 2, isAdmin: false }
   const mockTx = {
+    // P2-16：事务内角色/权限行 FOR KEY SHARE 锁查询
+    select: vi.fn(),
     delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
     insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
   }
@@ -47,6 +49,15 @@ describe('RolePermissionsService', () => {
     mockRedisService.del.mockResolvedValue(1)
     mockTx.delete.mockClear()
     mockTx.insert.mockClear()
+    // 默认行锁命中：角色 1 行、权限 1 行
+    mockTx.select.mockImplementation(() => {
+      const chain = {
+        from: () => chain,
+        where: () => chain,
+        for: async () => [{ id: 2, code: 'user:view' }],
+      }
+      return chain as never
+    })
     service = new RolePermissionsService(mockRedisService as never)
     vi.mocked(mockDb.transaction).mockImplementation((async (fn: (tx: unknown) => unknown) =>
       fn(mockTx)) as never)

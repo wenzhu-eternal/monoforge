@@ -473,11 +473,62 @@ describe('ScheduleService', () => {
 
       await service.manualBackup()
 
-      // backup-YYYYMMDD-HHmmss.sql（本地时间到秒）
+      // backup-YYYYMMDD-HHmmss-<pid+随机>.sql（本地时间到秒 + 任务唯一后缀）
       expect(mailService.sendBackupNotification).toHaveBeenCalledWith(
         true,
-        expect.stringMatching(/backup-\d{8}-\d{6}\.sql/),
+        expect.stringMatching(/backup-\d{8}-\d{6}-[a-z0-9]+\.sql/),
       )
+    })
+
+    it('P1-01: 锁降级无锁执行时，同秒并发任务各自独立临时与定稿路径', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      // Redis 异常 → 两个任务都走无锁降级，同一秒内并发（时间戳相同）
+      redisService.setNx.mockRejectedValue(new Error('redis down'))
+      const spawnSpy = mockSpawnPgDump(
+        vi.fn().mockImplementation(() => new Promise<void>((resolve) => setTimeout(resolve, 5))),
+      )
+
+      await Promise.all([service.manualBackup(), service.manualBackup()])
+
+      expect(spawnSpy).toHaveBeenCalledTimes(2)
+      const tmpPaths = mockRename.mock.calls.map((call) => String(call[0]))
+      const finalPaths = mockRename.mock.calls.map((call) => String(call[1]))
+      expect(finalPaths).toHaveLength(2)
+      expect(new Set(tmpPaths).size).toBe(2)
+      expect(new Set(finalPaths).size).toBe(2)
+      // 定稿产物不再被另一任务清理
+      expect(mockUnlink).not.toHaveBeenCalled()
+    })
+
+    it('P1-01: 同秒并发一方失败时只清理自己的临时文件，不触碰另一方定稿', async () => {
+      mockGetEnv.mockReturnValue({
+        BACKUP_CMD: undefined,
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+      })
+      redisService.setNx.mockRejectedValue(new Error('redis down'))
+      let call = 0
+      mockSpawnPgDump(
+        vi.fn().mockImplementation(() => {
+          call += 1
+          return call === 1 ? Promise.resolve() : Promise.reject(new Error('pg_dump 退出码 1'))
+        }),
+      )
+
+      const results = await Promise.allSettled([service.manualBackup(), service.manualBackup()])
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+      expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1)
+      expect(mockRename).toHaveBeenCalledTimes(1)
+      const successfulFinal = String(mockRename.mock.calls[0][1])
+      const successfulTmp = String(mockRename.mock.calls[0][0])
+      const unlinked = mockUnlink.mock.calls.map((c) => String(c[0]))
+      expect(unlinked.length).toBeGreaterThan(0)
+      expect(unlinked.every((p) => p.endsWith('.sql.tmp'))).toBe(true)
+      expect(unlinked).not.toContain(successfulFinal)
+      expect(unlinked).not.toContain(successfulTmp)
     })
 
     it('L26：产物小于下限 → 按失败处理（不 rename 定稿、清 .tmp、发失败邮件）', async () => {

@@ -42,4 +42,21 @@ describe('usePagedFallback（L23 列表末页回退）', () => {
 
     expect(setPage).not.toHaveBeenCalled()
   })
+
+  it('P2-04：占位数据（keepPreviousData 的上一页快照）为空时不回退，等本页真实结果', () => {
+    const setPage = vi.fn()
+
+    renderHook(() => usePagedFallback(0, true, 4, setPage, true))
+
+    expect(setPage).not.toHaveBeenCalled()
+  })
+
+  it('P2-04：占位数据为空但非占位（真实本页结果）→ 只回退一页', () => {
+    const setPage = vi.fn()
+
+    renderHook(() => usePagedFallback(0, true, 4, setPage, false))
+
+    expect(setPage).toHaveBeenCalledTimes(1)
+    expect(setPage).toHaveBeenCalledWith(3)
+  })
 })

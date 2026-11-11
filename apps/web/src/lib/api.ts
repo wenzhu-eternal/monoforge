@@ -15,6 +15,22 @@ export interface ApiRequestConfig extends AxiosRequestConfig {
    * 403 不整页跳转、强制改密不劫持。这类请求静默失败即可，失败本身不值得打扰用户。
    */
   skipAuthFlow?: boolean
+  /** P2-03：请求发出时的会话代次，用于丢弃跨会话晚到的响应 */
+  _sessionEpoch?: number
+  /** 重试标记：避免 401 → 刷新 → 再 401 的循环 */
+  _retry?: boolean
+}
+
+const SESSION_SUPERSEDED = 'SESSION_SUPERSEDED'
+
+function sessionSupersededError(): Error {
+  const error = new Error('会话已切换，旧会话请求已作废')
+  error.name = SESSION_SUPERSEDED
+  return error
+}
+
+export function isSessionSuperseded(error: unknown): boolean {
+  return error instanceof Error && error.name === SESSION_SUPERSEDED
 }
 
 export const api = axios.create({
@@ -28,16 +44,22 @@ export const api = axios.create({
 
 let isRefreshing = false
 let failedQueue: Array<{
+  epoch: number
   resolve: (value: unknown) => void
   reject: (reason?: unknown) => void
 }> = []
 
-const processQueue = (error: unknown, token: string | null) => {
-  failedQueue.forEach(({ resolve, reject }) => {
+const processQueue = (error: unknown, token: string | null, epoch: number) => {
+  failedQueue.forEach((item) => {
+    // P2-03：排队请求只允许被自己所属会话的刷新结果唤醒
+    if (item.epoch !== epoch) {
+      item.reject(sessionSupersededError())
+      return
+    }
     if (error) {
-      reject(error)
+      item.reject(error)
     } else {
-      resolve(token)
+      item.resolve(token)
     }
   })
   failedQueue = []
@@ -60,9 +82,21 @@ const REFRESH_TOKEN_KEY = 'monoforge-auth-refresh-token'
 // M9/M11：同 tab 并发调用（拦截器队列 / bootstrapAuth / WS 踢线刷新）共享同一 in-flight——
 // refresh token 单次消费（Redis GETDEL），同 tab 内各发一次必有一发被打吊
 let inflightRefresh: Promise<string> | null = null
+let inflightEpoch = 0
 
-export async function refreshAccessToken(issuedAt = Date.now()): Promise<string> {
-  if (inflightRefresh) return inflightRefresh
+export async function refreshAccessToken(
+  issuedAt = Date.now(),
+  // P2-03：绑定发起时的会话代次——刷新期间登出/换号，其结果一律作废，不得回写新会话
+  epoch = useAuthStore.getState().sessionEpoch,
+): Promise<string> {
+  if (inflightRefresh) {
+    if (inflightEpoch === epoch) return inflightRefresh
+    // 旧会话的 in-flight 结果不可复用：等它结束后按当前会话重新发起
+    await inflightRefresh.catch(() => undefined)
+  }
+  const assertSameSession = () => {
+    if (epoch !== useAuthStore.getState().sessionEpoch) throw sessionSupersededError()
+  }
   const task = (async () => {
     const doRefresh = async (): Promise<string> => {
       let doneAt = 0
@@ -78,6 +112,8 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
         /* 存储不可访问 */
       }
       if (doneAt >= issuedAt && shared) {
+        // P2-03：共享刷新结果也只能用于其所属会话
+        assertSameSession()
         // 同步本 tab store，后续请求直接用新 token
         useAuthStore.getState().setToken(shared)
         return shared
@@ -87,6 +123,7 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
         timeout: 15_000,
       })
       const { accessToken } = response.data.data as { accessToken: string }
+      assertSameSession()
       try {
         localStorage.setItem(REFRESH_AT_KEY, String(Date.now()))
         localStorage.setItem(REFRESH_TOKEN_KEY, accessToken)
@@ -119,6 +156,8 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
           /* 存储不可访问 */
         }
         if (doneAt2 >= issuedAt && shared2) {
+          // P2-03：他 tab 的共享结果同样受会话代次约束
+          assertSameSession()
           useAuthStore.getState().setToken(shared2)
           return shared2
         }
@@ -142,12 +181,16 @@ export async function refreshAccessToken(issuedAt = Date.now()): Promise<string>
     }
     return refreshWithSharedFallback()
   })()
-  inflightRefresh = task
-  try {
-    return await task
-  } finally {
-    if (inflightRefresh === task) inflightRefresh = null
-  }
+  // P2-03：in-flight 结果与代次同生共死——settle 即释放，避免新会话复用旧会话的刷新
+  const tracked = task.finally(() => {
+    if (inflightRefresh === tracked) {
+      inflightRefresh = null
+      inflightEpoch = 0
+    }
+  })
+  inflightRefresh = tracked
+  inflightEpoch = epoch
+  return tracked
 }
 
 /**
@@ -183,10 +226,12 @@ export const authRedirect = {
 
 api.interceptors.request.use(
   (config) => {
-    const token = useAuthStore.getState().token
+    const { token, sessionEpoch } = useAuthStore.getState()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    // P2-03：请求发出即绑定会话代次，响应晚到时据此丢弃跨会话结果
+    ;(config as ApiRequestConfig)._sessionEpoch = sessionEpoch
     return config
   },
   (error) => Promise.reject(error),
@@ -195,11 +240,22 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config as typeof error.config & { _retry?: boolean }
+    const originalRequest = error.config as
+      | (typeof error.config & { _retry?: boolean; _sessionEpoch?: number })
+      | undefined
 
     // M10：旁路请求不卷入认证流程——401 不刷新、403 不跳转、强制改密不劫持，静默失败
     if ((originalRequest as ApiRequestConfig | undefined)?.skipAuthFlow) {
       return Promise.reject(error)
+    }
+
+    // P2-03：旧会话请求晚到（重新登录后才返回的 401/403）——不得触发刷新、清态或跳转
+    const currentEpoch = useAuthStore.getState().sessionEpoch
+    if (
+      originalRequest?._sessionEpoch !== undefined &&
+      originalRequest._sessionEpoch !== currentEpoch
+    ) {
+      return Promise.reject(sessionSupersededError())
     }
 
     // 403 统一跳转 /403，与前端 AuthenticatedLayout 行为一致。
@@ -253,6 +309,7 @@ api.interceptors.response.use(
             reject(new Error('登录状态刷新超时，请重新登录'))
           }, 15000)
           failedQueue.push({
+            epoch: currentEpoch,
             resolve: (v) => {
               clearTimeout(timer)
               resolve(v)
@@ -263,6 +320,10 @@ api.interceptors.response.use(
             },
           })
         }).then((token) => {
+          // P2-03：排队请求只能被本会话的刷新结果唤醒
+          if (currentEpoch !== useAuthStore.getState().sessionEpoch) {
+            return Promise.reject(sessionSupersededError())
+          }
           // L2：刷新成功但期间已登出，排队请求不得带死 token 重发
           if (!useAuthStore.getState().isAuthenticated) {
             return Promise.reject(new Error('用户已登出，放弃 refresh 重试'))
@@ -282,7 +343,13 @@ api.interceptors.response.use(
       try {
         // refreshToken 走 httpOnly cookie；同源部署（VITE_API_BASE_URL 为空）时走相对路径经 Vite 代理携带 cookie
         // L31 超时与 M11 跨 tab 单飞均收敛在 refreshAccessToken 内
-        const accessToken = await refreshAccessToken(issuedAt)
+        const accessToken = await refreshAccessToken(issuedAt, currentEpoch)
+
+        // P2-03：刷新期间登出/换号——旧结果不得回写新会话
+        if (currentEpoch !== useAuthStore.getState().sessionEpoch) {
+          processQueue(sessionSupersededError(), null, currentEpoch)
+          return Promise.reject(sessionSupersededError())
+        }
 
         // M3：refresh 期间若用户已登出（clearUserScopedState 已执行、isAuthenticated=false），
         // 不得向已清态 store 回写死信 token，也不得重发排队请求——避免死信 token 导致跨用户
@@ -291,21 +358,25 @@ api.interceptors.response.use(
           // L2：先排空队列再早退，否则排队请求各自等 15s 定时器超时，且后续刷新周期
           // 会把旧队列带去重试死 token。排队回调同样复检登出态（见上方 then 分支）
           const logoutError = new Error('用户已登出，放弃 refresh 重试')
-          processQueue(logoutError, null)
+          processQueue(logoutError, null, currentEpoch)
           return Promise.reject(logoutError)
         }
 
         useAuthStore.getState().setToken(accessToken)
-        processQueue(null, accessToken)
+        processQueue(null, accessToken, currentEpoch)
 
         originalRequest.headers.Authorization = `Bearer ${accessToken}`
         return api(originalRequest)
       } catch (refreshError) {
-        processQueue(refreshError, null)
+        processQueue(refreshError, null, currentEpoch)
         // M2：must-change 用户 refresh 必 401——跳改密页且不清态（清态会弹回登录页），
         // 与下方终态登出互斥。原判定在 refreshAccessToken 无锁分支内：主路径（Web Locks）
         // 401 直接穿透到此被清态覆盖，双重失效
         const refreshErr = refreshError as AxiosError<{ message?: string } | undefined>
+        // P2-03：刷新期间会话已切换——旧会话的失败不得跳转、也不得清掉新会话
+        if (currentEpoch !== useAuthStore.getState().sessionEpoch) {
+          return Promise.reject(refreshError)
+        }
         if (
           refreshErr?.response?.status === 401 &&
           refreshErr.response.data?.message === ErrorMessages[ErrorCodes.MUST_CHANGE_PASSWORD]

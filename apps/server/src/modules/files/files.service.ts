@@ -120,17 +120,32 @@ export class FilesService {
       | { id: number; filename: string; originalName: string; mimeType: string; size: number }
       | undefined
     try {
-      ;[created] = await db
-        .insert(files)
-        .values({
-          filename: safeFilename,
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          size: file.size,
-          path: file.path,
-          uploadedBy,
-        })
-        .returning()
+      created = await db.transaction(async (tx) => {
+        // P2-15：与 users.remove 的 FOR UPDATE 行锁互斥——删除已提交则此处查不到存续用户，
+        // 封住"删除侧预检无文件 → 本笔上传随后入库"留下指向已软删用户的活跃文件
+        if (uploadedBy !== undefined) {
+          const [owner] = await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.id, uploadedBy), notDeleted(users.deletedAt)))
+            .for('key share')
+          if (!owner) {
+            throw new ConflictException('上传用户不存在或已删除，请重新登录后再试')
+          }
+        }
+        const [row] = await tx
+          .insert(files)
+          .values({
+            filename: safeFilename,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+            size: file.size,
+            path: file.path,
+            uploadedBy,
+          })
+          .returning()
+        return row
+      })
     } catch (e) {
       await unlink(file.path).catch(() => {})
       // L6：DB insert 失败后退额（quotaConsumed 已在 consume 前置 true）

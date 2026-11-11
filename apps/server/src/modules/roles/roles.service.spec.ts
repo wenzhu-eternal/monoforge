@@ -2,7 +2,9 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/db', () => {
+  const txSelect = vi.fn()
   const tx = {
+    select: txSelect,
     update: vi.fn().mockReturnValue({
       set: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
@@ -26,6 +28,8 @@ vi.mock('@/db', () => {
       delete: vi.fn(),
       // L2：remove 走事务（软删 + 清绑定原子化），mock 直接透传 tx
       transaction: vi.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(tx)),
+      // P2-16：事务内行锁/引用计数查询的 mock 句柄
+      txSelect,
     },
   }
 })
@@ -42,6 +46,9 @@ vi.mock('@/config/env', () => ({
 }))
 
 const { db: mockDb } = await import('@/db')
+
+// P2-16：mock 工厂额外暴露的事务查询句柄（不在真实 db 类型上）
+const mockTxSelect = (mockDb as unknown as { txSelect: ReturnType<typeof vi.fn> }).txSelect
 
 import { RolesService } from './roles.service'
 
@@ -242,6 +249,12 @@ describe('RolesService', () => {
   })
 
   describe('remove', () => {
+    // P2-16：默认行锁命中 + 引用计数为 0（各用例按需覆盖）
+    beforeEach(() => {
+      const chain = { from: () => chain, where: () => chain, for: async () => [{ id: 1 }] }
+      vi.mocked(mockTxSelect).mockImplementation(() => chain as never)
+    })
+
     it('角色不存在时抛 NotFoundException', async () => {
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue(undefined)
 
@@ -253,11 +266,10 @@ describe('RolesService', () => {
         id: 5,
         name: 'editor',
       } as never)
-      vi.mocked(mockDb.select).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 3 }]),
-        }),
-      } as never)
+      const lock = { from: () => lock, where: () => lock, for: async () => [{ id: 5 }] }
+      vi.mocked(mockTxSelect)
+        .mockReturnValueOnce(lock as never)
+        .mockReturnValueOnce({ from: () => ({ where: async () => [{ count: 3 }] }) } as never)
 
       await expect(service.remove(5)).rejects.toThrow(ConflictException)
     })

@@ -1,8 +1,12 @@
-import { ErrorCodes, ErrorMessages } from '@shared'
-import axios, { type AxiosError } from 'axios'
+import { ErrorCodes, ErrorMessages, type User } from '@shared'
+import axios, {
+  AxiosError,
+  type AxiosError as AxiosErrorType,
+  type InternalAxiosRequestConfig,
+} from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/store/auth-store'
-import { bootstrapAuth, refreshAccessToken } from './api'
+import { type ApiRequestConfig, api, bootstrapAuth, refreshAccessToken } from './api'
 
 const AT_KEY = 'monoforge-auth-refresh-at'
 const RT_KEY = 'monoforge-auth-refresh-token'
@@ -68,7 +72,7 @@ describe('L11：无 Web Locks 时刷新失败后二次检查共享键', () => {
     const axiosError = Object.assign(new Error('api-refresh-401'), {
       isAxiosError: true,
       response: { status: 401, data: { message: mustChangeMsg } },
-    }) as AxiosError<{ message?: string }>
+    }) as AxiosErrorType<{ message?: string }>
     vi.spyOn(axios, 'post').mockRejectedValue(axiosError)
 
     // 消费 rejection，避免 vitest unhandled rejection 检测误报
@@ -133,6 +137,86 @@ describe('L26：锁回调已执行后失败 → 保留真实刷新错误', () =>
     await assertion
     expect(request).toHaveBeenCalledTimes(1)
     expect(useAuthStore.getState().token).toBeNull()
+  })
+})
+
+describe('P2-03：会话代次隔离', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
+    useAuthStore.setState({ token: null, isAuthenticated: false, user: null, sessionEpoch: 0 })
+    Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('旧会话刷新成功晚到 → 作废，不覆盖新登录 token', async () => {
+    vi.useFakeTimers()
+    useAuthStore.setState({ token: 'old-token', isAuthenticated: true, sessionEpoch: 1 })
+    let resolvePost: (value: unknown) => void = () => undefined
+    vi.spyOn(axios, 'post').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve
+        }),
+    )
+
+    const promise = refreshAccessToken(Date.now() - 1000, 1)
+    const assertion = expect(promise).rejects.toThrow('会话已切换')
+    // 刷新在途期间重新登录（同账号也算新会话）
+    useAuthStore.getState().login({ id: 9 } as User, 'new-token')
+    resolvePost({ data: { data: { accessToken: 'stale-token' } } })
+    await vi.advanceTimersByTimeAsync(600)
+    await assertion
+
+    expect(useAuthStore.getState().token).toBe('new-token')
+  })
+
+  it('旧会话业务请求 401 晚到 → 不触发刷新、不清态、不跳转', async () => {
+    useAuthStore.setState({ token: 'old-token', isAuthenticated: true, sessionEpoch: 1 })
+    useAuthStore.getState().login({ id: 9 } as User, 'new-token')
+    const post = vi.spyOn(axios, 'post')
+    const adapter = async (config: InternalAxiosRequestConfig) => {
+      // 模拟该请求在旧会话（代次 1）发出，新登录后才收到 401
+      ;(config as ApiRequestConfig)._sessionEpoch = 1
+      throw new AxiosError('old 401', 'ERR_BAD_REQUEST', config, undefined, {
+        status: 401,
+        statusText: '',
+        headers: {},
+        config,
+        data: {},
+      })
+    }
+
+    await expect(api.get('/api/v1/users', { adapter })).rejects.toThrow('会话已切换')
+
+    expect(post).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().token).toBe('new-token')
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+  })
+
+  it('旧会话刷新失败晚到 → 不中断已切换的新会话', async () => {
+    vi.useFakeTimers()
+    useAuthStore.setState({ token: 'old-token', isAuthenticated: true, sessionEpoch: 1 })
+    let rejectPost: (reason: unknown) => void = () => undefined
+    vi.spyOn(axios, 'post').mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectPost = reject
+        }),
+    )
+
+    const promise = refreshAccessToken(Date.now() - 1000, 1)
+    const assertion = expect(promise).rejects.toThrow('refresh failed')
+    useAuthStore.getState().login({ id: 9 } as User, 'new-token')
+    rejectPost(new Error('refresh failed'))
+    await vi.advanceTimersByTimeAsync(600)
+    await assertion
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(useAuthStore.getState().token).toBe('new-token')
   })
 })
 

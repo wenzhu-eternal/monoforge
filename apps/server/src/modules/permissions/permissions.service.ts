@@ -211,21 +211,30 @@ export class PermissionsService {
       throw new NotFoundException(`权限 ID ${id} 不存在`)
     }
 
-    // 绑定校验: 仅统计未软删角色的引用（L11：已删角色的残留绑定是幽灵引用，不应阻塞删除）
-    const bindings = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(rolePermissions)
-      .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
-      .where(and(eq(rolePermissions.permission, existing.code), notDeleted(roles.deletedAt)))
-    const count = bindings[0]?.count ?? 0
-    if (count > 0) {
-      throw new ConflictException(`该权限仍被 ${count} 个角色引用，无法删除`)
-    }
-
     // L18：软删与清绑定同事务——FK 引用不了部分唯一索引（软删允许同码重建的设计），
     // 改用与角色删除同款模式：软删权限时同步清理全部绑定（含已删角色的幽灵行），
     // 否则残留绑定在权限恢复时"复活"旧授权
+    // P2-16：事务内 FOR UPDATE 锁权限行，与角色绑权限的 FOR KEY SHARE 互斥
     await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(and(eq(permissions.id, id), notDeleted(permissions.deletedAt)))
+        .for('update')
+      if (!locked) {
+        throw new NotFoundException(`权限 ID ${id} 不存在`)
+      }
+
+      const bindings = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(rolePermissions)
+        .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
+        .where(and(eq(rolePermissions.permission, existing.code), notDeleted(roles.deletedAt)))
+      const lockedCount = bindings[0]?.count ?? 0
+      if (lockedCount > 0) {
+        throw new ConflictException(`该权限仍被 ${lockedCount} 个角色引用，无法删除`)
+      }
+
       await tx.update(permissions).set({ deletedAt: new Date() }).where(eq(permissions.id, id))
       await tx.delete(rolePermissions).where(eq(rolePermissions.permission, existing.code))
     })

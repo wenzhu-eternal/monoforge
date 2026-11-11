@@ -175,21 +175,31 @@ export class RolesService {
       throw new ForbiddenException('系统内置角色不可删除')
     }
 
-    // 绑定校验: 检查是否被用户引用
-    const userCount = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(users)
-      .where(and(eq(users.roleId, id), notDeleted(users.deletedAt)))
-    const count = userCount[0]?.count ?? 0
-    if (count > 0) {
-      throw new ConflictException(
-        `${ErrorMessages[ErrorCodes.ROLE_IN_USE]}（仍被 ${count} 个用户使用）`,
-      )
-    }
-
     // L2：软删与清绑定必须同事务——中途失败会留下"角色已软删但绑定残留"，
     // 重试因 notDeleted 预检 404 而孤儿绑定永难清理
+    // P2-16：事务内先对角色行加 FOR UPDATE，与用户改角色、角色绑权限的 FOR KEY SHARE 互斥——
+    // 已通过预检的绑定不会晚于删除提交，刚成功的绑定也不会被删除事务清走
     await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: roles.id })
+        .from(roles)
+        .where(and(eq(roles.id, id), notDeleted(roles.deletedAt)))
+        .for('update')
+      if (!locked) {
+        throw new NotFoundException(`角色 ID ${id} 不存在`)
+      }
+
+      const userCount = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(eq(users.roleId, id), notDeleted(users.deletedAt)))
+      const lockedCount = userCount[0]?.count ?? 0
+      if (lockedCount > 0) {
+        throw new ConflictException(
+          `${ErrorMessages[ErrorCodes.ROLE_IN_USE]}（仍被 ${lockedCount} 个用户使用）`,
+        )
+      }
+
       await tx.update(roles).set({ deletedAt: new Date() }).where(eq(roles.id, id))
 
       // L11：软删角色同步清绑定——残留绑定会让权限删除校验计入幽灵引用（角色列表已删、权限却删不掉）；

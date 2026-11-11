@@ -2,7 +2,9 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/db', () => {
+  const txSelect = vi.fn()
   const tx = {
+    select: txSelect,
     update: vi.fn().mockReturnValue({
       set: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
@@ -25,6 +27,8 @@ vi.mock('@/db', () => {
       select: vi.fn(),
       // L18：remove 走事务（软删 + 清绑定原子化），mock 直接透传 tx
       transaction: vi.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(tx)),
+      // P2-16：事务内行锁/引用计数查询的 mock 句柄
+      txSelect,
     },
   }
 })
@@ -36,6 +40,9 @@ vi.mock('@/db/helpers', () => ({
 }))
 
 const { db: mockDb } = await import('@/db')
+
+// P2-16：mock 工厂额外暴露的事务查询句柄（不在真实 db 类型上）
+const mockTxSelect = (mockDb as unknown as { txSelect: ReturnType<typeof vi.fn> }).txSelect
 
 import { PermissionsService } from './permissions.service'
 
@@ -281,16 +288,19 @@ describe('PermissionsService', () => {
   })
 
   describe('remove', () => {
+    // P2-16：默认行锁命中 + 引用计数为 0
+    beforeEach(() => {
+      const chain = {
+        from: () => chain,
+        innerJoin: () => chain,
+        where: () => chain,
+        for: async () => [{ id: 1 }],
+      }
+      vi.mocked(mockTxSelect).mockImplementation(() => chain as never)
+    })
+
     it('should soft delete permission', async () => {
       vi.mocked(mockDb.query.permissions.findFirst).mockResolvedValue({ id: 1 } as never)
-      // 绑定校验 join 未删角色：无引用时放行
-      vi.mocked(mockDb.select).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          innerJoin: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([{ count: 0 }]),
-          }),
-        }),
-      } as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),

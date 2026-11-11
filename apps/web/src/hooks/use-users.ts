@@ -5,6 +5,7 @@ import type {
   PaginationQuery,
   UpdateUser,
   User,
+  UserListItem,
 } from '@shared'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -14,9 +15,12 @@ export const useUsers = (params: PaginationQuery) => {
   return useQuery({
     queryKey: ['users', params],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<PaginatedResponse<User>>>('/api/v1/users', {
-        params,
-      })
+      const response = await api.get<ApiResponse<PaginatedResponse<UserListItem>>>(
+        '/api/v1/users',
+        {
+          params,
+        },
+      )
       return response.data.data!
     },
     // L20：翻页/筛选时保留上一页数据，避免 data 瞬时 undefined 导致表格闪空

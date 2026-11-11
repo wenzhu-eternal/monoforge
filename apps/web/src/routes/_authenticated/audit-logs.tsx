@@ -90,12 +90,12 @@ function AuditLogsContent() {
   }>({})
   const [searchForm] = Form.useForm()
   const [messageApi, contextHolder] = message.useMessage()
-  const { data, isLoading, isError, error, isSuccess, refetch } = useAuditLogs({
+  const { data, isLoading, isError, error, isSuccess, isPlaceholderData, refetch } = useAuditLogs({
     page,
     pageSize,
     ...filters,
   })
-  usePagedFallback(data?.list.length, isSuccess, page, setPage)
+  usePagedFallback(data?.list.length, isSuccess, page, setPage, isPlaceholderData)
 
   useEffect(() => {
     if (isError) {

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { PERMISSIONS_KEY } from '@/common/decorators/permissions.decorator'
 import { RolePermissionsController } from '@/modules/permissions/role-permissions.controller'
 import { RoutesController } from '@/modules/routes/routes.controller'
-import { assertAdminUsernameAvailable } from './seed-guards'
+import { assertAdminUsernameAvailable, resolveSeedAdminEmail, toSafeAdminLog } from './seed-guards'
 
 const METHOD_NAMES: Record<number, string> = {
   [RequestMethod.GET]: 'GET',
@@ -54,6 +54,41 @@ describe('assertAdminUsernameAvailable（M1）', () => {
 
   it('已存在 admin 角色用户时放行（调用方已提前 return，不进入补建）', () => {
     expect(() => assertAdminUsernameAvailable({ id: 1, roleId: 1 }, 1)).not.toThrow()
+  })
+})
+
+describe('resolveSeedAdminEmail（P2-12）', () => {
+  it('缺省值与自定义值都经共享邮箱契约规范化（trim + 小写）', () => {
+    expect(resolveSeedAdminEmail()).toBe('admin@example.com')
+    expect(resolveSeedAdminEmail('  Admin@Example.COM  ')).toBe('admin@example.com')
+  })
+
+  it.each([
+    'not-an-email',
+    // 微信登录占位域名不可用于 seed 管理员
+    'admin@wechat.placeholder',
+    `${'a'.repeat(95)}@example.com`,
+  ])('非法配置 %s 直接抛错，不进入建号流程', (email) => {
+    expect(() => resolveSeedAdminEmail(email)).toThrow(/SEED_ADMIN_EMAIL 非法/)
+  })
+})
+
+describe('toSafeAdminLog（P2-13）', () => {
+  it('只输出 id/username/roleId，序列化结果不含密码哈希与邮箱', () => {
+    const adminUser = {
+      id: 1,
+      username: 'admin',
+      roleId: 1 as number | null,
+      email: 'admin@example.com',
+      password: '$argon2id$v=19$m=65536,t=3,p=4$hash',
+    }
+
+    const log = toSafeAdminLog(adminUser)
+
+    expect(log).toEqual({ id: 1, username: 'admin', roleId: 1 })
+    const serialized = JSON.stringify(log)
+    expect(serialized).not.toContain('admin@example.com')
+    expect(serialized).not.toContain('argon2')
   })
 })
 

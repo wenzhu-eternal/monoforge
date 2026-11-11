@@ -91,6 +91,8 @@ export const useResolveErrorLog = () => {
       queryClient.invalidateQueries({ queryKey: ['error-logs'] })
       queryClient.invalidateQueries({ queryKey: ['error-stats'] })
       queryClient.invalidateQueries({ queryKey: ['error-logs-grouped'] })
+      // P2-14：错误日志写操作会落审计记录，同步失效审计列表
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
     },
   })
 }
@@ -109,6 +111,8 @@ export const useBatchResolveErrorLog = () => {
       queryClient.invalidateQueries({ queryKey: ['error-logs'] })
       queryClient.invalidateQueries({ queryKey: ['error-stats'] })
       queryClient.invalidateQueries({ queryKey: ['error-logs-grouped'] })
+      // P2-14：错误日志写操作会落审计记录，同步失效审计列表
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
     },
   })
 }
@@ -123,6 +127,8 @@ export const useDeleteErrorLog = () => {
       queryClient.invalidateQueries({ queryKey: ['error-logs'] })
       queryClient.invalidateQueries({ queryKey: ['error-stats'] })
       queryClient.invalidateQueries({ queryKey: ['error-logs-grouped'] })
+      // P2-14：错误日志写操作会落审计记录，同步失效审计列表
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
     },
   })
 }
@@ -149,6 +155,8 @@ export const useCreateWhitelist = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['error-whitelist'] })
+      // P2-14：白名单写操作同样会落审计记录
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
     },
   })
 }
@@ -165,6 +173,8 @@ export const useUpdateWhitelist = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['error-whitelist'] })
+      // P2-14：白名单写操作同样会落审计记录
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
     },
   })
 }
@@ -177,6 +187,8 @@ export const useDeleteWhitelist = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['error-whitelist'] })
+      // P2-14：白名单写操作同样会落审计记录
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
     },
   })
 }
@@ -192,6 +204,8 @@ export const useRestoreWhitelist = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['error-whitelist'] })
+      // P2-14：白名单写操作同样会落审计记录
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
     },
   })
 }

@@ -1,4 +1,5 @@
 import { exec, spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, readdir, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -457,7 +458,10 @@ export class ScheduleService implements OnApplicationBootstrap {
       const now = new Date()
       const pad = (n: number) => String(n).padStart(2, '0')
       const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-      const filename = `backup-${timestamp}.sql`
+      // P1-01：秒级命名在锁异常降级为无锁执行时可被同秒并发任务命中——两任务的 .tmp 与定稿路径
+      // 同时冲突，一方已报成功后仍会被另一方的文件句柄改写。追加 pid + 随机后缀让每个任务独享路径
+      const uniqueSuffix = `${process.pid.toString(36)}${randomBytes(4).toString('hex')}`
+      const filename = `backup-${timestamp}-${uniqueSuffix}.sql`
       filepath = join(BACKUP_DIR, filename)
       tmpFilepath = `${filepath}.tmp`
 

@@ -64,8 +64,13 @@ export function PermissionCodesContent() {
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
   const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
 
-  const { data, isLoading, isError, error, isSuccess, refetch } = usePermissions({ page, pageSize })
-  usePagedFallback(data?.list.length, isSuccess, page, setPage)
+  const { data, isLoading, isError, error, isSuccess, isPlaceholderData, refetch } = usePermissions(
+    {
+      page,
+      pageSize,
+    },
+  )
+  usePagedFallback(data?.list.length, isSuccess, page, setPage, isPlaceholderData)
   const {
     data: allRoutes,
     isError: routesError,

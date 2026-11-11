@@ -35,7 +35,7 @@
 | `DEFAULT_USER_ROLE_ID` | user 角色 ID（public register/默认建户/微信建户默认分配此角色，seed 默认 2） | `2` |
 | `UPLOAD_DIR` | 上传目录（默认 `<cwd>/uploads`，回收站为同前缀 `-trash` 目录）。变更 WORKDIR 的部署用绝对路径锚定，避免历史文件失联 | `<cwd>/uploads` |
 | `BACKUP_DIR` | 备份目录（默认 `<cwd>/backups`）。**不得等于或位于 `UPLOAD_DIR` 内**（比较前会解析 symlink，否则孤儿清理会删掉备份）。手动 `pnpm db:backup` / `pnpm db:restore` 读取同一变量，相对路径按后端 cwd（`apps/server`）解析；容器部署时确认已挂载持久卷 | `<cwd>/backups` |
-| `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制）。备份经 Redis SETNX 互斥锁串行执行（进行中再触发返回 409；Redis 异常时降级无锁执行），产物按 `backup-YYYYMMDD-HHmmss.sql` 秒级命名防同日覆盖。成败通知发给 `ADMIN_ROLE_ID` 角色下第一个启用用户的邮箱（即初始化管理员），查不到时回退 `MAIL_FROM` | `false` |
+| `ENABLE_BACKUP` | 定时数据库备份开关：`true` 启用每日 0 点备份，`false` 关闭（开发默认关闭，避免容器未运行导致失败邮件；手动触发 `POST /schedule/backup` 不受此限制）。备份经 Redis SETNX 互斥锁串行执行（进行中再触发返回 409；Redis 异常时降级无锁执行），产物按 `backup-YYYYMMDD-HHmmss-<pid+随机>.sql` 命名——秒级时间戳之外再带任务唯一后缀，Redis 异常降级无锁执行时同秒并发也不会互相覆盖或改写定稿。成败通知发给 `ADMIN_ROLE_ID` 角色下第一个启用用户的邮箱（即初始化管理员），查不到时回退 `MAIL_FROM` | `false` |
 | `BACKUP_CMD` | 自定义备份命令（本机无 `pg_dump` 时可用 `docker exec` 调用容器内命令；命令中 `{filepath}` 占位符会被替换为实际备份文件路径，**替换值已自带 shell 单引号转义，配置时禁止再给 `{filepath}` 加引号**，否则路径带字面引号必然重定向失败）。启动时校验：必须含 `{filepath}` 且未被引号包裹，禁止换行、反引号、`$` 变量展开、管道 `|`、命令拼接 `;`/`&`/`&&`/`||`、子 shell `(`/`)` 与输入重定向 `<`（仅放行 `>` 输出重定向）。该 env 等同一段受信 shell 片段，只应由部署者自配，绝不可由外部输入透传。注：生产镜像已内置 `postgresql16-client`，默认 pg_dump 链路开箱即用，仅在特殊场景（如走代理导出）才需配置此项 | - |
 | `BACKUP_MIN_BYTES` | 备份产物大小下限（字节，L26）：产物小于该值视为截断/空产物，按失败处理（不 rename 定稿、不入库 .sql，只清 .tmp 并告警）。正常空库 pg_dump 也有数 KB，设 `0` 关闭校验 | `1024` |
 | `THROTTLE_TTL` | 限流时间窗口（秒） | `60` |
@@ -134,10 +134,10 @@ const code = randomInt(0, 999999).toString().padStart(6, '0')
 
 ### Schema 约束
 
-`SendVerificationCodeMailSchema` 只保留 `to`（必填）+ `name`（可选），删除 `code` 字段：
+`SendVerificationCodeMailSchema` 只保留 `to`（必填）+ `name`（可选），删除 `code` 字段；写侧统一 `z.strictObject`（多传字段 400，不静默 strip）：
 
 ```ts
-export const SendVerificationCodeMailSchema = z.object({
+export const SendVerificationCodeMailSchema = z.strictObject({
   to: UserEmailSchema,
   name: z.string().min(1).max(50).optional(),
 })

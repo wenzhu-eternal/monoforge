@@ -134,7 +134,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/docs
 ## Docker 部署
 
 ```bash
-# 启动所有服务（postgres + redis + server + web）
+# 启动所有服务（postgres + redis + app，前端已打进 app 镜像的单一入口）
 docker compose up -d
 
 # 查看日志

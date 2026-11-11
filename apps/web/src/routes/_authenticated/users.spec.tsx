@@ -73,9 +73,18 @@ vi.mock('@/hooks/use-users', () => {
   }
   const pendingDelete = (id: number) =>
     new Promise<void>((resolve) => state.deleteCalls.push({ id, resolve }))
+  // P2-18：真实列表里 mustChangePassword 为 false 的行（开关初始应为关闭）
+  const unlocked = {
+    ...other,
+    id: 5,
+    username: 'unlocked',
+    email: 'u@example.com',
+    nickname: 'Unlocked',
+    mustChangePassword: false,
+  }
   return {
     useUsers: () => ({
-      data: { list: [other, self, third, masked], total: 4 },
+      data: { list: [other, self, third, masked, unlocked], total: 5 },
       isLoading: false,
       isError: false,
       error: null,
@@ -386,5 +395,90 @@ describe('L6：用户行级并发', () => {
         'ant-btn-loading',
       )
     })
+  })
+})
+
+describe('P1-03：掩码行输入后删空不得清掉真实值', () => {
+  beforeEach(() => {
+    state.granted = [PermissionCodes.USER_UPDATE, PermissionCodes.USER_ROLE_MANAGE]
+    state.me = { id: 7, adminRoleId: 1 }
+    state.updatePayloads = []
+  })
+
+  async function submitWithField(
+    label: string,
+    typed: string,
+    final: string,
+  ): Promise<Record<string, unknown>> {
+    await openEditModal(3)
+    const input = screen.getByLabelText(label)
+    fireEvent.change(input, { target: { value: typed } })
+    fireEvent.change(input, { target: { value: final } })
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: '掩码昵称' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    return payload.data
+  }
+
+  it('掩码手机号输入后删空 → payload 不含 phone（不被 null 清空）', async () => {
+    render(<UsersContent />)
+
+    const data = await submitWithField('手机号', '13900000000', '')
+
+    expect(data).not.toHaveProperty('phone')
+  })
+
+  it('掩码邮箱输入后删空 → payload 不含 email（不提交写侧拒收的空串）', async () => {
+    render(<UsersContent />)
+
+    const data = await submitWithField('邮箱', 'new@example.com', '')
+
+    expect(data).not.toHaveProperty('email')
+  })
+
+  it('掩码行填合法新值 → 正常提交', async () => {
+    render(<UsersContent />)
+
+    const data = await submitWithField('手机号', '', '13900000000')
+
+    expect(data.phone).toBe('13900000000')
+  })
+})
+
+describe('P2-18：强制改密开关按列表权威值回显', () => {
+  beforeEach(() => {
+    state.granted = [PermissionCodes.USER_UPDATE, PermissionCodes.USER_ROLE_MANAGE]
+    state.me = { id: 7, adminRoleId: 1 }
+    state.updatePayloads = []
+  })
+
+  it('列表回显 true → 编辑弹窗开关初始开启', async () => {
+    render(<UsersContent />)
+
+    await openEditModal(0)
+
+    expect(await screen.findByLabelText('首登强制改密')).toBeChecked()
+  })
+
+  it('列表回显 false → 编辑弹窗开关初始关闭', async () => {
+    render(<UsersContent />)
+
+    await openEditModal(4)
+
+    expect(await screen.findByLabelText('首登强制改密')).not.toBeChecked()
+  })
+
+  it('列表回显 false 且只改昵称 → 不提交 mustChangePassword', async () => {
+    render(<UsersContent />)
+
+    await openEditModal(4)
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: '未解锁用户改名' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.updatePayloads).toHaveLength(1))
+    const [payload] = state.updatePayloads
+    if (!payload) throw new Error('未捕获 update payload')
+    expect(payload.data).not.toHaveProperty('mustChangePassword')
   })
 })

@@ -132,11 +132,21 @@ if [ ! -f .env.example ]; then
 else
   # Q19：必填键以 envSchema 为单一来源——原依赖 .env.example 的中文 [必填] 行内注释，
   # 注释被机器化重排版即静默掏空门。schema 中无 default 且非 optional 的键即必填
-  REQUIRED_KEYS=$(pnpm --filter=@monoforge/server exec tsx -e \
+  # P2-19：提取失败必须显式诊断——原写法把 stderr 丢进 /dev/null 且赋值处于 set -e 下，
+  # tsx/pnpm 异常会静默终止整个脚本（假绿）
+  ENV_EXTRACT_ERR=/tmp/env-extract.log
+  REQUIRED_KEYS=""
+  if ENV_EXTRACT_OUT=$(pnpm --filter=@monoforge/server exec tsx -e \
     "import { envSchema } from './src/config/env.ts'; const shape=(envSchema as any).shape ?? (envSchema as any)._def?.schema?.shape; console.log(Object.entries(shape).filter(([,s]:[string,any])=>!(s.isOptional?.() ?? false) && s._def?.typeName!=='ZodDefault').map(([k])=>k).join('\n'))" \
-    2>/dev/null | sed '/^$/d' | sort)
+    2>"$ENV_EXTRACT_ERR"); then
+    REQUIRED_KEYS=$(printf '%s\n' "$ENV_EXTRACT_OUT" | sed '/^$/d' | sort)
+  else
+    EXTRACT_STATUS=$?
+    check_warn "无法从 env schema 读取必填键（提取命令退出码 ${EXTRACT_STATUS}，见 ${ENV_EXTRACT_ERR}）"
+    echo "    诊断：$(head -3 "$ENV_EXTRACT_ERR" | tr '\n' ' ')"
+  fi
   if [ -z "$REQUIRED_KEYS" ]; then
-    check_warn "无法从 env schema 读取必填键，回退 .env.example 的 [必填] 标记"
+    check_warn "env schema 未提取到必填键，回退 .env.example 的 [必填] 标记"
     REQUIRED_KEYS=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env.example | grep '\[必填\]' | cut -d= -f1 | sort)
   fi
 
@@ -173,18 +183,32 @@ AUDIT_NET_ERROR_RE='ERR_PNPM_AUDIT_(ENDPOINT_NOT_EXISTS|BAD_RESPONSE)|ENOTFOUND|
 
 # L12：按 metadata.vulnerabilities 结构化取数——原文本 grep (high|critical) 会被
 # advisory 标题/包名中的关键词假红，且 pnpm 输出格式变化即假绿
+# P2-10：JSON 可解析但缺少统计字段（error 对象/空输出）属"无结论"，不能当 0 条放行
 audit_count() {
   node -e '
     const fs = require("fs")
     try {
       const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
-      const v = j.metadata?.vulnerabilities ?? {}
+      if (j.error) {
+        process.stdout.write("no_data")
+        process.exit(0)
+      }
+      const v = j.metadata?.vulnerabilities
+      if (!v || typeof v !== "object") {
+        process.stdout.write("no_data")
+        process.exit(0)
+      }
       const keys = process.argv[2] === "high" ? ["high", "critical"] : ["low", "moderate", "info"]
       process.stdout.write(String(keys.reduce((n, k) => n + (v[k] ?? 0), 0)))
     } catch {
       process.stdout.write("parse_error")
     }
   ' "$1" "$2"
+}
+
+# 0 条也必须来自完整统计结构；parse_error/no_data 一律视为无结论
+audit_conclusive() {
+  [ "$1" != "parse_error" ] && [ "$1" != "no_data" ]
 }
 
 # set -e 下 audit 发现漏洞会以 1 退出——必须显式兜住，后续按 JSON 判级
@@ -198,6 +222,8 @@ if [ "$PROD_HIGH" = "parse_error" ]; then
   else
     check_warn "依赖审计输出无法解析（无结论，见 /tmp/audit-prod.err）"
   fi
+elif [ "$PROD_HIGH" = "no_data" ]; then
+  check_warn "依赖审计输出缺少 vulnerabilities 统计（无结论，不能视为 0 条；见 /tmp/audit-prod.json）"
 elif [ "$PROD_HIGH" -gt 0 ] 2>/dev/null; then
   check_fail "生产依赖树存在 ${PROD_HIGH} 个高危/严重漏洞（见 /tmp/audit-prod.json）"
 else
@@ -207,7 +233,7 @@ fi
 # 全量（含 devDependencies）覆盖：不进入门禁，仅提示 dev 树的高危残留
 pnpm audit --json --registry=https://registry.npmjs.org > /tmp/audit-full.json 2>/tmp/audit-full.err || true
 FULL_HIGH=$(audit_count /tmp/audit-full.json high)
-if [ "$FULL_HIGH" != "parse_error" ] && [ "$PROD_HIGH" != "parse_error" ]; then
+if audit_conclusive "$FULL_HIGH" && audit_conclusive "$PROD_HIGH"; then
   DEV_HIGH=$((FULL_HIGH - PROD_HIGH))
   if [ "$DEV_HIGH" -gt 0 ]; then
     check_warn "devDependencies 依赖树另有 ${DEV_HIGH} 个高危/严重漏洞（不进生产门禁，见 /tmp/audit-full.json）"
@@ -243,27 +269,68 @@ else
 fi
 
 section "8. Zod DTO 桥接审计"
-echo "  → 扫描 controller 是否有裸 @Body()..."
+echo "  → 扫描 controller 的 @Body() 参数类型是否真正经 createZodDto 桥接..."
 
-RAW_BODY_ISSUES=""
-while IFS= read -r file; do
-  # L12：原正则只匹配裸 any/object/Record，真正要防的"未挂 Zod DTO 的伪 interface 类型"
-  # 完全漏过（对新代码零防护力）。改为反查：@Body() 的类型参数必须以 Dto 结尾
-  while IFS= read -r line; do
-    TYPE=$(printf '%s' "$line" | sed -E 's/.*@Body\(\)[[:space:]]*[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*([A-Za-z0-9_]+).*/\1/')
-    if [[ "$TYPE" != *Dto ]]; then
-      RAW_BODY_ISSUES="${RAW_BODY_ISSUES}\n${file}:\n  ${line}"
-    fi
-  done < <(
-    grep -n -E '@Body\(\)[[:space:]]*[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*[A-Za-z0-9_]+' "$file" || true
-  )
-done < <(find apps/server/src/modules -name "*.controller.ts" -type f)
+# P2-09：原实现按单行正则只看"类型名是否以 Dto 结尾"，多行声明直接漏扫，
+# 且裸 class XxxDto 也能通过——这里改为跨行解析参数类型，并反查该 DTO 的定义是否 extends createZodDto
+if node > /tmp/zod-dto.log 2>&1 <<'NODE'
+const fs = require('node:fs')
+const path = require('node:path')
 
-if [ -z "$RAW_BODY_ISSUES" ]; then
-  check_pass "所有 controller @Body() 都用 DTO 桥接"
+function walk(dir, match) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) return walk(full, match)
+    return match(full) ? [full] : []
+  })
+}
+
+// DTO 定义索引：类名 → 桥接文件（null 表示存在裸 class 定义，未经 createZodDto）
+const dtoBridged = new Map()
+for (const file of walk('apps/server/src', (f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))) {
+  const source = fs.readFileSync(file, 'utf8')
+  for (const m of source.matchAll(/class\s+([A-Za-z0-9_]+)\s+extends\s+createZodDto\s*\(/g)) {
+    dtoBridged.set(m[1], file)
+  }
+  for (const m of source.matchAll(/class\s+([A-Za-z0-9_]+)\b/g)) {
+    if (!dtoBridged.has(m[1])) dtoBridged.set(m[1], null)
+  }
+}
+
+const issues = []
+for (const file of walk('apps/server/src/modules', (f) => f.endsWith('.controller.ts'))) {
+  const source = fs.readFileSync(file, 'utf8')
+  for (const m of source.matchAll(/@Body\(\s*\)/g)) {
+    const line = source.slice(0, m.index).split('\n').length
+    // 跨行取参数声明：先剥掉夹在 @Body() 与参数之间的其它参数装饰器
+    const tail = source.slice(m.index + m[0].length, m.index + m[0].length + 300)
+    const cleaned = tail.replace(/@[A-Za-z0-9_.]+\([^)]*\)/g, ' ').replace(/\s+/g, ' ')
+    const param = cleaned.match(/^\s*([A-Za-z0-9_]+)\s*\??\s*:\s*([A-Za-z0-9_]+)/)
+    if (!param) {
+      issues.push(`${file}:${line}: @Body() 缺少带类型标注的参数`)
+      continue
+    }
+    const type = param[2]
+    if (!type.endsWith('Dto')) {
+      issues.push(`${file}:${line}: @Body() 参数类型 ${type} 不是 DTO（须以 Dto 结尾）`)
+    } else if (!dtoBridged.has(type)) {
+      issues.push(`${file}:${line}: 找不到 DTO 类 ${type} 的定义`)
+    } else if (!dtoBridged.get(type)) {
+      issues.push(`${file}:${line}: ${type} 未经 createZodDto 桥接（裸 class 不校验入参）`)
+    }
+  }
+}
+
+if (issues.length > 0) {
+  console.log(issues.join('\n'))
+  process.exit(1)
+}
+NODE
+then
+  check_pass "所有 controller @Body() 都挂载了 createZodDto 桥接的 DTO"
 else
-  check_fail "以下 controller 可能用了裸 @Body()（非 DTO 类型）："
-  echo -e "$RAW_BODY_ISSUES"
+  check_fail "以下 controller 的 @Body() 未真正接入 Zod DTO："
+  cat /tmp/zod-dto.log | head -30
 fi
 
 section "9. 废弃 API 调用扫描"

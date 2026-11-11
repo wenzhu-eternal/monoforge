@@ -94,6 +94,9 @@ export const UserListItemSchema = UserSchema.pick({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  // P2-18：列表投影必须带强制改密标记——编辑弹窗开关以列表行为权威值回显，
+  // 缺字段会让管理端把"强制改密中"误显示为"已解锁"
+  mustChangePassword: z.boolean(),
   deletedAt: z.coerce.date().nullable().optional(),
   roleName: z.string().nullable().optional(),
   roles: z.array(RoleBriefSchema).optional(),

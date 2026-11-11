@@ -26,7 +26,7 @@
 
 ### 环境要求
 
-- Node.js >= 20.0.0
+- Node.js >= 24.0.0
 - Docker & Docker Compose（用于 PostgreSQL/Redis/生产构建）
 - PostgreSQL 16
 - Redis 7

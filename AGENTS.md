@@ -67,7 +67,7 @@ docker compose up redis     # 只启动 Redis
 - **包管理器**: pnpm (优先)
 - **终端**: zsh
 - **系统工具**: 优先使用 brew 安装
-- **Node.js**: >= 20.0.0
+- **Node.js**: >= 24.0.0
 - **PostgreSQL**: 16
 - **Redis**: 7
 

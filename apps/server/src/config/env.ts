@@ -23,7 +23,6 @@ const jwtSecretSchema = z
 // 这里启动即 fail-fast；支持 true/false、代理层数、loopback/linklocal/uniquelocal、IP/CIDR 列表
 function isValidTrustProxyEntry(entry: string): boolean {
   if (entry === 'loopback' || entry === 'linklocal' || entry === 'uniquelocal') return true
-  if (/^[1-9]\d*$/.test(entry)) return true
   const [addr = '', prefix] = entry.split('/')
   const family = isIP(addr)
   if (family === 0) return false
@@ -35,7 +34,12 @@ function isValidTrustProxyEntry(entry: string): boolean {
 
 export function isValidTrustProxyValue(value: string): boolean {
   if (value === 'true' || value === 'false') return true
-  return value.split(',').every((part) => isValidTrustProxyEntry(part.trim()))
+  // P2-11：Express 5 只把"单独的纯数字值"解释为跳数；逗号列表中的数字项会被 proxy-addr
+  // 当作地址解析并整体拒绝，因此仅在单值场景接受纯数字
+  if (/^[1-9]\d*$/.test(value)) return true
+  return value
+    .split(',')
+    .every((part) => !/^\d+$/.test(part.trim()) && isValidTrustProxyEntry(part.trim()))
 }
 
 export const envSchema = z

@@ -97,14 +97,14 @@ export function LogsTab() {
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error, isSuccess, refetch } = useErrorLogs({
+  const { data, isLoading, isError, error, isSuccess, isPlaceholderData, refetch } = useErrorLogs({
     page,
     pageSize,
     keyword,
     source: sourceFilter,
     isResolved: resolvedFilter,
   })
-  usePagedFallback(data?.list.length, isSuccess, page, setPage)
+  usePagedFallback(data?.list.length, isSuccess, page, setPage, isPlaceholderData)
   const { data: stats, isError: statsError, refetch: refetchStats } = useErrorStats()
   const { data: grouped, isError: groupedError, refetch: refetchGrouped } = useErrorLogsGrouped(10)
   const deleteMutation = useDeleteErrorLog()

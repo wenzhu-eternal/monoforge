@@ -1,4 +1,9 @@
-import { Logger, ServiceUnavailableException } from '@nestjs/common'
+import {
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import {
@@ -32,6 +37,11 @@ const WS_MESSAGE_MAX_PER_WINDOW = 20
 // 广播走 server.to(room)，经 Redis adapter 跨实例投递，替代原"遍历本实例连接"的单实例过滤
 const PRESENCE_ROOM = 'presence:watchers'
 
+// P2-17：断开清理失败的成员登记表——按成员粒度延迟回收，Redis 恢复后自愈；
+// 不用本实例连接列表覆盖全局 Set，避免多实例下误删其他实例的活跃连接
+const WS_CLEANUP_PENDING_KEY = 'ws:cleanup:pending'
+const WS_CLEANUP_INTERVAL_MS = 60_000
+
 // M1：socket.io 的 connected 在握手 await 期间可能翻转；经函数读取避免 TS 把属性流分析收窄成字面量
 function isDisconnected(client: Socket): boolean {
   return (client as { connected?: boolean }).connected === false
@@ -64,11 +74,27 @@ function isDisconnected(client: Socket): boolean {
   pingInterval: 10_000,
   pingTimeout: 5_000,
 })
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class EventsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
+{
   @WebSocketServer()
   server!: Server
 
   private readonly logger = new Logger(EventsGateway.name)
+
+  private cleanupTimer?: NodeJS.Timeout
+
+  onModuleInit(): void {
+    // P2-17：周期清扫待回收成员，Redis 恢复后自动补齐失败的 SREM
+    this.cleanupTimer = setInterval(() => {
+      void this.sweepPendingCleanup()
+    }, WS_CLEANUP_INTERVAL_MS)
+    this.cleanupTimer.unref()
+  }
+
+  onModuleDestroy(): void {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer)
+  }
 
   constructor(
     private readonly jwtService: JwtService,
@@ -227,9 +253,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       })
       .catch((err) => {
         this.logger.warn(`清除 Redis 在线状态失败: ${(err as Error).message}`)
-        // L6：SREM 失败仍广播 offline——离线下线多报无害（60s 重校验+TTL 已防虚假在线），
-        // 若跳过则观察者视角该用户永久在线，直到 TTL 300s 过期才自愈
-        this.broadcastPresence('presence:update', { userId, online: false })
+        // P2-17：SREM 失败说明无法确认该成员已移除——不凭这一条断开广播离线（同一用户
+        // 可能仍有其他活跃连接），改为登记待回收成员，由周期清扫单独 SREM
+        void this.enqueuePendingCleanup(userId, client.id)
       })
 
     this.logger.log(`用户 ${userId} 已断开 (socket: ${client.id})`)
@@ -245,6 +271,60 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       [`ws:online:${userId}`],
       [socketId],
     )
+  }
+
+  /** P2-17：登记单个待回收成员（userId:socketId），不触碰其他连接 */
+  private async enqueuePendingCleanup(userId: number, socketId: string): Promise<void> {
+    try {
+      await this.redisService.eval(
+        `redis.call('SADD', KEYS[1], ARGV[1]) return 1`,
+        [WS_CLEANUP_PENDING_KEY],
+        [`${userId}:${socketId}`],
+      )
+    } catch (err) {
+      // Redis 整体不可用时登记也失败——保留日志，TTL 兜底
+      this.logger.warn(`登记待回收 WS 成员失败: ${(err as Error).message}`)
+    }
+  }
+
+  /**
+   * P2-17：逐成员回收遗留连接——只 SREM 登记的确切成员，活跃连接不受影响；
+   * 多实例下各实例独立清扫同一张待回收表，不覆盖全局在线状态
+   */
+  private async sweepPendingCleanup(): Promise<void> {
+    let members: string[]
+    try {
+      const raw = (await this.redisService.eval(
+        `return redis.call('SMEMBERS', KEYS[1])`,
+        [WS_CLEANUP_PENDING_KEY],
+        [],
+      )) as string[] | null
+      members = raw ?? []
+    } catch (err) {
+      this.logger.warn(`读取待回收 WS 成员失败: ${(err as Error).message}`)
+      return
+    }
+    if (members.length === 0) return
+
+    for (const member of members) {
+      const separator = member.indexOf(':')
+      const userId = Number(member.slice(0, separator))
+      const socketId = member.slice(separator + 1)
+      if (!Number.isInteger(userId) || !socketId) continue
+      try {
+        const remaining = await this.removeOnlineSocket(userId, socketId)
+        await this.redisService.eval(
+          `redis.call('SREM', KEYS[1], ARGV[1]) return 1`,
+          [WS_CLEANUP_PENDING_KEY],
+          [member],
+        )
+        if (Number(remaining) === 0) {
+          this.broadcastPresence('presence:update', { userId, online: false })
+        }
+      } catch {
+        // 保留待回收登记，下轮继续
+      }
+    }
   }
 
   @SubscribeMessage('ping')

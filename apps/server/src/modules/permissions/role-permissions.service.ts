@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -110,7 +111,29 @@ export class RolePermissionsService {
     }
 
     // 删除旧权限并插入新权限（事务保证原子性，避免 insert 失败导致权限丢失）
+    // P2-16：事务内对角色行与权限行取 FOR KEY SHARE，与 roles/permissions 软删的 FOR UPDATE 互斥——
+    // 已通过预检的绑定不会落在并发软删的对象上，也不会把未生效的绑定返回为成功
     await db.transaction(async (tx) => {
+      const [lockedRole] = await tx
+        .select({ id: roles.id })
+        .from(roles)
+        .where(and(eq(roles.id, roleId), notDeleted(roles.deletedAt)))
+        .for('key share')
+      if (!lockedRole) {
+        throw new ConflictException('角色不存在或已被禁用')
+      }
+
+      if (validCodes.length > 0) {
+        const lockedPermissions = await tx
+          .select({ code: permissions.code })
+          .from(permissions)
+          .where(and(inArray(permissions.code, validCodes), notDeleted(permissions.deletedAt)))
+          .for('key share')
+        if (lockedPermissions.length !== validCodes.length) {
+          throw new ConflictException('部分权限已被删除，请刷新后重试')
+        }
+      }
+
       await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId))
 
       if (validCodes.length > 0) {

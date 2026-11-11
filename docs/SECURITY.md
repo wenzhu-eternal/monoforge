@@ -57,6 +57,8 @@
 
 - 全局管道链：`SanitizeBodyPipe → XssPipe → ZodValidationPipe`
 
+- **微信占位邮箱域保留**：`UserEmailSchema` 拒绝以 `@wechat.placeholder` 结尾的邮箱——该域由微信登录自动建号使用；不拦则攻击者可抢先注册同域邮箱占位，真实微信用户将永远无法建号。邮箱唯一性按 trim + 小写归一（`'Admin@X.com'` 与 `'admin@x.com'` 视为同一账号）
+
 ## 初始管理员保护
 
 - **ADMIN\_ROLE\_ID 匹配的用户不可删除**（基于 `user.roleId === ADMIN_ROLE_ID`，env 默认 1）
@@ -254,6 +256,8 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 - **限流旁路必须显式**：仅 e2e/vitest 由测试 setup 设 `ALLOW_THROTTLE_BYPASS=true`，禁止在生产/预发开启（L15：原 `NODE_ENV=test` 隐式旁路已移除）
 
 - **Redis 降级口径与观测（Q4）**：jti 黑名单 / 日配额 / 限流存储 / 账号存续复检在 Redis 故障时一律 **fail-open**（可用性优先，属有意取舍，不改 fail-closed）；降级持续超过 5 分钟由 `common/utils/redis-degradation` 升级为 error_logs 聚合告警（同一窗口至多一条），恢复即清零——防止"降级一小时"与"抖一下"在监控上不可辨
+
+- **注册验证码是 fail-open 的例外（P1-04）**：验证码校验/消费（`getdel`）、错误码回填、尝试计数属于"没有 Redis 就无法判定验证码真伪"的强一致场景，故障时返回 503（`ServiceUnavailableException`）并写降级告警，绝不当作"校验通过"放行；仅正确码消费后的计数清理失败可降级放行（注册已完成，清理失败只影响后续频控）
 
 ### 登录失败锁定（J2=A）
 

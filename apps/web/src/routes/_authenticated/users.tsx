@@ -1,4 +1,4 @@
-import type { CreateUser, UpdateUser, User } from '@shared'
+import type { CreateUser, UpdateUser, UserListItem } from '@shared'
 import { DEFAULT_PAGE_SIZE, UpdateUserSchema } from '@shared'
 import { createFileRoute } from '@tanstack/react-router'
 import {
@@ -63,7 +63,7 @@ function UsersPage() {
 export function UsersContent() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
-  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [editingUser, setEditingUser] = useState<UserListItem | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   // L1：行级 pending，仅转正在操作的那行，避免全表同时转圈及重复点击
   // L1：Set 类型，完成只删自己，避免并发行操作互抹 loading
@@ -71,11 +71,11 @@ export function UsersContent() {
   const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error, isSuccess, refetch } = useUsers({
+  const { data, isLoading, isError, error, isSuccess, isPlaceholderData, refetch } = useUsers({
     page,
     pageSize,
   })
-  usePagedFallback(data?.list.length, isSuccess, page, setPage)
+  usePagedFallback(data?.list.length, isSuccess, page, setPage, isPlaceholderData)
   const { data: allRoles } = useAllRoles()
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
@@ -106,7 +106,7 @@ export function UsersContent() {
     }
   }, [isError, error, messageApi])
 
-  const columns: ColumnsType<User> = [
+  const columns: ColumnsType<UserListItem> = [
     { title: 'ID', dataIndex: 'id', key: 'id' },
     { title: '用户名', dataIndex: 'username', key: 'username' },
     { title: '邮箱', dataIndex: 'email', key: 'email' },
@@ -213,7 +213,7 @@ export function UsersContent() {
     },
   ]
 
-  const handleEdit = (user: User) => {
+  const handleEdit = (user: UserListItem) => {
     setEditingUser(user)
     // 仅写入表单需要的字段，避免 avatar/roles/permissions/createdAt 等污染 form store
     form.setFieldsValue({
@@ -276,14 +276,17 @@ export function UsersContent() {
         // 否则"仅改昵称"也会因恒带 phone 整弹窗 403；清空提交 null（'' 会被 regex 拒 400）
         const nextPhone = values.phone || null
         // M1：掩码回显时表单为空，留空视为未修改；非掩码按原值比对
+        // P1-03：掩码行"输入后删空"产生的 '' 也必须视为未修改——原实现只认 undefined，
+        // 会把空串转成 null 提交，清掉后端真实手机号
         const phoneUnchanged = phoneMasked
-          ? values.phone === undefined
+          ? !values.phone
           : nextPhone === (editingUser.phone || null)
         if ((canManageRole || isSelf) && !phoneUnchanged) {
           updateData.phone = nextPhone
         }
         // L13：邮箱仅在值实际变更时提交——掩码原值不得直通后端，未填即不修改
-        if (canManageRole && values.email !== undefined && values.email !== editingUser.email) {
+        // P1-03：空串（输入后删空）同样不上送，写侧 UserEmailSchema 不接受 ''
+        if (canManageRole && values.email && values.email !== editingUser.email) {
           updateData.email = values.email
         }
         // M2：自改 roleId/status 后端一律 403（不比对是否同值），isSelf 时不提交——

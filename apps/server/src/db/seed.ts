@@ -10,7 +10,7 @@ import { getEnv } from '../config/env'
 import { notDeleted } from './helpers'
 import { db } from './index'
 import { permissions, rolePermissions, roles, users } from './schema'
-import { assertAdminUsernameAvailable } from './seed-guards'
+import { assertAdminUsernameAvailable, resolveSeedAdminEmail, toSafeAdminLog } from './seed-guards'
 
 // L17③：与 db/index.ts 一致，按当前 cwd 解析 ../../.env（apps/server 下运行即仓库根）
 config({ path: '../../.env' })
@@ -23,6 +23,9 @@ const mustChangePassword = getEnv().SEED_ADMIN_MUST_CHANGE_PASSWORD
 
 async function seed() {
   console.log('Seeding database...')
+
+  // P2-12：先按注册同款邮箱契约校验并规范化，非法配置在任何写入前失败
+  const adminEmail = resolveSeedAdminEmail(process.env.SEED_ADMIN_EMAIL)
 
   // L16：全流程单事务——中途失败整体回滚不留半态；密码哈希在事务外算好，
   // 避免占着连接做 CPU 密集运算
@@ -136,8 +139,7 @@ async function seed() {
       return
     }
 
-    // admin 邮箱/昵称可通过环境变量覆盖，默认使用通用占位符（新项目接入时无需改源码）
-    const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com'
+    // admin 昵称可通过环境变量覆盖，默认使用通用占位符（新项目接入时无需改源码）
     const adminNickname = process.env.SEED_ADMIN_NICKNAME ?? 'Administrator'
 
     // 此分支仅在“不存在 admin 角色用户”时到达；username='admin' 可能已被普通角色占位。
@@ -161,7 +163,11 @@ async function seed() {
       })
       .returning()
 
-    console.log('Created admin user:', adminUser)
+    if (!adminUser) {
+      throw new Error('Failed to create admin user')
+    }
+
+    console.log('Created admin user:', toSafeAdminLog(adminUser))
   })
 
   console.log('Database seeded successfully!')

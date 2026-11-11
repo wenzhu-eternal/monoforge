@@ -243,6 +243,14 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.sendRegisterCode('a@b.com')).rejects.toThrow('redis down')
       expect(redisService.del).toHaveBeenCalledWith('register:code:limit:a@b.com')
     })
+
+    it('P2-05：查库失败 → 释放本次冷却锁（不阻塞正常重试）', async () => {
+      redisService.setNx.mockResolvedValue(true)
+      vi.mocked(db.query.users.findFirst).mockRejectedValueOnce(new Error('db down'))
+
+      await expect(service.sendRegisterCode('a@b.com')).rejects.toThrow('db down')
+      expect(redisService.del).toHaveBeenCalledWith('register:code:limit:a@b.com')
+    })
   })
 
   describe('registerWithCode（L1 验证码原子消费）', () => {
@@ -276,10 +284,21 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
       )
-      expect(redisService.set).toHaveBeenCalledWith('register:code:a@b.com', '123456', 60)
+      expect(redisService.setNx).toHaveBeenCalledWith('register:code:a@b.com', '123456', 60)
     })
 
-    it('输错码不烧有效码：getdel 取走后立即回填（无 TTL 时退回原有效期）', async () => {
+    it('P1-04：无 TTL 异常态（-1）退回原有效期', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.eval.mockResolvedValue(1)
+      redisService.ttl.mockResolvedValue(-1)
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
+        UnauthorizedException,
+      )
+      expect(redisService.setNx).toHaveBeenCalledWith('register:code:a@b.com', '123456', 5 * 60)
+    })
+
+    it('P1-04：读取后已过期（-2）不复活旧码', async () => {
       redisService.getdel.mockResolvedValue('123456')
       redisService.eval.mockResolvedValue(1)
       redisService.ttl.mockResolvedValue(-2)
@@ -287,7 +306,64 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
       )
-      expect(redisService.set).toHaveBeenCalledWith('register:code:a@b.com', '123456', 5 * 60)
+      expect(redisService.setNx).not.toHaveBeenCalled()
+    })
+
+    it('P1-04：回填用 SETNX，并发重发出新码时不覆盖', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.eval.mockResolvedValue(1)
+      redisService.ttl.mockResolvedValue(60)
+      // 新码已由并发重发写入 → SETNX 失败，旧码不得覆盖
+      redisService.setNx.mockResolvedValue(false)
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
+        UnauthorizedException,
+      )
+      expect(redisService.setNx).toHaveBeenCalledWith('register:code:a@b.com', '123456', 60)
+    })
+
+    it('P1-04：getdel 不可用 → 503，不当作验证码错误', async () => {
+      redisService.getdel.mockRejectedValue(new Error('redis down'))
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
+        ServiceUnavailableException,
+      )
+      expect(noteRedisDegraded).toHaveBeenCalledWith('auth:register-code-verify')
+    })
+
+    it('P1-04：错码回填失败 → 503 并归因降级', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.ttl.mockResolvedValue(60)
+      redisService.setNx.mockRejectedValue(new Error('redis down'))
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
+        ServiceUnavailableException,
+      )
+      expect(noteRedisDegraded).toHaveBeenCalledWith('auth:register-code-backfill')
+    })
+
+    it('P1-04：尝试计数不可用 → 503', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.ttl.mockResolvedValue(60)
+      redisService.eval.mockRejectedValue(new Error('redis down'))
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
+        ServiceUnavailableException,
+      )
+      expect(noteRedisDegraded).toHaveBeenCalledWith('auth:register-code-attempts')
+    })
+
+    it('P1-04：正确码的计数清理失败不阻断注册', async () => {
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.ttl.mockResolvedValue(120)
+      redisService.del.mockRejectedValueOnce(new Error('redis down'))
+      stubPrivate('register', async () => undefined)
+      stubPrivate('login', async () => ({ accessToken: 'a', refreshToken: 'r', user: { id: 1 } }))
+
+      await expect(
+        service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456'),
+      ).resolves.toBeTruthy()
+      expect(noteRedisDegraded).toHaveBeenCalledWith('auth:register-code-attempts-reset')
     })
 
     it('L11：非 Conflict 失败同样按剩余 TTL 回填（DB 抖动不烧码）', async () => {
@@ -300,13 +376,13 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
         'db down',
       )
-      expect(redisService.set).toHaveBeenCalledWith('register:code:a@b.com', '123456', 120)
+      expect(redisService.setNx).toHaveBeenCalledWith('register:code:a@b.com', '123456', 120)
     })
 
     it('L1：回填失败不顶替原始异常，且归因 Redis 降级并留痕', async () => {
       redisService.getdel.mockResolvedValue('123456')
       redisService.ttl.mockResolvedValue(120)
-      redisService.set.mockRejectedValueOnce(new Error('redis down'))
+      redisService.setNx.mockRejectedValueOnce(new Error('redis down'))
       stubPrivate('register', async () => {
         throw new Error('db down')
       })

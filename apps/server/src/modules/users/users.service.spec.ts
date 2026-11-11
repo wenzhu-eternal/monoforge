@@ -12,8 +12,8 @@ vi.mock('argon2', () => ({
   verify: vi.fn(),
 }))
 
-vi.mock('@/db', () => ({
-  db: {
+vi.mock('@/db', () => {
+  const db = {
     query: {
       users: {
         findFirst: vi.fn(),
@@ -25,8 +25,11 @@ vi.mock('@/db', () => ({
     insert: vi.fn(),
     update: vi.fn(),
     select: vi.fn(),
-  },
-}))
+    // P2-15：remove 走事务 + 行锁，mock 直接复用同一 db 句柄
+    transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(db)),
+  }
+  return { db }
+})
 
 vi.mock('@/db/helpers', () => ({
   notDeleted: vi.fn(() => undefined),
@@ -140,6 +143,8 @@ describe('UsersService', () => {
         phone: '13812345678',
         roleId: 1,
         status: true,
+        // P2-18：列表投影必须带强制改密标记，编辑弹窗开关以列表行为权威值
+        mustChangePassword: true,
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -165,7 +170,11 @@ describe('UsersService', () => {
 
       expect(result.list[0]?.email).toBe('a***@example.com')
       expect(result.list[0]?.phone).toBe('138****5678')
+      expect(result.list[0]?.mustChangePassword).toBe(true)
       expect(UserListItemSchema.safeParse(result.list[0]).success).toBe(true)
+      // P2-18 契约锁：缺字段不再被默认成 false（否则管理端把"强制改密中"显示为"已解锁"）
+      const { mustChangePassword: _omit, ...withoutFlag } = result.list[0]!
+      expect(UserListItemSchema.safeParse(withoutFlag).success).toBe(false)
     })
   })
 
@@ -354,6 +363,13 @@ describe('UsersService', () => {
         id: 1,
         email: 'a@b.com',
       } as never)
+      // P2-16：角色行 FOR KEY SHARE 锁查询
+      const lockChain = {
+        from: () => lockChain,
+        where: () => lockChain,
+        for: async () => [{ id: 1 }],
+      }
+      vi.mocked(mockDb.select).mockReturnValueOnce(lockChain as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -518,6 +534,13 @@ describe('UsersService', () => {
         roleId: 2,
       } as never)
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, deletedAt: null } as never)
+      // P2-16：角色行 FOR KEY SHARE 锁查询
+      const lockChain = {
+        from: () => lockChain,
+        where: () => lockChain,
+        for: async () => [{ id: 1 }],
+      }
+      vi.mocked(mockDb.select).mockReturnValueOnce(lockChain as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -804,6 +827,23 @@ describe('UsersService', () => {
   })
 
   describe('remove', () => {
+    // P2-15：先锁用户行（FOR UPDATE），再查关联文件
+    const lockChain = (rows: unknown[]) => {
+      const chain = {
+        from: vi.fn(() => chain),
+        where: vi.fn(() => chain),
+        for: vi.fn().mockResolvedValue(rows),
+      }
+      return chain
+    }
+    const filesChain = (rows: unknown[]) => {
+      const chain = {
+        from: vi.fn(() => chain),
+        where: vi.fn().mockResolvedValue(rows),
+      }
+      return chain
+    }
+
     it('用户不存在时抛 NotFoundException', async () => {
       vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
 
@@ -815,12 +855,9 @@ describe('UsersService', () => {
         id: 1,
         username: 'testuser',
       } as never)
-      // 外键校验: 无关联文件
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
-        }),
-      } as never)
+      vi.mocked(mockDb.select)
+        .mockReturnValueOnce(lockChain([{ id: 1 }]) as never)
+        .mockReturnValueOnce(filesChain([]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),
@@ -831,17 +868,26 @@ describe('UsersService', () => {
       expect(result.message).toContain('1')
     })
 
+    it('P2-15：行锁查询为空（并发已删）→ NotFound，且不执行软删', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 1,
+        username: 'testuser',
+      } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(lockChain([]) as never)
+
+      await expect(service.remove(1)).rejects.toThrow(NotFoundException)
+      expect(mockDb.update).not.toHaveBeenCalled()
+    })
+
     it('L9：删除用户时 Redis 吊销连续失败不抛 500，并写入 error_logs', async () => {
       vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
         id: 2,
         username: 'bob',
         roleId: 2,
       } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
-        }),
-      } as never)
+      vi.mocked(mockDb.select)
+        .mockReturnValueOnce(lockChain([{ id: 2 }]) as never)
+        .mockReturnValueOnce(filesChain([]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),
@@ -866,11 +912,9 @@ describe('UsersService', () => {
         id: 2,
         username: 'fileuser',
       } as never)
-      vi.mocked(mockDb.select).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ id: 10 }, { id: 11 }]),
-        }),
-      } as never)
+      vi.mocked(mockDb.select)
+        .mockReturnValueOnce(lockChain([{ id: 2 }]) as never)
+        .mockReturnValueOnce(filesChain([{ id: 10 }, { id: 11 }]) as never)
 
       await expect(service.remove(2)).rejects.toThrow(ConflictException)
     })

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import { open, readFile } from 'node:fs/promises'
+import { type FileHandle, open, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { BadRequestException } from '@nestjs/common'
+import { BadRequestException, InternalServerErrorException } from '@nestjs/common'
 import { ErrorCodes, ErrorMessages } from '@shared/constants/errors'
 import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE } from '@shared/constants/files'
 
@@ -163,8 +163,9 @@ export async function validateFileContent(filePath: string, declaredExt: string)
     return
   }
 
-  const handle = await open(filePath, 'r')
+  let handle: FileHandle | undefined
   try {
+    handle = await open(filePath, 'r')
     const buffer = Buffer.alloc(expected.bytes.length)
     await handle.read(buffer, 0, expected.bytes.length, 0)
     const header = Array.from(buffer)
@@ -174,9 +175,11 @@ export async function validateFileContent(filePath: string, declaredExt: string)
     }
   } catch (err) {
     if (err instanceof BadRequestException) throw err
-    throw new BadRequestException('文件内容校验失败')
+    // P2-08：读取 I/O 故障不是客户端校验失败——按服务端故障上抛（原始原因随 cause 入错误日志），
+    // 客户端只看到通用提示。原先误报 400 且被过滤器排除在日志之外
+    throw new InternalServerErrorException('文件内容校验失败，请稍后重试', { cause: err })
   } finally {
-    await handle.close()
+    await handle?.close().catch(() => {})
   }
 }
 
@@ -243,7 +246,8 @@ export async function scanForMalware(filePath: string): Promise<void> {
   } catch (err) {
     if (err instanceof BadRequestException) throw err
     // 文件读取异常（权限/IO 错误）应拒绝，不静默放行
-    throw new BadRequestException('文件读取失败，无法完成安全扫描')
+    // P2-08：磁盘读取故障属服务端故障（500 + 原始原因入错误日志），不是客户端内容不合法
+    throw new InternalServerErrorException('文件读取失败，无法完成安全扫描', { cause: err })
   }
 }
 

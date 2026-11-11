@@ -17,7 +17,7 @@ describe('TRUST_PROXY 校验（M3）', () => {
     '10.0.0.0/8',
     '::1',
     '2001:db8::/32',
-    '1,127.0.0.1',
+    '127.0.0.1,10.0.0.0/8',
   ])('合法值: %s', (value) => {
     expect(isValidTrustProxyValue(value)).toBe(true)
   })
@@ -31,6 +31,10 @@ describe('TRUST_PROXY 校验（M3）', () => {
     '::1/129',
     'true,abc',
     '',
+    // P2-11：Express 不按跳数解释列表中的数字项，必须拒绝
+    '1,127.0.0.1',
+    '127.0.0.1,2',
+    '1,2',
   ])('非法值: %s', (value) => {
     expect(isValidTrustProxyValue(value)).toBe(false)
   })

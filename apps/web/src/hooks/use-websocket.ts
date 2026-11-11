@@ -168,6 +168,8 @@ export function useWebSocketDemo() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['websocket', 'online'] })
+      // P2-14：发送通知会落审计记录，同步失效审计列表
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
     },
   })
 

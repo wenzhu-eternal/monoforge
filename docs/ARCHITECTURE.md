@@ -43,7 +43,8 @@ monoforge/
 │       └── drizzle/
 ├── packages/
 │   └── shared/                   # zod schemas + 派生类型 + 常量/错误码
-│       └── schemas/               # auth/dashboard/user/audit/file/permission/setup/notification/pagination/error-log/role/mail/wechat + index
+│       ├── src/schemas/          # auth/dashboard/user/audit/file/permission/setup/notification/pagination/error-log/role/mail/wechat + index
+│       └── src/constants/        # permissions/default-seed/errors/files
 ├── docs/                          # 技术规范文档
 ├── scripts/security-check.sh     # 安全检测脚本
 ├── docker-compose.yml

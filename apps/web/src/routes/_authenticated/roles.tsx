@@ -102,8 +102,11 @@ export function RolesContent() {
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
   const [restoringIds, setRestoringIds] = useState<Set<number>>(new Set())
 
-  const { data, isLoading, isError, error, isSuccess, refetch } = useRoles({ page, pageSize })
-  usePagedFallback(data?.list.length, isSuccess, page, setPage)
+  const { data, isLoading, isError, error, isSuccess, isPlaceholderData, refetch } = useRoles({
+    page,
+    pageSize,
+  })
+  usePagedFallback(data?.list.length, isSuccess, page, setPage, isPlaceholderData)
   const createRole = useCreateRole()
   const updateRole = useUpdateRole()
   const deleteRole = useDeleteRole()

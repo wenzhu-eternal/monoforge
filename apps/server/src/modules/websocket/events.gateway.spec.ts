@@ -152,6 +152,75 @@ describe('EventsGateway 60s 重校验（L4 token 自然过期）', () => {
   })
 })
 
+describe('P2-17：断开清理失败与遗留成员单独回收', () => {
+  let gateway: InstanceType<typeof EventsGateway>
+  let redisService: { get: ReturnType<typeof vi.fn>; eval: ReturnType<typeof vi.fn> }
+  let presenceEmit: ReturnType<typeof vi.fn>
+  let client: FakeClient
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    redisService = { get: vi.fn().mockResolvedValue(null), eval: vi.fn() }
+    gateway = new EventsGateway(
+      { verifyAsync: vi.fn() } as never,
+      { get: vi.fn().mockReturnValue('secret') } as never,
+      redisService as never,
+    )
+    presenceEmit = vi.fn()
+    gateway.server = { to: vi.fn().mockReturnValue({ emit: presenceEmit }) } as never
+    client = makeClient('access-token')
+    client.data.userId = 1
+  })
+
+  it('SREM 失败 → 不凭单条断开广播离线，只登记待回收成员', async () => {
+    redisService.eval.mockRejectedValueOnce(new Error('redis down')).mockResolvedValueOnce(1)
+
+    gateway.handleDisconnect(client as never)
+
+    await vi.waitFor(() => expect(redisService.eval).toHaveBeenCalledTimes(2))
+    expect(presenceEmit).not.toHaveBeenCalledWith('presence:update', { userId: 1, online: false })
+    expect(redisService.eval.mock.calls[1]?.[1]).toEqual(['ws:cleanup:pending'])
+    expect(redisService.eval.mock.calls[1]?.[2]).toEqual(['1:sock-1'])
+  })
+
+  it('清扫只移除登记的确切成员，弹空后才广播离线', async () => {
+    redisService.eval
+      .mockResolvedValueOnce(['1:sock-1']) // SMEMBERS
+      .mockResolvedValueOnce(0) // SREM + SCARD → 0
+      .mockResolvedValueOnce(1) // 从待回收表移除
+
+    await (gateway as unknown as { sweepPendingCleanup: () => Promise<void> }).sweepPendingCleanup()
+
+    expect(redisService.eval.mock.calls[1]?.[1]).toEqual(['ws:online:1'])
+    expect(redisService.eval.mock.calls[1]?.[2]).toEqual(['sock-1'])
+    expect(redisService.eval.mock.calls[2]?.[2]).toEqual(['1:sock-1'])
+    expect(presenceEmit).toHaveBeenCalledWith('presence:update', { userId: 1, online: false })
+  })
+
+  it('清扫时仍有活跃连接（剩余数 >0）→ 不广播离线，登记照常清除', async () => {
+    redisService.eval
+      .mockResolvedValueOnce(['1:sock-1'])
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1)
+
+    await (gateway as unknown as { sweepPendingCleanup: () => Promise<void> }).sweepPendingCleanup()
+
+    expect(presenceEmit).not.toHaveBeenCalled()
+    expect(redisService.eval.mock.calls[2]?.[2]).toEqual(['1:sock-1'])
+  })
+
+  it('清扫再次失败 → 保留登记，等待下轮', async () => {
+    redisService.eval
+      .mockResolvedValueOnce(['1:sock-1'])
+      .mockRejectedValueOnce(new Error('redis down'))
+
+    await (gateway as unknown as { sweepPendingCleanup: () => Promise<void> }).sweepPendingCleanup()
+
+    expect(redisService.eval).toHaveBeenCalledTimes(2)
+    expect(presenceEmit).not.toHaveBeenCalled()
+  })
+})
+
 describe('EventsGateway L4 断开时序 / L8 消息频控', () => {
   let gateway: InstanceType<typeof EventsGateway>
   let jwtService: { verifyAsync: ReturnType<typeof vi.fn> }

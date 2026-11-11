@@ -1,8 +1,14 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { InternalServerErrorException } from '@nestjs/common'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { scanForMalware, validateExtension, validateMimeType } from './file-validator'
+import {
+  scanForMalware,
+  validateExtension,
+  validateFileContent,
+  validateMimeType,
+} from './file-validator'
 
 describe('上传安全边界（M4/J1=A）', () => {
   let dir: string
@@ -60,5 +66,27 @@ describe('上传安全边界（M4/J1=A）', () => {
     const file = join(dir, 'ok.svg')
     await writeFile(file, '<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>', 'latin1')
     await expect(scanForMalware(file)).resolves.toBeUndefined()
+  })
+
+  describe('P2-08：读取故障按服务端故障处理', () => {
+    it('内容与扩展名不匹配仍报 400', async () => {
+      const file = join(dir, 'fake.png')
+      await writeFile(file, 'not-a-png', 'latin1')
+      await expect(validateFileContent(file, 'png')).rejects.toThrow('文件内容与扩展名不匹配')
+    })
+
+    it('文件无法打开（open 抛错）→ 500，且保留原始 cause', async () => {
+      const file = join(dir, 'missing.png')
+      const error = await validateFileContent(file, 'png').catch((err: unknown) => err)
+
+      expect(error).toBeInstanceOf(InternalServerErrorException)
+      expect((error as Error & { cause?: unknown }).cause).toBeInstanceOf(Error)
+    })
+
+    it('安全扫描读取失败 → 500 而非 400', async () => {
+      await expect(scanForMalware(join(dir, 'missing.bin'))).rejects.toBeInstanceOf(
+        InternalServerErrorException,
+      )
+    })
   })
 })

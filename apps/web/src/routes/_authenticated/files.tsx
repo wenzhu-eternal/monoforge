@@ -78,8 +78,11 @@ export function FilesContent() {
   }, [])
   const [messageApi, contextHolder] = message.useMessage()
 
-  const { data, isLoading, isError, error, isSuccess, refetch } = useFiles({ page, pageSize })
-  usePagedFallback(data?.list.length, isSuccess, page, setPage)
+  const { data, isLoading, isError, error, isSuccess, isPlaceholderData, refetch } = useFiles({
+    page,
+    pageSize,
+  })
+  usePagedFallback(data?.list.length, isSuccess, page, setPage, isPlaceholderData)
   const deleteMutation = useDeleteFile()
   const restoreMutation = useRestoreFile()
   const uploadMutation = useUploadFile()

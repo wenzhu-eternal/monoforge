@@ -211,7 +211,14 @@ describe('H1：读侧掩码形态契约', () => {
   })
 
   it('UserListItemSchema 接受非超管掩码行（serializer 主入口）', () => {
-    expect(UserListItemSchema.safeParse({ ...base, roleName: 'user' }).success).toBe(true)
+    expect(
+      UserListItemSchema.safeParse({ ...base, mustChangePassword: false, roleName: 'user' })
+        .success,
+    ).toBe(true)
+  })
+
+  it('P2-18：UserListItemSchema 拒绝缺少 mustChangePassword 的列表行', () => {
+    expect(UserListItemSchema.safeParse({ ...base, roleName: 'user' }).success).toBe(false)
   })
 
   it('短值退化掩码形态也接受', () => {

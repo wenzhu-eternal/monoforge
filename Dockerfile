@@ -1,6 +1,6 @@
 # ===== Prod dependencies stage =====
 # 仅安装 server(+shared) 的生产依赖：devDeps（typescript/vitest/drizzle-kit 等）不进镜像
-FROM node:20-alpine AS prod-deps
+FROM node:24-alpine AS prod-deps
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG http_proxy
@@ -22,7 +22,7 @@ RUN pnpm --filter=@monoforge/server... install --prod --frozen-lockfile --ignore
 RUN mkdir -p /app/apps/server/node_modules /app/packages/shared/node_modules
 
 # ===== Build stage =====
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG http_proxy
@@ -51,7 +51,7 @@ COPY apps/web/ ./apps/web/
 RUN pnpm -F @monoforge/web build
 
 # ===== Runtime stage =====
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 # L15：装 postgresql16-client（仅 pg_dump/psql 客户端工具，与 PG16 服务端版本对齐）——
 # 默认备份链路 spawnPgDump 在容器内直跑 pg_dump，缺它则生产备份 100% ENOENT
 RUN apk add --no-cache tini postgresql16-client

@@ -59,6 +59,7 @@ export class UsersService {
           phone: users.phone,
           roleId: users.roleId,
           status: users.status,
+          mustChangePassword: users.mustChangePassword,
           deletedAt: users.deletedAt,
           createdAt: users.createdAt,
           updatedAt: users.updatedAt,
@@ -310,12 +311,28 @@ export class UsersService {
     }
 
     try {
-      const [updatedUser] = await db
-        .update(users)
-        .set(updateData)
-        // L10：带 notDeleted 守卫，并发软删行上不再误更新（落空走 NotFound）
-        .where(and(eq(users.id, id), notDeleted(users.deletedAt)))
-        .returning()
+      const [updatedUser] = await db.transaction(async (tx) => {
+        // P2-16：与 roles.remove 的 FOR UPDATE 行锁互斥——已通过预检的角色若在写入前被软删，
+        // 这里的 FOR KEY SHARE 落空，杜绝"用户绑定到已删角色"
+        if (data.roleId !== undefined && data.roleId !== null) {
+          const [role] = await tx
+            .select({ id: roles.id })
+            .from(roles)
+            .where(and(eq(roles.id, data.roleId), notDeleted(roles.deletedAt)))
+            .for('key share')
+          if (!role) {
+            throw new ConflictException('角色不存在或已被禁用')
+          }
+        }
+        return (
+          tx
+            .update(users)
+            .set(updateData)
+            // L10：带 notDeleted 守卫，并发软删行上不再误更新（落空走 NotFound）
+            .where(and(eq(users.id, id), notDeleted(users.deletedAt)))
+            .returning()
+        )
+      })
 
       if (!updatedUser) {
         throw new NotFoundException(ErrorMessages[ErrorCodes.OPERATION_FAILED])
@@ -573,18 +590,32 @@ export class UsersService {
 
     // L7：files.uploadedBy 为 ON DELETE SET NULL（见 schema/files.ts），DB 层不会阻塞删用户；
     // 此处前置检查是为保留文件归属信息，仍有关联文件时拒绝删除，由管理员先迁移归属
-    const referencedFiles = await db
-      .select({ id: files.id })
-      .from(files)
-      .where(and(eq(files.uploadedBy, id), notDeleted(files.deletedAt)))
+    // P2-15：预检与软删必须在同一事务内并锁住用户行——上传侧取 FOR KEY SHARE，
+    // 两侧串行化后不会出现"预检通过 → 上传入库 → 删除提交"的交叉归属
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, id), notDeleted(users.deletedAt)))
+        .for('update')
 
-    if (referencedFiles.length > 0) {
-      throw new ConflictException(
-        `用户关联了 ${referencedFiles.length} 个文件，请先删除或转移文件后再删除用户`,
-      )
-    }
+      if (!locked) {
+        throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
+      }
 
-    await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id))
+      const referencedFiles = await tx
+        .select({ id: files.id })
+        .from(files)
+        .where(and(eq(files.uploadedBy, id), notDeleted(files.deletedAt)))
+
+      if (referencedFiles.length > 0) {
+        throw new ConflictException(
+          `用户关联了 ${referencedFiles.length} 个文件，请先删除或转移文件后再删除用户`,
+        )
+      }
+
+      await tx.update(users).set({ deletedAt: new Date() }).where(eq(users.id, id))
+    })
 
     // 软删后吊销所有 token，与禁用逻辑保持一致
     // L9：DB 已提交后 Redis 抖动不能反抛 500，重试仍失败写 error_logs 留痕
