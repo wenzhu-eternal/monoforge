@@ -17,7 +17,9 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/server/package.json ./apps/server/
 COPY packages/shared/package.json ./packages/shared/
 # --filter=server... 含其 workspace 依赖 shared；--ignore-scripts 跳过构建脚本（argon2 使用内置 prebuilds）
-RUN pnpm --filter=@monoforge/server... install --prod --frozen-lockfile --ignore-scripts
+# 必须显式再选 shared：否则 shared 自身依赖（zod）不会链接到 packages/shared/node_modules，
+# 运行时 shared/dist 解析不到（Cannot find module 'zod'）
+RUN pnpm --filter=@monoforge/server... --filter=@monoforge/shared install --prod --frozen-lockfile --ignore-scripts
 # 保底：--prod 裁剪后 shared 可能无独立 node_modules（依赖全 hoist 到根），runner 的 COPY 缺源直接失败，先建空目录占位
 RUN mkdir -p /app/apps/server/node_modules /app/packages/shared/node_modules
 
@@ -39,7 +41,9 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY apps/server/package.json ./apps/server/
 COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
-RUN pnpm install --frozen-lockfile
+# 根 prepare 会跑 husky + shared build，但此时源码/tsconfig 尚未复制，tsc 必失败；
+# 构建阶段下方已显式执行 shared/server/web build，安装阶段跳过生命周期脚本即可
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY packages/shared/ ./packages/shared/
 RUN pnpm -F @monoforge/shared build
