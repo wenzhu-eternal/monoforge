@@ -1,6 +1,7 @@
 import type { ApiResponse, FileItem, PaginatedResponse, UploadResult } from '@shared'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { invalidateAuditLogs } from '@/lib/audit-invalidation'
 
 export type { FileItem, UploadResult }
 
@@ -39,7 +40,7 @@ export const useUploadFile = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['files'] })
       // P2-14：文件写操作会产生审计记录，30s 新鲜期内回到审计页不得展示旧快照
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -53,7 +54,7 @@ export const useDeleteFile = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['files'] })
       // P2-14：文件写操作会产生审计记录，30s 新鲜期内回到审计页不得展示旧快照
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -70,7 +71,7 @@ export const useRestoreFile = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['files'] })
       // P2-14：文件写操作会产生审计记录，30s 新鲜期内回到审计页不得展示旧快照
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }

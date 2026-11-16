@@ -78,6 +78,32 @@ describe('useWebSocket（M6/J2）', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(true)
   })
 
+  it('R05: 旧刷新 401 晚到（期间已换会话）→ 不清态不跳登录', async () => {
+    useAuthStore.getState().login({ id: 1 } as never, 'tok')
+    renderHookWithQuery(() => useWebSocket())
+
+    let rejectRefresh!: (err: unknown) => void
+    refreshMock.mockReturnValue(
+      new Promise((_, reject) => {
+        rejectRefresh = reject
+      }),
+    )
+
+    const pending = getRefreshHandler()()
+
+    // 刷新未返回期间换会话（登出再登录，sessionEpoch 递增）
+    useAuthStore.getState().logout()
+    useAuthStore.getState().login({ id: 2 } as never, 'new-tok')
+
+    rejectRefresh({ response: { status: 401 } })
+    const result = await pending
+
+    expect(result).toBeNull()
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(useAuthStore.getState().token).toBe('new-tok')
+    expect(redirectMock.to).not.toHaveBeenCalled()
+  })
+
   it('J2: token 轮换不触发 socket 重建，provider 实时取新值', () => {
     useAuthStore.setState({ user: { id: 1 } as never, token: 'tok-1', isAuthenticated: true })
     renderHookWithQuery(() => useWebSocket())

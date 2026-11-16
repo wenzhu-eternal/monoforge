@@ -1,4 +1,9 @@
-import { ArgumentsHost, BadRequestException, UnauthorizedException } from '@nestjs/common'
+import {
+  ArgumentsHost,
+  BadRequestException,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common'
 import multer from 'multer'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { appendErrorLog } from '@/common/logger'
@@ -113,5 +118,51 @@ describe('HttpExceptionFilter', () => {
 
     expect(res.status).toHaveBeenCalledWith(400)
     expect(errorLogsService.record).not.toHaveBeenCalled()
+  })
+
+  it('R10：500 异常带 Error cause（ENOENT）→ 文件与 DB 错误日志含底层故障码', () => {
+    const cause = Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' })
+    const err = new InternalServerErrorException('文件内容校验失败，请稍后重试', { cause })
+    const { host } = createHost({ ...baseRequest, body: {} })
+
+    filter.catch(err, host)
+
+    expect(errorLogsService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 500,
+        message: '文件内容校验失败，请稍后重试',
+        stack: expect.stringContaining('[cause] ENOENT'),
+      }),
+    )
+    expect(appendErrorLog).toHaveBeenCalledWith(
+      expect.stringContaining('[500]'),
+      expect.stringContaining('[cause] ENOENT'),
+    )
+  })
+
+  it('R10：非 Error cause（字符串）→ 有界抽取进入日志', () => {
+    const err = new InternalServerErrorException('文件读取失败，无法完成安全扫描', {
+      cause: 'disk full',
+    })
+    const { host } = createHost({ ...baseRequest, body: {} })
+
+    filter.catch(err, host)
+
+    expect(errorLogsService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stack: expect.stringContaining('[cause] disk full'),
+      }),
+    )
+  })
+
+  it('R10：循环 cause → 不无限展开', () => {
+    const cause = new Error('loop') as Error & { cause?: unknown }
+    cause.cause = cause
+    const err = new InternalServerErrorException('x', { cause })
+    const { host } = createHost({ ...baseRequest, body: {} })
+
+    filter.catch(err, host)
+
+    expect(errorLogsService.record).toHaveBeenCalled()
   })
 })

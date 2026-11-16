@@ -23,7 +23,11 @@ const jwtSecretSchema = z
 // 这里启动即 fail-fast；支持 true/false、代理层数、loopback/linklocal/uniquelocal、IP/CIDR 列表
 function isValidTrustProxyEntry(entry: string): boolean {
   if (entry === 'loopback' || entry === 'linklocal' || entry === 'uniquelocal') return true
-  const [addr = '', prefix] = entry.split('/')
+  // R11：只接受 IP 或 IP/单个前缀——split 解构前两项会静默忽略多余斜杠段
+  //（如 127.0.0.1/8/junk 被判合法，但 Express 随后拒绝）
+  const parts = entry.split('/')
+  if (parts.length > 2) return false
+  const [addr = '', prefix] = parts
   const family = isIP(addr)
   if (family === 0) return false
   if (prefix === undefined) return true
@@ -55,8 +59,8 @@ export const envSchema = z
         // M11：userinfo 段（密码）非法字符机器校验——含 @/#/? 等未编码字符会导致 pg 解析错位，
         // 启动失败并指路 URL-encode，而非运行时连错库
         try {
-          // 查 userinfo 原文（仍为 percent-encoded 形态）：合法 %40 不含字面 @，
-          // 仅裸写 @#?/空白才会错位解析
+          // 校验解析后的 userinfo 不含字面 @#?/空白——注意 URL 构造器可能已先编码部分特殊字符，
+          // 此为最低限度检查，不保证拦截所有原始裸字符
           const u = new URL(url)
           return !/[@#?/\s]/.test(u.username + u.password)
         } catch {
@@ -78,8 +82,8 @@ export const envSchema = z
       )
       .refine((url) => {
         try {
-          // 查 userinfo 原文（仍为 percent-encoded 形态）：合法 %40 不含字面 @，
-          // 仅裸写 @#?/空白才会错位解析
+          // 校验解析后的 userinfo 不含字面 @#?/空白——注意 URL 构造器可能已先编码部分特殊字符，
+          // 此为最低限度检查，不保证拦截所有原始裸字符
           const u = new URL(url)
           return !/[@#?/\s]/.test(u.username + u.password)
         } catch {

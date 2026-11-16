@@ -260,11 +260,13 @@ describe('UsersService', () => {
 
     it('超管建超管角色用户放行', async () => {
       vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
-      vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({
-        id: 1,
-        name: 'admin',
-        deletedAt: null,
-      } as never)
+      // R03：指定角色时事务内角色行锁命中
+      const roleLock = {
+        from: () => roleLock,
+        where: () => roleLock,
+        for: async () => [{ id: 1 }],
+      }
+      vi.mocked(mockDb.select).mockReturnValueOnce(roleLock as never)
       vi.mocked(mockDb.insert).mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi
@@ -327,6 +329,13 @@ describe('UsersService', () => {
               .mockResolvedValue([{ permission: 'user:view' }, { permission: 'user:create' }]),
           }),
         } as never)
+      // R03：目标权限 ⊆ 调用者放行后，事务内角色行锁命中
+      const roleLock = {
+        from: () => roleLock,
+        where: () => roleLock,
+        for: async () => [{ id: 3 }],
+      }
+      vi.mocked(mockDb.select).mockReturnValueOnce(roleLock as never)
       vi.mocked(mockDb.insert).mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi
@@ -340,6 +349,24 @@ describe('UsersService', () => {
         { roleId: 2 },
       )
       expect(result.roleId).toBe(3)
+    })
+
+    it('R03：指定自定义角色，事务内角色行锁为空（并发已删）→ ConflictException 且不写库', async () => {
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue(undefined)
+      const emptyLock = {
+        from: () => emptyLock,
+        where: () => emptyLock,
+        for: async () => [],
+      }
+      vi.mocked(mockDb.select).mockReturnValueOnce(emptyLock as never)
+
+      await expect(
+        service.create(
+          { username: 'u1', email: 'u1@b.com', password: 'secret123', roleId: 3 },
+          { roleId: 1 }, // admin caller：跳过权限范围校验，直抵事务内角色行锁
+        ),
+      ).rejects.toThrow('角色不存在或已被禁用')
+      expect(mockDb.insert).not.toHaveBeenCalled()
     })
   })
 
@@ -964,6 +991,13 @@ describe('UsersService', () => {
 
     it('L10：目标角色权限 ⊆ 调用者 → 恢复成功', async () => {
       mockRestoreLookups(['user:view'], ['user:view', 'user:delete'])
+      // R03：权限范围放行后，事务内角色行锁命中（deletedUser.roleId=9）
+      const roleLock = {
+        from: () => roleLock,
+        where: () => roleLock,
+        for: async () => [{ id: 9 }],
+      }
+      vi.mocked(mockDb.select).mockReturnValueOnce(roleLock as never)
       const restored = { ...deletedUser, deletedAt: null }
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
@@ -997,6 +1031,23 @@ describe('UsersService', () => {
 
       expect(result.id).toBe(5)
       expect(mockDb.select).not.toHaveBeenCalled()
+    })
+
+    it('R03：恢复绑定已删角色（事务内角色行锁为空）→ ConflictException 且不写库', async () => {
+      vi.mocked(mockDb.query.users.findFirst)
+        .mockResolvedValueOnce({ ...deletedUser, roleId: 9 } as never)
+        .mockResolvedValue(undefined)
+      const emptyLock = {
+        from: () => emptyLock,
+        where: () => emptyLock,
+        for: async () => [],
+      }
+      vi.mocked(mockDb.select).mockReturnValueOnce(emptyLock as never)
+
+      await expect(service.restore(5, { roleId: 1 })).rejects.toThrow(
+        '用户原角色已被删除，请先为其重新分配角色（或置空角色）',
+      )
+      expect(mockDb.update).not.toHaveBeenCalled()
     })
   })
 

@@ -171,6 +171,8 @@ export class UsersService {
     }
 
     // 未指定角色时默认分配普通 user 角色（controller 已拦截越权指定 roleId 的请求）
+    // 默认角色是内置角色（受禁止删除保护），可在事务外解析；指定自定义角色的存在性
+    // 复核移入下方事务（含 FOR UPDATE 行锁），见 R03
     let roleId = data.roleId
     if (!roleId) {
       const defaultRole = await db.query.roles.findFirst({
@@ -180,13 +182,6 @@ export class UsersService {
         throw new ConflictException('默认角色不存在，请联系管理员初始化种子数据')
       }
       roleId = defaultRole.id
-    } else {
-      const role = await db.query.roles.findFirst({
-        where: eq(roles.id, roleId),
-      })
-      if (!role || role.deletedAt) {
-        throw new ConflictException('角色不存在或已被禁用')
-      }
     }
 
     // H1：超管角色分配加闸——目标 roleId 为超管时仅超管可授（caller 缺失 fail-closed，
@@ -199,19 +194,35 @@ export class UsersService {
     // 防持 user:create 而无 USER_ROLE_MANAGE 的委托借默认通道铸造间接高权账号
     await this.assertRoleWithinCallerScope(roleId, caller)
 
+    // R03：先算密码哈希再进事务，缩短角色行锁持有窗口（原实现哈希在角色预检后，放大交错窗口）
     const hashedPassword = await argon2.hash(data.password)
 
     try {
-      const [newUser] = await db
-        .insert(users)
-        .values({
-          ...data,
-          roleId,
-          password: hashedPassword,
-          // 管理员建户默认强制首登改密（密码由管理员单方指定）
-          mustChangePassword: data.mustChangePassword ?? true,
-        })
-        .returning()
+      const newUser = await db.transaction(async (tx) => {
+        // R03：指定自定义角色时锁角色行 FOR UPDATE 与 roles.remove 互斥——防"预检通过 →
+        // 角色被删 → 用户写入成功"留下绑定已删角色的活跃用户（外键只约束行存在，不识别 deletedAt）
+        if (data.roleId) {
+          const [lockedRole] = await tx
+            .select({ id: roles.id })
+            .from(roles)
+            .where(and(eq(roles.id, roleId), notDeleted(roles.deletedAt)))
+            .for('update')
+          if (!lockedRole) {
+            throw new ConflictException('角色不存在或已被禁用')
+          }
+        }
+        const [inserted] = await tx
+          .insert(users)
+          .values({
+            ...data,
+            roleId,
+            password: hashedPassword,
+            // 管理员建户默认强制首登改密（密码由管理员单方指定）
+            mustChangePassword: data.mustChangePassword ?? true,
+          })
+          .returning()
+        return inserted
+      })
 
       if (!newUser) {
         throw new ConflictException(ErrorMessages[ErrorCodes.OPERATION_FAILED])
@@ -668,23 +679,28 @@ export class UsersService {
       throw new ConflictException('邮箱已被其他用户使用，无法恢复')
     }
 
-    // M14：角色删除校验只统计未删用户，软删用户的角色可被先删——不复检会恢复出
-    // 绑定已删角色的僵尸用户（getRoleByUserId 永远 403 且前端看不到该角色）
-    if (existingUser.roleId !== null) {
-      const roleExists = await db.query.roles.findFirst({
-        where: and(eq(roles.id, existingUser.roleId), notDeleted(roles.deletedAt)),
-      })
-      if (!roleExists) {
-        throw new ConflictException('用户原角色已被删除，请先为其重新分配角色（或置空角色）')
-      }
-    }
-
     try {
-      const [restored] = await db
-        .update(users)
-        .set({ deletedAt: null })
-        .where(eq(users.id, id))
-        .returning()
+      const restored = await db.transaction(async (tx) => {
+        // M14/R03：角色删除校验只统计未删用户，软删用户的角色可被先删——不复检会恢复出
+        // 绑定已删角色的僵尸用户。此处锁角色行 FOR UPDATE 与 roles.remove 互斥，把存在性
+        // 复核与用户恢复写入放进同一事务，杜绝"复核通过 → 角色被删 → 恢复成功"
+        if (existingUser.roleId !== null) {
+          const [lockedRole] = await tx
+            .select({ id: roles.id })
+            .from(roles)
+            .where(and(eq(roles.id, existingUser.roleId), notDeleted(roles.deletedAt)))
+            .for('update')
+          if (!lockedRole) {
+            throw new ConflictException('用户原角色已被删除，请先为其重新分配角色（或置空角色）')
+          }
+        }
+        const [row] = await tx
+          .update(users)
+          .set({ deletedAt: null })
+          .where(eq(users.id, id))
+          .returning()
+        return row
+      })
 
       if (!restored) {
         throw new ConflictException(ErrorMessages[ErrorCodes.OPERATION_FAILED])

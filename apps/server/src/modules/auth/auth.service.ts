@@ -407,7 +407,10 @@ export class AuthService {
   async sendRegisterCode(email: string): Promise<{ message: string }> {
     // M4：60s 抢锁先于已注册检查——原顺序下已注册恒 200、未注册第二次 409，
     // 响应差异完整泄露账号存在性（锁在早退路径也不释放，两条路径时序一致）
-    const acquired = await this.redisService.setNx(`register:code:limit:${email}`, '1', 60)
+    const lockKey = `register:code:limit:${email}`
+    // R07：锁值改用唯一属主令牌——迟到失败补偿只释放自己仍持有的租约，不得误删后继请求的锁
+    const lockToken = randomUUID()
+    const acquired = await this.redisService.setNx(lockKey, lockToken, 60)
     if (!acquired) {
       throw new ConflictException('验证码发送过于频繁，请 60 秒后重试')
     }
@@ -420,7 +423,7 @@ export class AuthService {
       .catch(async (err: unknown) => {
         // P2-05：查库失败时验证码不会落地，冷却锁必须一并释放——原实现只在 set 失败分支补偿，
         // 查询异常会让用户在剩余 60s 内无法重试
-        await this.redisService.del(`register:code:limit:${email}`).catch(() => {})
+        await this.releaseRegisterCodeLock(lockKey, lockToken).catch(() => {})
         throw err
       })
     // J1：已注册邮箱跳过真实投递（60s 锁 + 统一响应先于投递，跳过不泄露新信息，防出站邮件放大器）；
@@ -431,7 +434,7 @@ export class AuthService {
       await this.redisService.set(`register:code:${email}`, code, expiresIn)
     } catch (err) {
       // L2：冷却锁已抢但验证码未落地——不回收会让用户整 60s 无法重发（对齐 mail 释放补偿）
-      await this.redisService.del(`register:code:limit:${email}`).catch(() => {})
+      await this.releaseRegisterCodeLock(lockKey, lockToken).catch(() => {})
       throw err
     }
     if (!existingEmail) {
@@ -464,9 +467,12 @@ export class AuthService {
     // 等于每次输错都把验证码余量续满（配合 60s 取码锁可无限延长有效窗口）
     // P1-04：ttl/getdel 任一不可用即无法完成校验——明确 503，不把未校验请求当成"验证码错误"
     let remainingTtl: number
+    // R06：在 ttl 读取时点锚定绝对到期时刻——回填据此重算真实余量，避免注册耗时跨到期复活旧码
+    let codeDeadline: number | null = null
     let consumed: string | null
     try {
       remainingTtl = await this.redisService.ttl(codeKey)
+      codeDeadline = remainingTtl > 0 ? Date.now() + remainingTtl * 1000 : null
       // L1：check-and-consume 必须单点原子——原"先 GET 判等、再 getdel 丢弃返回值"在并发下
       // 两个请求都能通过 GET，第二个 getdel 拿 null 却继续注册
       consumed = await this.redisService.getdel(codeKey)
@@ -481,7 +487,7 @@ export class AuthService {
       // P1-04：回填失败说明有效码已丢失、计数无法可靠推进，按服务端故障返回 503 并留痕
       if (consumed) {
         try {
-          await this.restoreRegisterCode(codeKey, consumed, remainingTtl)
+          await this.restoreRegisterCode(codeKey, consumed, remainingTtl, codeDeadline)
         } catch (err) {
           noteRedisDegraded('auth:register-code-backfill')
           this.logger.warn(
@@ -533,7 +539,7 @@ export class AuthService {
       // L11：验证码已被 getdel 消费，任何注册失败（含 DB 抖动）都按剩余 TTL 回填——
       // 原仅 Conflict 回填，非冲突异常下用户必须等满 60s 发送冷却才能重试
       try {
-        await this.restoreRegisterCode(codeKey, code, remainingTtl)
+        await this.restoreRegisterCode(codeKey, code, remainingTtl, codeDeadline)
       } catch (redisErr) {
         // L1：回填失败是善后动作——不能顶替原始业务异常（否则 4xx 变 500 误判错误因），
         // 且需留痕并归因 Redis 降级，避免故障期散落无观测
@@ -561,16 +567,37 @@ export class AuthService {
 
   /**
    * P1-04：验证码回填统一入口——只在剩余有效期仍有效时恢复，且用 SETNX 恢复，
-   * 不覆盖并发重发产生的新码、不复活已过期的旧码
+   * 不覆盖并发重发产生的新码、不复活已过期的旧码。
+   * R06：按读取时点的绝对到期时刻重算真实余量，注册耗时跨到期不回填旧码
    */
   private async restoreRegisterCode(
     codeKey: string,
     code: string,
     remainingTtl: number,
+    deadline: number | null,
   ): Promise<void> {
-    // -2：getdel 之后已过期，不得复活；-1：无 TTL（异常态），退回原有效期
+    // -2/0：读取时已过期/无余量，不得复活；-1：无 TTL（异常态），退回原有效期
     if (remainingTtl !== -1 && remainingTtl <= 0) return
-    await this.redisService.setNx(codeKey, code, remainingTtl > 0 ? remainingTtl : 5 * 60)
+    if (remainingTtl === -1) {
+      await this.redisService.setNx(codeKey, code, 5 * 60)
+      return
+    }
+    const remainingSec =
+      deadline == null ? remainingTtl : Math.floor((deadline - Date.now()) / 1000)
+    if (remainingSec <= 0) return
+    await this.redisService.setNx(codeKey, code, remainingSec)
+  }
+
+  /**
+   * R07：释放发码冷却锁——compare-and-delete 只删除仍属于本请求的租约，
+   * 迟到失败不得误删后继请求已重新获取的锁
+   */
+  private async releaseRegisterCodeLock(lockKey: string, lockToken: string): Promise<void> {
+    await this.redisService.eval(
+      `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`,
+      [lockKey],
+      [lockToken],
+    )
   }
 
   /**

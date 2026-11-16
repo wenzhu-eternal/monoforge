@@ -1,5 +1,5 @@
 import { ServiceUnavailableException, UnauthorizedException } from '@nestjs/common'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/db', () => ({
   db: {
@@ -94,6 +94,11 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       errorLogsService as never,
     )
     vi.mocked(db.query.users.findFirst).mockResolvedValue(userRow as never)
+  })
+
+  // R06 用 vi.spyOn(Date, 'now') 控制时钟，恢复避免泄漏到后续用例（如登录锁定日志时间戳）
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('签发时间早于最近登出 → 早退拒绝且不消耗 getdel', async () => {
@@ -241,7 +246,9 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       vi.mocked(db.query.users.findFirst).mockResolvedValue(undefined)
 
       await expect(service.sendRegisterCode('a@b.com')).rejects.toThrow('redis down')
-      expect(redisService.del).toHaveBeenCalledWith('register:code:limit:a@b.com')
+      // R07：释放走 compare-and-delete（eval），不再无条件 del
+      expect(redisService.del).not.toHaveBeenCalled()
+      expect(redisService.eval).toHaveBeenCalled()
     })
 
     it('P2-05：查库失败 → 释放本次冷却锁（不阻塞正常重试）', async () => {
@@ -249,7 +256,28 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       vi.mocked(db.query.users.findFirst).mockRejectedValueOnce(new Error('db down'))
 
       await expect(service.sendRegisterCode('a@b.com')).rejects.toThrow('db down')
-      expect(redisService.del).toHaveBeenCalledWith('register:code:limit:a@b.com')
+      // R07：释放走 compare-and-delete（eval），不再无条件 del
+      expect(redisService.del).not.toHaveBeenCalled()
+      expect(redisService.eval).toHaveBeenCalled()
+    })
+
+    it('R07：锁值唯一属主，释放只针对自身租约（compare-and-delete）', async () => {
+      redisService.setNx.mockResolvedValue(true)
+      vi.mocked(db.query.users.findFirst).mockRejectedValueOnce(new Error('db down'))
+
+      await expect(service.sendRegisterCode('a@b.com')).rejects.toThrow('db down')
+
+      // 锁值不再是固定 '1'，而是唯一属主令牌
+      const lockToken = redisService.setNx.mock.calls[0]?.[1] as string
+      expect(lockToken).toBeTypeOf('string')
+      expect(lockToken).not.toBe('1')
+
+      // 释放用 compare-and-delete：比对属主令牌后删除，只删自身租约
+      const [script, keys, args] = redisService.eval.mock.calls[0] as [string, string[], string[]]
+      expect(script).toContain('GET')
+      expect(script).toContain('DEL')
+      expect(keys[0]).toBe('register:code:limit:a@b.com')
+      expect(args[0]).toBe(lockToken)
     })
   })
 
@@ -284,7 +312,10 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
       )
-      expect(redisService.setNx).toHaveBeenCalledWith('register:code:a@b.com', '123456', 60)
+      // R06：按读取时点的绝对到期重算真实余量，仍是剩余（≤60），而非满 5 分钟
+      const ttl = redisService.setNx.mock.calls[0]?.[2] as number
+      expect(ttl).toBeGreaterThan(0)
+      expect(ttl).toBeLessThanOrEqual(60)
     })
 
     it('P1-04：无 TTL 异常态（-1）退回原有效期', async () => {
@@ -319,7 +350,9 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
       )
-      expect(redisService.setNx).toHaveBeenCalledWith('register:code:a@b.com', '123456', 60)
+      const ttl = redisService.setNx.mock.calls[0]?.[2] as number
+      expect(ttl).toBeGreaterThan(0)
+      expect(ttl).toBeLessThanOrEqual(60)
     })
 
     it('P1-04：getdel 不可用 → 503，不当作验证码错误', async () => {
@@ -376,7 +409,26 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
         'db down',
       )
-      expect(redisService.setNx).toHaveBeenCalledWith('register:code:a@b.com', '123456', 120)
+      // R06：按绝对到期重算真实余量（≤120），而非原样回填旧 TTL
+      const ttl = redisService.setNx.mock.calls[0]?.[2] as number
+      expect(ttl).toBeGreaterThan(0)
+      expect(ttl).toBeLessThanOrEqual(120)
+    })
+
+    it('R06：注册耗时跨到期 → 不回填旧码（不复活已过期验证码）', async () => {
+      let now = 1_000_000_000_000
+      vi.spyOn(Date, 'now').mockImplementation(() => now)
+      redisService.getdel.mockResolvedValue('123456')
+      redisService.ttl.mockResolvedValue(1) // 读取时仅剩 1 秒
+      stubPrivate('register', async () => {
+        now += 2000 // 注册耗时 2 秒，越过 1 秒到期
+        throw new Error('db down')
+      })
+
+      await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
+        'db down',
+      )
+      expect(redisService.setNx).not.toHaveBeenCalled()
     })
 
     it('L1：回填失败不顶替原始异常，且归因 Redis 降级并留痕', async () => {

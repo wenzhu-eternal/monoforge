@@ -198,8 +198,16 @@ audit_count() {
         process.stdout.write("no_data")
         process.exit(0)
       }
+      // R13：所有严重度计数字段必须存在且为非负整数——缺字段/负数/小数/字符串均"无结论"
+      for (const k of ["info", "low", "moderate", "high", "critical"]) {
+        const val = v[k]
+        if (typeof val !== "number" || !Number.isInteger(val) || val < 0) {
+          process.stdout.write("no_data")
+          process.exit(0)
+        }
+      }
       const keys = process.argv[2] === "high" ? ["high", "critical"] : ["low", "moderate", "info"]
-      process.stdout.write(String(keys.reduce((n, k) => n + (v[k] ?? 0), 0)))
+      process.stdout.write(String(keys.reduce((n, k) => n + v[k], 0)))
     } catch {
       process.stdout.write("parse_error")
     }
@@ -305,13 +313,17 @@ for (const file of walk('apps/server/src/modules', (f) => f.endsWith('.controlle
     // 跨行取参数声明：先剥掉夹在 @Body() 与参数之间的其它参数装饰器
     const tail = source.slice(m.index + m[0].length, m.index + m[0].length + 300)
     const cleaned = tail.replace(/@[A-Za-z0-9_.]+\([^)]*\)/g, ' ').replace(/\s+/g, ' ')
-    const param = cleaned.match(/^\s*([A-Za-z0-9_]+)\s*\??\s*:\s*([A-Za-z0-9_]+)/)
+    // R12：捕获完整类型标注（到逗号/右括号为止），不再只取首个标识符——联合/交叉等复杂类型
+    // 会在运行时退化为 Object（丢失 DTO 元数据），无法被 Zod 桥接
+    const param = cleaned.match(/^\s*([A-Za-z0-9_]+)\s*\??\s*:\s*([^,)]+)/)
     if (!param) {
       issues.push(`${file}:${line}: @Body() 缺少带类型标注的参数`)
       continue
     }
-    const type = param[2]
-    if (!type.endsWith('Dto')) {
+    const type = param[2].trim()
+    if (!/^[A-Za-z0-9_]+$/.test(type)) {
+      issues.push(`${file}:${line}: @Body() 参数类型 "${type}" 非单一 DTO（复杂类型运行时丢失元数据）`)
+    } else if (!type.endsWith('Dto')) {
       issues.push(`${file}:${line}: @Body() 参数类型 ${type} 不是 DTO（须以 Dto 结尾）`)
     } else if (!dtoBridged.has(type)) {
       issues.push(`${file}:${line}: 找不到 DTO 类 ${type} 的定义`)

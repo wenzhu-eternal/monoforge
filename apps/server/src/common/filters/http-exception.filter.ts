@@ -11,6 +11,37 @@ import multer from 'multer'
 import { appendErrorLog } from '@/common/logger'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 
+/**
+ * R10：有界、防循环地抽取异常 cause 链的关键信息（故障码 + 消息），供错误日志排障。
+ * 只取 string/number 型 code 与 Error.message，不内联对象/凭证，避免磁盘细节外泄。
+ */
+function describeCauseChain(exception: unknown, maxDepth = 3): string {
+  const parts: string[] = []
+  const seen = new Set<unknown>()
+  let current = exception
+  for (let depth = 0; depth < maxDepth && current != null; depth++) {
+    if (typeof current === 'object') {
+      if (seen.has(current)) break
+      seen.add(current)
+    }
+    const cause = (current as { cause?: unknown })?.cause
+    if (cause == null) break
+
+    if (typeof cause === 'string' || typeof cause === 'number' || typeof cause === 'boolean') {
+      parts.push(String(cause))
+    } else {
+      const code = (cause as { code?: unknown })?.code
+      const message = cause instanceof Error ? cause.message : undefined
+      const codeStr =
+        typeof code === 'string' ? code : typeof code === 'number' ? String(code) : undefined
+      const pieces = [codeStr, message].filter((p): p is string => typeof p === 'string')
+      if (pieces.length > 0) parts.push(pieces.join(': '))
+    }
+    current = cause
+  }
+  return parts.length > 0 ? parts.join(' <- ') : ''
+}
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name)
@@ -98,10 +129,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // 先写文件日志兜底（无论 DB 是否成功都不丢）
     if (shouldRecordToDb) {
       const stack = exception instanceof Error ? exception.stack : undefined
+      // R10：cause 链（如 ENOENT/EACCES）进入日志，避免只留外层通用文案而丢失底层故障码
+      const causeChain = describeCauseChain(exception)
+      const logStack = causeChain
+        ? `${stack ?? ''}${stack ? '\n' : ''}[cause] ${causeChain}`
+        : stack
       // L18 对齐：文件日志与 DB 落库同口径剥离 query，避免敏感参数进主机日志
       appendErrorLog(
         `${request.method} ${request.url?.split('?')[0]} [${status}] ${message}`,
-        stack,
+        logStack,
       )
     }
 
@@ -131,13 +167,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
   ): Promise<void> {
     const message = exception instanceof Error ? exception.message : String(exception)
     const stack = exception instanceof Error ? exception.stack : undefined
+    // R10：cause 链（如 ENOENT/EACCES）进入 DB 错误日志，否则只剩外层"校验失败"无故障码
+    const causeChain = describeCauseChain(exception)
+    const logStack = causeChain ? `${stack ?? ''}${stack ? '\n' : ''}[cause] ${causeChain}` : stack
 
     const userPayload = (request as { user?: { sub?: number } }).user
     const ip = (request.ip ?? '') as string
 
     await this.errorLogsService.record({
       message,
-      stack,
+      stack: logStack,
       statusCode: status,
       // L4：url 按 DB 列宽 500 截断（超长 url 否则 22001 被吞，审计消音）
       url: request.url?.slice(0, 500),

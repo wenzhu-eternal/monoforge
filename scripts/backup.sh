@@ -29,7 +29,11 @@ echo "目标: 容器=$CONTAINER 用户=$DB_USER 数据库=$DB_NAME"
 
 BACKUP_DIR="$(resolve_backup_dir)"
 mkdir -p "$BACKUP_DIR"
-BACKUP_FILE="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S).sql"
+# R04：秒级时间戳在同秒并发下会共享同一 inode——.tmp 固定后缀、定稿路径相同，一方定稿后
+# 另一方的打开句柄仍可改写最终产物，或 .tmp 已被移走而失败。追加 pid+随机后缀让每次调用
+# 独享临时路径与最终产物标识（镜像后端 ScheduleService 的 pid+randomBytes 口径）
+UNIQUE_SUFFIX="$$-${RANDOM}${RANDOM}"
+BACKUP_FILE="$BACKUP_DIR/backup-$(date +%Y%m%d-%H%M%S)-${UNIQUE_SUFFIX}.sql"
 TMP_FILE="$BACKUP_FILE.tmp"
 MIN_BYTES="${BACKUP_MIN_BYTES:-$(env_value BACKUP_MIN_BYTES)}"
 : "${MIN_BYTES:=1024}"

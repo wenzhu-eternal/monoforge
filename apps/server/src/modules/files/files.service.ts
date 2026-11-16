@@ -405,11 +405,27 @@ export class FilesService {
     }
 
     // DB 条件更新抢锁（deletedAt isNotNull → null），消除并发 restore 导致的重复 rename
-    const [updated] = await db
-      .update(files)
-      .set({ deletedAt: null })
-      .where(and(eq(files.id, id), isNotNull(files.deletedAt)))
-      .returning()
+    // R02：归属存续复核与条件更新同事务，并对 owner 行取 FOR UPDATE——与 users.remove 的
+    // "锁用户行 → 查未删文件 → 软删"共享互斥，避免"文件入回收站 → 删 owner → 恢复文件"
+    // 顺序留下指向已删用户的活跃文件（普通外键只约束行存在，不识别 deletedAt）
+    const updated = await db.transaction(async (tx) => {
+      if (file.uploadedBy != null) {
+        const [owner] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, file.uploadedBy), notDeleted(users.deletedAt)))
+          .for('update')
+        if (!owner) {
+          throw new ConflictException('文件所属用户已被删除，无法恢复')
+        }
+      }
+      const [row] = await tx
+        .update(files)
+        .set({ deletedAt: null })
+        .where(and(eq(files.id, id), isNotNull(files.deletedAt)))
+        .returning()
+      return row
+    })
 
     if (!updated) {
       throw new ConflictException('文件未被删除或已恢复')

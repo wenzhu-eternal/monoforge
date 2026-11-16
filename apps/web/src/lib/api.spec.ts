@@ -298,4 +298,28 @@ describe('② 刷新单飞与 bootstrapAuth 行为锁', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
     expect(useAuthStore.getState().token).toBeNull()
   })
+
+  it('R05：bootstrapAuth 旧刷新成功晚到（期间已换会话）→ 不清新会话', async () => {
+    useAuthStore.getState().login({ id: 1 } as never, 'tok')
+    useAuthStore.setState({ token: null }) // 模拟旧版持久化：已认证但 token 为空
+
+    let resolveRefresh!: (value: unknown) => void
+    vi.spyOn(axios, 'post').mockReturnValue(
+      new Promise((resolve) => {
+        resolveRefresh = resolve
+      }) as never,
+    )
+
+    const pending = bootstrapAuth()
+
+    // 刷新未返回期间换会话（登出再登录，sessionEpoch 递增）
+    useAuthStore.getState().logout()
+    useAuthStore.getState().login({ id: 2 } as never, 'new-tok')
+
+    resolveRefresh({ data: { data: { accessToken: 'old-token' } } })
+    await pending
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(useAuthStore.getState().token).toBe('new-tok')
+  })
 })

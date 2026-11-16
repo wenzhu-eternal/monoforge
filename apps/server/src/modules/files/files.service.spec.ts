@@ -97,6 +97,8 @@ describe('FilesService', () => {
           }),
         }),
         insert: (...args: unknown[]) => mockInsert(...args),
+        // R02：restore 归属复核同事务，条件更新经 tx.update 委托到 mockUpdate
+        update: (...args: unknown[]) => mockUpdate(...args),
       }),
     )
     mockMkdir.mockResolvedValue(undefined)
@@ -479,6 +481,63 @@ describe('FilesService', () => {
       expect(result.message).toContain('1')
       expect(mockRename).not.toHaveBeenCalled()
       expect(mockUpdate).toHaveBeenCalledTimes(1)
+    })
+
+    it('R02：文件归属用户已软删 → 拒绝恢复，不搬盘不写库', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        deletedAt: new Date(),
+        uploadedBy: 9,
+        trashPath: '/uploads-trash/123-a.png',
+        path: '/uploads/a.png',
+      })
+      // owner 行锁复核未命中存续用户（已软删）→ 拒绝恢复
+      mockTransaction.mockImplementation(async (cb: (t: unknown) => Promise<unknown>) =>
+        cb({
+          select: () => ({
+            from: () => ({
+              where: () => ({
+                for: async () => [],
+              }),
+            }),
+          }),
+          insert: (...args: unknown[]) => mockInsert(...args),
+          update: (...args: unknown[]) => mockUpdate(...args),
+        }),
+      )
+
+      await expect(service.restore(1, 9, false)).rejects.toThrow('文件所属用户已被删除，无法恢复')
+      expect(mockRename).not.toHaveBeenCalled()
+      expect(mockUpdate).not.toHaveBeenCalled()
+    })
+
+    it('R02：uploadedBy 为 null 的空归属文件 → 正常恢复（跳过 owner 复核）', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 1,
+        deletedAt: new Date(),
+        uploadedBy: null,
+        trashPath: '/uploads-trash/123-a.png',
+        path: '/uploads/a.png',
+      })
+      mockUpdate
+        .mockReturnValueOnce({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([{ id: 1, deletedAt: null }]),
+            }),
+          }),
+        } as never)
+        .mockReturnValueOnce({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        } as never)
+
+      const result = await service.restore(1, 5, true)
+
+      expect(result.message).toContain('1')
+      expect(mockRename).toHaveBeenCalledWith('/uploads-trash/123-a.png', '/uploads/a.png')
+      expect(mockUpdate).toHaveBeenCalledTimes(2)
     })
   })
 

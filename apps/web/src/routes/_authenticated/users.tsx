@@ -319,8 +319,11 @@ export function UsersContent() {
           password: values.password,
           // L12：同编辑口径，清空昵称提交 null 而非空串
           nickname: values.nickname || null,
-          // L13：未填/清空统一提交 null（'' 会被 regex 拒 400）
-          phone: values.phone || null,
+        }
+        // L11：手机号写入是敏感操作（短信/找回链路前件，后端要求 USER_ROLE_MANAGE）——
+        // 无角色管理权限时不提交 phone 字段，避免仅持 user:create 的委托因恒带 phone:null 被 403
+        if (canManageRole) {
+          createData.phone = values.phone || null
         }
         // 仅持角色管理权限时才提交 roleId（后端对越权指定返回 403）
         if (canManageRole && values.roleId) {
@@ -473,11 +476,17 @@ export function UsersContent() {
             name="phone"
             label="手机号"
             rules={[phoneRule]}
-            extra={editingUser && !canManageRole && !isSelf ? '无权限修改他人手机号' : undefined}
+            extra={
+              !canManageRole && !isSelf
+                ? editingUser
+                  ? '无权限修改他人手机号'
+                  : '无手机号管理权限，无法设置手机号'
+                : undefined
+            }
           >
             <Input
               placeholder={phoneMasked ? '原值已脱敏，留空保持不变' : '选填'}
-              disabled={!!editingUser && !canManageRole && !isSelf}
+              disabled={!canManageRole && !isSelf}
             />
           </Form.Item>
           <Form.Item

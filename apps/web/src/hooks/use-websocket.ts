@@ -2,6 +2,7 @@ import type { Notification, WebSocketMe, WebSocketNotifyResult, WebSocketOnline 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api, authRedirect, refreshAccessToken } from '@/lib/api'
+import { invalidateAuditLogs } from '@/lib/audit-invalidation'
 import { clearUserScopedState } from '@/lib/auth-cleanup'
 import { wsClient } from '@/lib/ws'
 import { useAuthStore } from '@/store/auth-store'
@@ -33,6 +34,8 @@ export function useWebSocket() {
       () => useAuthStore.getState().token,
       async () => {
         if (!useAuthStore.getState().isAuthenticated) return null
+        // R05：绑定发起时的会话代次——旧刷新晚到的 401 不得清掉新会话
+        const epoch = useAuthStore.getState().sessionEpoch
         try {
           const fresh = await refreshAccessToken()
           // M3：refresh 期间若用户已登出，不回写死信 token
@@ -42,8 +45,12 @@ export function useWebSocket() {
         } catch (err) {
           // M6：refresh 被 401 明确拒绝（刷新信物已吊销/消费）——终态清态跳 /login，
           // 切断"被踢→重连→refresh 失败→再排重连"死循环；
-          // 网络/限流/5xx 保留 null 由退避重连接管，不误登出
-          if ((err as { response?: { status?: number } })?.response?.status === 401) {
+          // 网络/限流/5xx 保留 null 由退避重连接管，不误登出。
+          // R05：仅当仍是发起时那个会话才清态跳登录，旧 401 晚到不得清掉新会话
+          if (
+            (err as { response?: { status?: number } })?.response?.status === 401 &&
+            useAuthStore.getState().sessionEpoch === epoch
+          ) {
             clearUserScopedState()
             authRedirect.to('/login')
           }
@@ -169,7 +176,7 @@ export function useWebSocketDemo() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['websocket', 'online'] })
       // P2-14：发送通知会落审计记录，同步失效审计列表
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 

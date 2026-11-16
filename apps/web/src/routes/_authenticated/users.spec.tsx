@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
   deleteCalls: [] as { id: number; resolve: () => void }[],
   // M2：update 提交 payload 捕获
   updatePayloads: [] as { id: number; data: Record<string, unknown> }[],
+  // R01：create 提交 payload 捕获
+  createPayloads: [] as Record<string, unknown>[],
 }))
 
 vi.mock('antd', async (importOriginal) => {
@@ -90,7 +92,12 @@ vi.mock('@/hooks/use-users', () => {
       error: null,
       isSuccess: true,
     }),
-    useCreateUser: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useCreateUser: () => ({
+      mutateAsync: async (data: Record<string, unknown>) => {
+        state.createPayloads.push(data)
+      },
+      isPending: false,
+    }),
     useUpdateUser: () => ({
       mutateAsync: async (args: { id: number; data: Record<string, unknown> }) => {
         state.updatePayloads.push(args)
@@ -347,6 +354,69 @@ describe('L16：新建用户弹窗的强制改密开关（与编辑弹窗能力�
     await openCreateModal()
 
     expect(screen.queryByLabelText('首登强制改密')).toBeNull()
+  })
+})
+
+describe('R01：新建用户手机号权限门（后端对 phone 要求 USER_ROLE_MANAGE）', () => {
+  beforeEach(() => {
+    state.me = { id: 7, adminRoleId: 1 }
+    state.createPayloads = []
+  })
+
+  async function openCreateModal() {
+    render(<UsersContent />)
+    fireEvent.click(await screen.findByRole('button', { name: '新建用户' }))
+    return screen.findByLabelText('用户名')
+  }
+
+  function fillRequired() {
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'newuser' } })
+    fireEvent.change(screen.getByLabelText('邮箱'), { target: { value: 'n@example.com' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'Passw0rd!' } })
+  }
+
+  async function selectRole() {
+    // 新建且持角色管理权限时 roleId 必填；选中项与列表角色同文案，取最后一个即 dropdown option
+    fireEvent.mouseDown(screen.getByLabelText('角色'))
+    const roleOptions = await screen.findAllByText('user')
+    fireEvent.click(roleOptions.at(-1) as HTMLElement)
+  }
+
+  it('无 user:role_manage、手机号留空 → 手机号输入框禁用，payload 不含 phone', async () => {
+    state.granted = [PermissionCodes.USER_CREATE]
+    await openCreateModal()
+
+    expect(screen.getByLabelText('手机号')).toBeDisabled()
+
+    fillRequired()
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.createPayloads).toHaveLength(1))
+    expect(state.createPayloads[0]).not.toHaveProperty('phone')
+  })
+
+  it('持 user:role_manage、手机号留空 → payload 提交 phone:null（对齐 DB nullable）', async () => {
+    state.granted = [PermissionCodes.USER_CREATE, PermissionCodes.USER_ROLE_MANAGE]
+    await openCreateModal()
+
+    expect(screen.getByLabelText('手机号')).toBeEnabled()
+
+    await selectRole()
+    fillRequired()
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.createPayloads).toHaveLength(1))
+    expect(state.createPayloads[0]?.phone).toBeNull()
+  })
+
+  it('持 user:role_manage、填写手机号 → payload 含 phone', async () => {
+    state.granted = [PermissionCodes.USER_CREATE, PermissionCodes.USER_ROLE_MANAGE]
+    await openCreateModal()
+
+    await selectRole()
+    fillRequired()
+    fireEvent.change(screen.getByLabelText('手机号'), { target: { value: '13800138000' } })
+    fireEvent.click(screen.getByRole('button', { name: /OK|确\s*定/ }))
+    await waitFor(() => expect(state.createPayloads).toHaveLength(1))
+    expect(state.createPayloads[0]?.phone).toBe('13800138000')
   })
 })
 

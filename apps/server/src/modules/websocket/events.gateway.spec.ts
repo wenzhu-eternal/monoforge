@@ -219,6 +219,30 @@ describe('P2-17：断开清理失败与遗留成员单独回收', () => {
     expect(redisService.eval).toHaveBeenCalledTimes(2)
     expect(presenceEmit).not.toHaveBeenCalled()
   })
+
+  it('R08：SREM 与待清理登记双写都失败 → 本地兜底，Redis 恢复后 sweep 精确回收', async () => {
+    // 断开时 Redis 整体故障：SREM 与 SADD 都失败
+    redisService.eval
+      .mockRejectedValueOnce(new Error('redis down'))
+      .mockRejectedValueOnce(new Error('redis down'))
+
+    gateway.handleDisconnect(client as never)
+    await vi.waitFor(() => expect(redisService.eval).toHaveBeenCalledTimes(2))
+
+    // Redis 恢复：Redis 待回收表为空（SADD 当时失败），但本地队列兜底保留了该成员
+    redisService.eval.mockReset()
+    redisService.eval
+      .mockResolvedValueOnce([]) // SMEMBERS 空
+      .mockResolvedValueOnce(0) // removeOnlineSocket：SREM + SCARD → 0
+      .mockResolvedValueOnce(1) // 从待回收表移除
+
+    await (gateway as unknown as { sweepPendingCleanup: () => Promise<void> }).sweepPendingCleanup()
+
+    // 本地兜底成员被精确 SREM 在线集合并广播离线
+    expect(redisService.eval.mock.calls[1]?.[1]).toEqual(['ws:online:1'])
+    expect(redisService.eval.mock.calls[1]?.[2]).toEqual(['sock-1'])
+    expect(presenceEmit).toHaveBeenCalledWith('presence:update', { userId: 1, online: false })
+  })
 })
 
 describe('EventsGateway L4 断开时序 / L8 消息频控', () => {

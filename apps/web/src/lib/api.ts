@@ -212,7 +212,10 @@ export async function bootstrapAuth(): Promise<void> {
   try {
     const accessToken = await refreshAccessToken()
     useAuthStore.getState().setToken(accessToken)
-  } catch {
+  } catch (error) {
+    // R05：旧会话刷新被新会话替代（helper 抛 SESSION_SUPERSEDED）时静默终止，
+    // 不得清掉新会话；仅真实失败才清态
+    if (isSessionSuperseded(error)) return
     clearUserScopedState()
   }
 }

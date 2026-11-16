@@ -9,6 +9,7 @@ import type {
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCan } from '@/hooks/use-auth'
 import { api } from '@/lib/api'
+import { invalidateAuditLogs } from '@/lib/audit-invalidation'
 import { PermissionCodes } from '@/lib/permissions'
 
 export const useRoles = (params: PaginationQuery) => {
@@ -76,7 +77,7 @@ export const useCreateRole = () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] })
       // L32：新建角色后 users 列表的角色列可能刚被指派，同步失效避免 30s staleTime 内显示旧值
       queryClient.invalidateQueries({ queryKey: ['users'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -93,7 +94,7 @@ export const useUpdateRole = () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] })
       // L19：改角色名后 users 列表 30s 内仍旧名（staleTime），同步失效
       queryClient.invalidateQueries({ queryKey: ['users'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -111,7 +112,7 @@ export const useDeleteRole = () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       // L15：roles 页行内聚合 Tag 来自 ['role-permissions','all']（staleTime 30s）
       queryClient.invalidateQueries({ queryKey: ['role-permissions'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -130,7 +131,7 @@ export const useRestoreRole = () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       // L15：恢复后行内聚合 Tag 需重新带回已删角色的关联
       queryClient.invalidateQueries({ queryKey: ['role-permissions'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }

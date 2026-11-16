@@ -84,6 +84,11 @@ export class EventsGateway
 
   private cleanupTimer?: NodeJS.Timeout
 
+  // R08：Redis 整体故障时，移除（SREM）与待清理登记（SADD）都失败——用有界本地队列兜底，
+  // Redis 恢复后由 sweep 一并回收，避免幽灵成员持续占额/在线状态失真（不用单实例列表覆盖全局）
+  private localPendingCleanup = new Set<string>()
+  private static readonly LOCAL_PENDING_CLEANUP_MAX = 1000
+
   onModuleInit(): void {
     // P2-17：周期清扫待回收成员，Redis 恢复后自动补齐失败的 SREM
     this.cleanupTimer = setInterval(() => {
@@ -275,15 +280,19 @@ export class EventsGateway
 
   /** P2-17：登记单个待回收成员（userId:socketId），不触碰其他连接 */
   private async enqueuePendingCleanup(userId: number, socketId: string): Promise<void> {
+    const member = `${userId}:${socketId}`
     try {
       await this.redisService.eval(
         `redis.call('SADD', KEYS[1], ARGV[1]) return 1`,
         [WS_CLEANUP_PENDING_KEY],
-        [`${userId}:${socketId}`],
+        [member],
       )
     } catch (err) {
-      // Redis 整体不可用时登记也失败——保留日志，TTL 兜底
+      // Redis 整体不可用时登记也失败——落入有界本地队列，sweep 恢复后一并回收
       this.logger.warn(`登记待回收 WS 成员失败: ${(err as Error).message}`)
+      if (this.localPendingCleanup.size < EventsGateway.LOCAL_PENDING_CLEANUP_MAX) {
+        this.localPendingCleanup.add(member)
+      }
     }
   }
 
@@ -292,25 +301,28 @@ export class EventsGateway
    * 多实例下各实例独立清扫同一张待回收表，不覆盖全局在线状态
    */
   private async sweepPendingCleanup(): Promise<void> {
-    let members: string[]
+    const members = new Set<string>()
     try {
       const raw = (await this.redisService.eval(
         `return redis.call('SMEMBERS', KEYS[1])`,
         [WS_CLEANUP_PENDING_KEY],
         [],
       )) as string[] | null
-      members = raw ?? []
+      for (const m of raw ?? []) members.add(m)
     } catch (err) {
       this.logger.warn(`读取待回收 WS 成员失败: ${(err as Error).message}`)
-      return
     }
-    if (members.length === 0) return
+    // R08：合并本地有界队列（Redis 故障期间登记失败的成员），恢复后一并回收
+    for (const m of this.localPendingCleanup) members.add(m)
 
     for (const member of members) {
       const separator = member.indexOf(':')
       const userId = Number(member.slice(0, separator))
       const socketId = member.slice(separator + 1)
-      if (!Number.isInteger(userId) || !socketId) continue
+      if (!Number.isInteger(userId) || !socketId) {
+        this.localPendingCleanup.delete(member)
+        continue
+      }
       try {
         const remaining = await this.removeOnlineSocket(userId, socketId)
         await this.redisService.eval(
@@ -318,11 +330,15 @@ export class EventsGateway
           [WS_CLEANUP_PENDING_KEY],
           [member],
         )
+        this.localPendingCleanup.delete(member)
         if (Number(remaining) === 0) {
           this.broadcastPresence('presence:update', { userId, online: false })
         }
       } catch {
-        // 保留待回收登记，下轮继续
+        // 保留待回收登记，下轮继续——Redis 仍未恢复时本地兜底，避免登记丢失
+        if (this.localPendingCleanup.size < EventsGateway.LOCAL_PENDING_CLEANUP_MAX) {
+          this.localPendingCleanup.add(member)
+        }
       }
     }
   }

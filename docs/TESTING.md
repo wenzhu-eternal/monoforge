@@ -177,7 +177,7 @@ apps/e2e/
 - e2e web: **3000**（复用 dev 端口，vite.config.ts + check-port.mjs 写死 3000）
 
 **约束**：e2e 跑时必须停 dev server + dev web（端口冲突）。M3/M4：`global-setup` 会校验**双端指纹**——server 的 `/health` 回显 `e2eMarker`、web 的 dev 中间件 `/__e2e__` 回显 `E2E_RUN_MARKER`；两者均为 `monoforge-e2e:<HEAD 短 SHA>`，`reuseExistingServer` 命中悬挂的 dev 进程或旧提交实例时直接 fail-fast 退出，不再静默吞掉环境钉子与 `db:push+seed`（也不会拿旧前端代码跑 UI 断言）。
-**数据隔离**：e2e 用独立 DB（`monoforge_e2e_db`），DEV DB 完全不受影响。`playwright.config.ts` 的 `webServer.command` 启动前自动执行 `db:push && db:seed` 重置 e2e DB，确保每次跑都是干净状态。
+**数据隔离**：e2e 用独立 DB（`monoforge_e2e_db`），DEV DB 完全不受影响。`playwright.config.ts` 的 `webServer.command` 启动前自动执行 `db:reset:e2e && db:push && db:seed` 重置 e2e DB（`db:reset:e2e` 会 DROP 并重建 public schema），确保每次跑都是干净状态。
 **用户名命名**：e2e 用户名必须用下划线（如 `e2e_normal_user`），禁止连字符——`UsernameSchema` 正则（小写化后）为 `^[a-z0-9_]+$`，含连字符的用户名会在 global-setup 的 `POST /users` 被 Zod 校验拒 400，导致套件 setup 阶段直接失败。
 **夹具定位与清理（M5/L26）**：beforeAll 查夹具必须用 `fetchAllPages` 逐页拉全量——用户只软删、每轮新增临时账号，单页 `pageSize=100` 会在十余轮后把夹具挤出首屏；`cleanupAll` 覆盖用户/角色/权限/文件/错误白名单/错误日志/通知七类 `e2e-` 前缀数据。
 **冒烟侧库指纹（L24）**：`vitest-e2e.config.ts` 拒绝非 e2e 库连接串（只放行 `:5433/` 或 CI 的 `test_db`），防止 shell 残留的 DEV `DATABASE_URL` 被 `test:e2e:ci` 直跑命中。
@@ -188,13 +188,13 @@ apps/e2e/
 # 1. 启动 e2e 专用 DB + dev redis（e2e-postgres 独立容器，不污染 DEV DB）
 docker compose --profile e2e up -d e2e-postgres redis
 
-# 2. 跑全链路 e2e（webServer 自动 db:push+seed 到 e2e DB，再起 server+web，需停 dev server）
+# 2. 跑全链路 e2e（webServer 自动 db:reset:e2e && db:push && db:seed 到 e2e DB，再起 server+web，需停 dev server）
 pnpm test:e2e
 
 # 3. 查看 HTML 报告
 pnpm --filter=@monoforge/e2e test:report
 
-# 4. 重置 e2e DB（DROP schema 重建 + push + seed，仅本地/e2e 库可用）
+# 4. 重置 e2e DB（仅 DROP 并重建 public schema，不建表不种子；建表/种子由 test:e2e 或 db:push/db:seed 单独执行，仅本地/e2e 库可用）
 pnpm --filter=server db:reset:e2e
 
 # 5. 或彻底删数据卷重建
@@ -234,7 +234,7 @@ test('admin 查看用户列表', async ({ page }) => {
 | `typecheck` | `tsc --noEmit`（shared + server + web + e2e；server/shared 追加 `-p tsconfig.test.json` 覆盖 spec/test） | 无 |
 | `security` | `bash scripts/security-check.sh`（第 6 项已改用官方 registry 实跑 audit） | 无 |
 | `audit` | `pnpm audit --prod --registry=https://registry.npmjs.org --audit-level=high`（官方源硬门，M1-M3 教训） | 无 |
-| `unit-test` | `pnpm test`（Mock DB，三包 856 用例：server 590 + web 192 + shared 74） | 无 |
+| `unit-test` | `pnpm test`（Mock DB，三包 921 用例：server 637 + web 209 + shared 75） | 无 |
 | `smoke-test` | `pnpm --filter=server test:e2e:ci`（真实 DB，73 用例：71 冒烟 + 2 启动告警） | postgres + redis services |
 | `e2e-test` | `pnpm test:e2e`（Playwright，78 用例 / 14 个 spec） | postgres + redis services + playwright install |
 | `docker-smoke` | `docker build` + 起生产镜像 + 轮询 `/api/v1/health`（防镜像层故障逃逸，H1） | postgres + redis services |
@@ -272,7 +272,7 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 ### 数据隔离
 
 - 单测：全部 mock，不碰真实 DB
-- E2E：真实 DB；`pnpm test:e2e`（Playwright）启动前由 webServer 执行 `db:push && db:seed`，`pnpm --filter=server test:e2e`（冒烟）同样在脚本内先 push + seed——两者都不 DROP schema。清理逻辑全走 API 软删，不重置则已删行逐轮累积，长跑后夹具行滚出查找上限产生确定性假红（M4），需手动执行 `pnpm --filter=server db:reset:e2e`（DROP schema 重建 + push + seed）彻底清空。server 侧 `reuseExistingServer: false`（Q14）保证该命令每轮真实执行。上传产物独立到 `apps/e2e/uploads`（`UPLOAD_DIR`），global-teardown 每轮清空 `uploads/` 与 `uploads-trash/`（L21），不再累积磁盘副产物
+- E2E：真实 DB；`pnpm test:e2e`（Playwright）启动前由 webServer 执行 `db:reset:e2e && db:push && db:seed`（`db:reset:e2e` 会 DROP 并重建 public schema，再建表+种子）；`pnpm --filter=server test:e2e`（冒烟）在脚本内仅先 push + seed，不 DROP schema。清理逻辑全走 API 软删，不重置则已删行逐轮累积，长跑后夹具行滚出查找上限产生确定性假红（M4），需手动执行 `pnpm --filter=server db:reset:e2e`（仅 DROP 并重建 schema）彻底清空。server 侧 `reuseExistingServer: false`（Q14）保证该命令每轮真实执行。上传产物独立到 `apps/e2e/uploads`（`UPLOAD_DIR`），global-teardown 每轮清空 `uploads/` 与 `uploads-trash/`（L21），不再累积磁盘副产物
 - 生产：禁止 `db:seed`（除非首次部署）
 
 ## CI/CD 集成
@@ -280,7 +280,7 @@ pnpm security   # 等价于 bash scripts/security-check.sh
 实际 CI 配置见 `.github/workflows/ci.yml`，push（main / develop / master）与 PR（main / master）触发 8 个并行 job（lint / typecheck / security / audit / unit-test / smoke-test / e2e-test / docker-smoke），全部通过后聚合 build job 执行 `pnpm build`。
 
 **4 个测试链路全量通过门槛**：
-- `unit-test`：`pnpm test`（server 590 + web 192 + shared 74，共 856 单测）
+- `unit-test`：`pnpm test`（server 637 + web 209 + shared 75，共 921 单测）
 - `smoke-test`：`pnpm --filter=server test:e2e:ci`（73 个：71 API 冒烟 + 2 启动告警）
 - `e2e-test`：`pnpm test:e2e`（78 个 Playwright 全链路）
 - `security`：`bash scripts/security-check.sh`（lint + typecheck + 软删除审计 + 依赖安全扫描）

@@ -10,6 +10,7 @@ import type {
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCan } from '@/hooks/use-auth'
 import { api } from '@/lib/api'
+import { invalidateAuditLogs } from '@/lib/audit-invalidation'
 import { PermissionCodes } from '@/lib/permissions'
 
 export type { RouteMeta }
@@ -67,7 +68,7 @@ export function useCreatePermission() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['permissions'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -81,7 +82,7 @@ export function useUpdatePermission() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['permissions'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -97,7 +98,7 @@ export function useDeletePermission() {
       queryClient.invalidateQueries({ queryKey: ['permissions'] })
       // L15：删除权限后 roles 页行内聚合 Tag 仍显示已删码（staleTime 30s）
       queryClient.invalidateQueries({ queryKey: ['role-permissions'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -113,7 +114,7 @@ export function useRestorePermission() {
       queryClient.invalidateQueries({ queryKey: ['permissions'] })
       // L15：恢复权限后行内聚合 Tag 需重新带回已删码的关联
       queryClient.invalidateQueries({ queryKey: ['role-permissions'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -158,7 +159,7 @@ export function useUpdateRolePermissions() {
       queryClient.invalidateQueries({ queryKey: ['role-permissions'] })
       // M13：角色权限变化后当前用户菜单/守卫也可能变化，刷新 auth.me（30s stale 内否则继续放行旧权限）
       queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }

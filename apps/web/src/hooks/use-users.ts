@@ -9,6 +9,7 @@ import type {
 } from '@shared'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { invalidateAuditLogs } from '@/lib/audit-invalidation'
 import { useAuthStore } from '@/store/auth-store'
 
 export const useUsers = (params: PaginationQuery) => {
@@ -52,7 +53,7 @@ export const useCreateUser = () => {
       // L25：用户增删恢复同步刷新仪表盘计数（staleTime 60s，不失效则最长展示 60s 旧数据）
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
       // L17：写操作后审计页 30s 内仍走缓存，看不到刚产生的记录
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -77,7 +78,7 @@ export const useUpdateUser = () => {
       if (variables.data.status !== undefined) {
         queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
       }
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -92,7 +93,7 @@ export const useDeleteUser = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -108,7 +109,7 @@ export const useRestoreUser = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] })
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }

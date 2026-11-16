@@ -6,6 +6,7 @@ import type {
 } from '@shared'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { invalidateAuditLogs } from '@/lib/audit-invalidation'
 
 export const useSendWelcomeMail = () => {
   const queryClient = useQueryClient()
@@ -16,7 +17,7 @@ export const useSendWelcomeMail = () => {
     },
     // P2-14：邮件发送会落审计记录，同步失效审计列表
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }
@@ -33,7 +34,7 @@ export const useSendVerificationCodeMail = () => {
     },
     // P2-14：同上，写操作后审计列表不得继续展示旧快照
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['audit-logs'] })
+      invalidateAuditLogs(queryClient)
     },
   })
 }

@@ -35,6 +35,11 @@ describe('TRUST_PROXY 校验（M3）', () => {
     '1,127.0.0.1',
     '127.0.0.1,2',
     '1,2',
+    // R11：多斜杠/空段会被 split 解构前两项静默忽略，但 Express 随后拒绝，必须在 env 阶段拒绝
+    '127.0.0.1/8/junk',
+    '2001:db8::/32/junk',
+    '127.0.0.1/',
+    '127.0.0.1//8',
   ])('非法值: %s', (value) => {
     expect(isValidTrustProxyValue(value)).toBe(false)
   })
