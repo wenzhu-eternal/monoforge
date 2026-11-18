@@ -189,6 +189,36 @@ describe('AuditService', () => {
       await drainPromise
       expect(drained).toBe(true)
     })
+
+    it('R07：配额检查（Redis 等待）也登记到 pending-writes，关闭不会提前结束连接池', async () => {
+      let resolveQuota!: (v: unknown) => void
+      redisServiceMock.eval.mockReturnValue(
+        new Promise((resolve) => {
+          resolveQuota = resolve
+        }),
+      )
+      vi.mocked(mockDb.insert).mockReturnValue({
+        values: vi.fn().mockResolvedValue(undefined),
+      } as never)
+
+      const recordPromise = service.record({ userId: 1, action: 'create', resource: 'user' })
+      // record 同步完成 trackDbWrite 登记（配额仍在等待 Redis）
+      await new Promise((r) => setTimeout(r, 0))
+
+      let drained = false
+      const drainPromise = drainDbWrites(1000).then(() => {
+        drained = true
+      })
+      await new Promise((r) => setTimeout(r, 10))
+      // 配额未返回，drain 不得提前结束（否则随后 INSERT 以 CONNECTION_ENDED 失败丢记录）
+      expect(drained).toBe(false)
+
+      resolveQuota(1)
+      await recordPromise
+      await drainPromise
+      expect(drained).toBe(true)
+      expect(mockDb.insert).toHaveBeenCalled()
+    })
   })
 
   describe('findAll', () => {

@@ -37,6 +37,12 @@ export class AuditService {
   constructor(private readonly redisService: RedisService) {}
 
   async record(params: RecordAuditLogParams): Promise<void> {
+    // R07：从一开始就把「配额检查 + INSERT」整体登记到 pending-writes——配额检查等待 Redis，
+    // 若只登记 INSERT，关闭流程可能在配额返回前就结束连接池，随后 INSERT 以 CONNECTION_ENDED 丢记录
+    await trackDbWrite(this.recordInner(params))
+  }
+
+  private async recordInner(params: RecordAuditLogParams): Promise<void> {
     // M1：按来源（用户/IP）分钟级封顶，超限丢弃避免 audit_logs 被灌成百万级行
     const allowed = await this.enforceRecordMinuteCap(params.userId, params.ip)
     if (!allowed) {
@@ -50,20 +56,16 @@ export class AuditService {
 
     // L1：登记到 pending-writes——优雅关闭时 client.end() 前先排空，避免在飞请求的
     // 审计 insert 以 CONNECTION_ENDED 失败（与 error_logs 异步落库同口径）
-    await trackDbWrite(
-      (async () => {
-        await db.insert(auditLogs).values({
-          userId: params.userId,
-          action: params.action,
-          resource: params.resource,
-          resourceId: params.resourceId,
-          oldValue: params.oldValue,
-          newValue: params.newValue,
-          ip: params.ip,
-          userAgent: params.userAgent,
-        })
-      })(),
-    )
+    await db.insert(auditLogs).values({
+      userId: params.userId,
+      action: params.action,
+      resource: params.resource,
+      resourceId: params.resourceId,
+      oldValue: params.oldValue,
+      newValue: params.newValue,
+      ip: params.ip,
+      userAgent: params.userAgent,
+    })
   }
 
   /**
