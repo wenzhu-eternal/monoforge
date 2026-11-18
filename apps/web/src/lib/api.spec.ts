@@ -322,4 +322,30 @@ describe('② 刷新单飞与 bootstrapAuth 行为锁', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(true)
     expect(useAuthStore.getState().token).toBe('new-tok')
   })
+
+  it('R02：bootstrapAuth 旧刷新失败晚到（期间已换会话）→ 不清新会话', async () => {
+    vi.useFakeTimers()
+    useAuthStore.getState().login({ id: 1 } as never, 'tok')
+    useAuthStore.setState({ token: null }) // 模拟旧版持久化：已认证但 token 为空
+
+    let rejectRefresh!: (reason: unknown) => void
+    vi.spyOn(axios, 'post').mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectRefresh = reject
+      }) as never,
+    )
+
+    const pending = bootstrapAuth()
+
+    // 刷新未返回期间换会话（登出再登录，sessionEpoch 递增）
+    useAuthStore.getState().logout()
+    useAuthStore.getState().login({ id: 2 } as never, 'new-tok')
+
+    rejectRefresh(new Error('refresh failed'))
+    await vi.advanceTimersByTimeAsync(600)
+    await pending
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(useAuthStore.getState().token).toBe('new-tok')
+  })
 })

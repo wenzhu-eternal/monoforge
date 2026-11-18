@@ -206,16 +206,20 @@ function buildRefreshPayload() {
 }
 
 export async function bootstrapAuth(): Promise<void> {
-  const { isAuthenticated, token } = useAuthStore.getState()
+  const { isAuthenticated, token, sessionEpoch } = useAuthStore.getState()
   if (!isAuthenticated || token) return
 
   try {
-    const accessToken = await refreshAccessToken()
+    const accessToken = await refreshAccessToken(Date.now(), sessionEpoch)
+    // R02：刷新期间会话已切换，旧成功结果不得回写新会话
+    if (sessionEpoch !== useAuthStore.getState().sessionEpoch) return
     useAuthStore.getState().setToken(accessToken)
   } catch (error) {
     // R05：旧会话刷新被新会话替代（helper 抛 SESSION_SUPERSEDED）时静默终止，
     // 不得清掉新会话；仅真实失败才清态
     if (isSessionSuperseded(error)) return
+    // R02：旧会话刷新失败晚到（401/网络/超时），不得清掉新登录会话的 token/用户/缓存
+    if (sessionEpoch !== useAuthStore.getState().sessionEpoch) return
     clearUserScopedState()
   }
 }
