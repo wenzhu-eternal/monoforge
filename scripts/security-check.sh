@@ -281,63 +281,7 @@ echo "  → 扫描 controller 的 @Body() 参数类型是否真正经 createZodD
 
 # P2-09：原实现按单行正则只看"类型名是否以 Dto 结尾"，多行声明直接漏扫，
 # 且裸 class XxxDto 也能通过——这里改为跨行解析参数类型，并反查该 DTO 的定义是否 extends createZodDto
-if node > /tmp/zod-dto.log 2>&1 <<'NODE'
-const fs = require('node:fs')
-const path = require('node:path')
-
-function walk(dir, match) {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) return walk(full, match)
-    return match(full) ? [full] : []
-  })
-}
-
-// DTO 定义索引：类名 → 桥接文件（null 表示存在裸 class 定义，未经 createZodDto）
-const dtoBridged = new Map()
-for (const file of walk('apps/server/src', (f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))) {
-  const source = fs.readFileSync(file, 'utf8')
-  for (const m of source.matchAll(/class\s+([A-Za-z0-9_]+)\s+extends\s+createZodDto\s*\(/g)) {
-    dtoBridged.set(m[1], file)
-  }
-  for (const m of source.matchAll(/class\s+([A-Za-z0-9_]+)\b/g)) {
-    if (!dtoBridged.has(m[1])) dtoBridged.set(m[1], null)
-  }
-}
-
-const issues = []
-for (const file of walk('apps/server/src/modules', (f) => f.endsWith('.controller.ts'))) {
-  const source = fs.readFileSync(file, 'utf8')
-  for (const m of source.matchAll(/@Body\(\s*\)/g)) {
-    const line = source.slice(0, m.index).split('\n').length
-    // 跨行取参数声明：先剥掉夹在 @Body() 与参数之间的其它参数装饰器
-    const tail = source.slice(m.index + m[0].length, m.index + m[0].length + 300)
-    const cleaned = tail.replace(/@[A-Za-z0-9_.]+\([^)]*\)/g, ' ').replace(/\s+/g, ' ')
-    // R12：捕获完整类型标注（到逗号/右括号为止），不再只取首个标识符——联合/交叉等复杂类型
-    // 会在运行时退化为 Object（丢失 DTO 元数据），无法被 Zod 桥接
-    const param = cleaned.match(/^\s*([A-Za-z0-9_]+)\s*\??\s*:\s*([^,)]+)/)
-    if (!param) {
-      issues.push(`${file}:${line}: @Body() 缺少带类型标注的参数`)
-      continue
-    }
-    const type = param[2].trim()
-    if (!/^[A-Za-z0-9_]+$/.test(type)) {
-      issues.push(`${file}:${line}: @Body() 参数类型 "${type}" 非单一 DTO（复杂类型运行时丢失元数据）`)
-    } else if (!type.endsWith('Dto')) {
-      issues.push(`${file}:${line}: @Body() 参数类型 ${type} 不是 DTO（须以 Dto 结尾）`)
-    } else if (!dtoBridged.has(type)) {
-      issues.push(`${file}:${line}: 找不到 DTO 类 ${type} 的定义`)
-    } else if (!dtoBridged.get(type)) {
-      issues.push(`${file}:${line}: ${type} 未经 createZodDto 桥接（裸 class 不校验入参）`)
-    }
-  }
-}
-
-if (issues.length > 0) {
-  console.log(issues.join('\n'))
-  process.exit(1)
-}
-NODE
+if node scripts/check-zod-dto.cjs > /tmp/zod-dto.log 2>&1
 then
   check_pass "所有 controller @Body() 都挂载了 createZodDto 桥接的 DTO"
 else

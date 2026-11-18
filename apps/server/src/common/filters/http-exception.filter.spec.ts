@@ -165,4 +165,28 @@ describe('HttpExceptionFilter', () => {
 
     expect(errorLogsService.record).toHaveBeenCalled()
   })
+
+  it('H01：异常 message 含凭证 → 脱敏后入库，不泄露明文', () => {
+    const err = new Error('login failed password=supersecret123 token=abc.def.ghi')
+    const { host } = createHost({ ...baseRequest, body: {} })
+
+    filter.catch(err, host)
+
+    const recordArg = errorLogsService.record.mock.calls[0][0] as { message: string }
+    expect(recordArg.message).toContain('password=***REDACTED***')
+    expect(recordArg.message).toContain('token=***REDACTED***')
+    expect(recordArg.message).not.toContain('supersecret123')
+    expect(recordArg.message).not.toContain('abc.def.ghi')
+  })
+
+  it('H01：超长异常 message → 截断，不整串落库', () => {
+    const err = new Error(`boom ${'x'.repeat(5000)}`)
+    const { host } = createHost({ ...baseRequest, body: {} })
+
+    filter.catch(err, host)
+
+    const recordArg = errorLogsService.record.mock.calls[0][0] as { message: string }
+    expect(recordArg.message.length).toBeLessThan(2100)
+    expect(recordArg.message).toContain('(truncated)')
+  })
 })

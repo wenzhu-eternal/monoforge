@@ -54,21 +54,61 @@ make_audit '{"error":{"code":"E1"}}'
 make_audit 'not json'
 [ "$(audit_count "$WORK/audit.json" high)" = "parse_error" ] || fail "坏 JSON 应 parse_error"
 
-# ---- R12：DTO 参数类型必须为单一标识符（联合/交叉/数组退化为 Object 应拒绝）----
-check_dto_type() {
-  node -e '
-    const type = process.argv[1].trim()
-    if (!/^[A-Za-z0-9_]+$/.test(type)) { console.log("REJECT"); process.exit(0) }
-    if (!type.endsWith("Dto")) { console.log("REJECT_NOT_DTO"); process.exit(0) }
-    console.log("OK")
-  ' "$1"
-}
+# ---- R10：真实 DTO 检查器解析导入符号（type-only / 同名裸类 / 别名 / 复杂类型）----
+mkdir -p "$WORK/src/dto" "$WORK/src/modules"
 
-[ "$(check_dto_type 'CheckDto | undefined')" = "REJECT" ] || fail "联合类型应被拒绝"
-[ "$(check_dto_type 'CheckDto & OtherDto')" = "REJECT" ] || fail "交叉类型应被拒绝"
-[ "$(check_dto_type 'CheckDto[]')" = "REJECT" ] || fail "数组类型应被拒绝"
-[ "$(check_dto_type 'Partial<CheckDto>')" = "REJECT" ] || fail "泛型应被拒绝"
-[ "$(check_dto_type 'CheckDto')" = "OK" ] || fail "单一 DTO 应通过"
-[ "$(check_dto_type 'CreateUserDto')" = "OK" ] || fail "单一 DTO 应通过"
+cat > "$WORK/src/dto/check.dto.ts" <<'EOF'
+import { createZodDto } from 'nestjs-zod'
+import { z } from 'zod'
+export class CheckDto extends createZodDto(z.object({ name: z.string() })) {}
+EOF
 
-echo "PASS: security-check R12/R13 校验逻辑符合预期"
+cat > "$WORK/src/dto/bare.dto.ts" <<'EOF'
+export class FakeDto {}
+EOF
+
+cat > "$WORK/src/dto/alias.dto.ts" <<'EOF'
+import { createZodDto } from 'nestjs-zod'
+import { z } from 'zod'
+export class RealDto extends createZodDto(z.object({ id: z.number() })) {}
+EOF
+
+cat > "$WORK/src/modules/typeonly.controller.ts" <<'EOF'
+import type { CheckDto } from '../dto/check.dto'
+export class C1 { run(@Body() dto: CheckDto) {} }
+EOF
+
+cat > "$WORK/src/modules/bare.controller.ts" <<'EOF'
+import { FakeDto } from '../dto/bare.dto'
+export class C2 { run(@Body() dto: FakeDto) {} }
+EOF
+
+cat > "$WORK/src/modules/alias.controller.ts" <<'EOF'
+import { RealDto as MyDto } from '../dto/alias.dto'
+export class C3 { run(@Body() dto: MyDto) {} }
+EOF
+
+cat > "$WORK/src/modules/complex.controller.ts" <<'EOF'
+import { CheckDto } from '../dto/check.dto'
+export class C4 { run(@Body() dto: CheckDto | undefined) {} }
+EOF
+
+if node scripts/check-zod-dto.cjs "$WORK/src" > "$WORK/out.log" 2>&1; then
+  fail "type-only/裸类/复杂类型应被拒绝"
+fi
+grep -q "import type 导入" "$WORK/out.log" || fail "type-only 导入应被识别"
+grep -q "未在.*经 createZodDto 桥接" "$WORK/out.log" || fail "同名裸类应被识别"
+grep -q "非单一 DTO" "$WORK/out.log" || fail "复杂类型应被识别"
+# 合法值导入别名不应被误报
+if grep -q "MyDto" "$WORK/out.log"; then fail "合法值导入别名不应被误报"; fi
+
+# 仅合法 DTO 的干净 fixture 应通过
+rm -rf "$WORK/src/modules"
+mkdir -p "$WORK/src/modules"
+cat > "$WORK/src/modules/ok.controller.ts" <<'EOF'
+import { CheckDto } from '../dto/check.dto'
+export class COk { run(@Body() dto: CheckDto) {} }
+EOF
+node scripts/check-zod-dto.cjs "$WORK/src" > "$WORK/ok.log" 2>&1 || fail "合法值导入 DTO 应通过"
+
+echo "PASS: security-check R10/R13 校验逻辑符合预期"

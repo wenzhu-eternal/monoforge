@@ -12,6 +12,22 @@ import { appendErrorLog } from '@/common/logger'
 import { ErrorLogsService } from '@/modules/error-logs/error-logs.service'
 
 /**
+ * H01：日志字符串限长 + 凭证模式脱敏——异常 message／string cause 可能含凭证或超长文本，
+ * 进入文件与 DB 日志前统一脱敏/截断；仅匹配显式凭证键，保留 ENOENT/EACCES 等故障码。
+ */
+const MAX_LOG_FIELD_LENGTH = 2000
+
+function sanitizeLogText(text: string): string {
+  const redacted = text.replace(
+    /(password|passwd|pwd|token|secret|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token)\s*[:=]\s*\S+/gi,
+    '$1=***REDACTED***',
+  )
+  return redacted.length > MAX_LOG_FIELD_LENGTH
+    ? `${redacted.slice(0, MAX_LOG_FIELD_LENGTH)}…(truncated)`
+    : redacted
+}
+
+/**
  * R10：有界、防循环地抽取异常 cause 链的关键信息（故障码 + 消息），供错误日志排障。
  * 只取 string/number 型 code 与 Error.message，不内联对象/凭证，避免磁盘细节外泄。
  */
@@ -39,7 +55,7 @@ function describeCauseChain(exception: unknown, maxDepth = 3): string {
     }
     current = cause
   }
-  return parts.length > 0 ? parts.join(' <- ') : ''
+  return parts.length > 0 ? sanitizeLogText(parts.join(' <- ')) : ''
 }
 
 @Catch()
@@ -136,7 +152,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         : stack
       // L18 对齐：文件日志与 DB 落库同口径剥离 query，避免敏感参数进主机日志
       appendErrorLog(
-        `${request.method} ${request.url?.split('?')[0]} [${status}] ${message}`,
+        sanitizeLogText(`${request.method} ${request.url?.split('?')[0]} [${status}] ${message}`),
         logStack,
       )
     }
@@ -165,7 +181,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     request: Request,
     status?: number,
   ): Promise<void> {
-    const message = exception instanceof Error ? exception.message : String(exception)
+    const message = sanitizeLogText(
+      exception instanceof Error ? exception.message : String(exception),
+    )
     const stack = exception instanceof Error ? exception.stack : undefined
     // R10：cause 链（如 ENOENT/EACCES）进入 DB 错误日志，否则只剩外层"校验失败"无故障码
     const causeChain = describeCauseChain(exception)

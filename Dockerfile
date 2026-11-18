@@ -80,7 +80,7 @@ COPY --from=builder /app/apps/web/dist ./apps/web/dist
 # prod-deps 走 --ignore-scripts 不会重建 shared，.dockerignore 又排除源码 dist，必须显式拷贝
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
-RUN mkdir -p /app/uploads /app/uploads-trash /app/backups && chown -R node:node /app/uploads /app/uploads-trash /app/backups
+RUN mkdir -p /app/uploads /app/uploads-trash /app/backups /app/logs && chown -R node:node /app/uploads /app/uploads-trash /app/backups /app/logs
 
 ENV API_PORT=9000
 ENV HUSKY=0
