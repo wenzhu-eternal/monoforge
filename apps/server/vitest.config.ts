@@ -14,6 +14,13 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.spec.ts', 'src/**/*.d.ts'],
+      // T01：分阶段上调至 TESTING.md 要求的 80/70；当前为基线防回归门禁（略低于实测基线）
+      thresholds: {
+        statements: 65,
+        branches: 60,
+        functions: 60,
+        lines: 65,
+      },
     },
     setupFiles: ['./test/setup.ts'],
   },

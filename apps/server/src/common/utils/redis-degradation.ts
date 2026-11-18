@@ -7,7 +7,7 @@ import { appendErrorLog } from '@/common/logger'
  * 全仓口径是"Redis 故障时降级放行"（不 fail-closed）：jti 黑名单 / 日配额 / 限流存储 /
  * 登录锁定等会静默跳过。单点日志已按分钟限频，但**持续故障**只表现为零星告警，
  * 无法区分"抖一下"与"已降级一小时"——本模块记录首次降级时刻，持续超阈值升级为
- * error_logs 告警（每阈值时长至多一条），恢复时清零。
+ * 进程 Logger + 文件日志告警（非 error_logs 库表，每阈值时长至多一条），恢复时清零。
  */
 const UPGRADE_AFTER_MS = 5 * 60_000
 

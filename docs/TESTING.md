@@ -34,12 +34,19 @@
 
 - **语句覆盖**：>= 80%
 - **分支覆盖**：>= 70%
-- **核心 service**（auth/users/roles/permissions/error-logs）：>= 90%
+- **核心 service**：>= 90%（口径 = `auth/users/roles/permissions/error-logs` 五个模块的 service 层，不含 controller/拦截器/工具函数）
 
 ```bash
 pnpm --filter=server test:cov
 pnpm --filter=web test:coverage
 ```
+
+> **门禁口径（T01）**：`apps/server/vitest.config.ts` 与 `apps/web/vite.config.ts` 已配置 `coverage.thresholds` 作为防回归门禁。当前阈值按实测基线略低设置（server 65/60、web 60/55），分阶段上调至上述 80/70 目标；单测仍须"先红后绿"写有效断言，不得以单纯抬高覆盖率数字代替有效测试。
+
+### 依赖审计口径（S01）
+
+- 生产依赖树（`pnpm audit --prod`）高危/严重必须为 0，已纳入 `security-check.sh` 硬门禁。
+- 完整依赖树（含 dev/build 工具链）的低/中/高危告警不进生产门禁，但需按真实依赖链与可达性评估升级，升级后重跑冻结安装、测试、构建与 audit。本轮仅记录分流线索，不盲目升级；`GHSA-fc5q-39xc-vjpf` 暂无可用修复版本。
 
 ### Bug 修复流程
 

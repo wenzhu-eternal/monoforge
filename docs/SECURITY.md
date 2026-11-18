@@ -91,7 +91,7 @@
 
 - 仅管理员（`isAdminUser`）或原始上传者可删除文件
 
-- **软删必须先抢 DB 行锁，再搬盘**：`files.service.remove` 先用条件更新（`WHERE deleted_at IS NULL` 且命中上传者/admin）抢到行，再 `safeMove` 到 `uploads-trash/{时间戳 base36}-{文件名头尾截断}`；rename 失败仅写文件日志 warn（不进 error_logs 管理页）、DB 行仍标记删除（反竞态版，避免两个请求同时把同一文件搬两次）。文件不经静态目录对外托管：预览/下载统一走 `GET /files/:id/preview|download` 的鉴权端点，`uploads-trash/` 无任何 URL 可达路径。超 30 天的软删文件由每日 0:30 cron 物理清理（磁盘双路径 + DB 行，J3）
+- **软删必须先抢 DB 行锁，再搬盘**：`files.service.remove` 先用条件更新（`WHERE deleted_at IS NULL` 且命中上传者/admin）抢到行，再 `safeMove` 到 `uploads-trash/{时间戳 base36}-{文件名头尾截断}`；rename 失败仅走 Nest Logger（进程输出，非 `appendErrorLog` 文件链、非 `error_logs` 管理页）、DB 行仍标记删除（反竞态版，避免两个请求同时把同一文件搬两次）。文件不经静态目录对外托管：预览/下载统一走 `GET /files/:id/preview|download` 的鉴权端点，`uploads-trash/` 无任何 URL 可达路径。超 30 天的软删文件由每日 0:30 cron 物理清理（磁盘双路径 + DB 行，J3）
 
 ## 越权防护
 
@@ -213,7 +213,7 @@ if (updateUserDto.roleId !== undefined || updateUserDto.status !== undefined) {
 ### Token 吊销口径（L2/L4）
 
 - **refresh 顺序**：先 `GET` 预检 → DB/状态（禁用、强制改密）校验 → `getdel` 原子消费复核；不得先 getdel 后校验——DB 抖动抛 503 时客户端唯一有效的 RT 已被烧毁且新 token 未下发，多端共享部署下放大为全员重登
-- **access 比对**：`AuthGuard` 除 jti 黑名单外，还比对 `logout:at:<uid>` 与 token `iat`（登出/改密/禁用均写该时间戳）。仅扫 jti 的三步吊销链非原子，并发签发的新 AT 不在扫描结果与活跃集内、可续活 ≤15min；iat 比对把该窗口收敛到"登出那一秒之后签发的一律拒绝"（iat 精度为秒，按该秒末尾比较，同秒重新登录不受误伤）。Redis 抖动降级放行（JWT 已验签）
+- **access 比对**：`AuthGuard` 除 jti 黑名单外，还比对 `logout:at:<uid>` 与 token `iat`（登出与自助改密写该时间戳，禁用不写该键）。仅扫 jti 的三步吊销链非原子，并发签发的新 AT 不在扫描结果与活跃集内、可续活 ≤15min；iat 比对把该窗口收敛到"早于 `logout:at` 的 token 拒绝"（iat 精度为秒，按该秒末尾比较，同秒重新登录不受误伤）。Redis 抖动降级放行（JWT 已验签）
 - **admin 删除取证类错误日志**：见「限流」节 M2 条目
 
 ## 权限控制

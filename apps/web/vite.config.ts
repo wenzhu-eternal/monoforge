@@ -100,6 +100,13 @@ export default defineConfig({
         'src/main.tsx',
         'src/test/**',
       ],
+      // T01：分阶段上调至 TESTING.md 要求的 80/70；当前为基线防回归门禁（略低于实测基线）
+      thresholds: {
+        statements: 60,
+        branches: 55,
+        functions: 50,
+        lines: 60,
+      },
     },
   },
 })
