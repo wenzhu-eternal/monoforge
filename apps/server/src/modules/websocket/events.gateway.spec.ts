@@ -192,7 +192,7 @@ describe('P2-17：断开清理失败与遗留成员单独回收', () => {
     await (gateway as unknown as { sweepPendingCleanup: () => Promise<void> }).sweepPendingCleanup()
 
     expect(redisService.eval.mock.calls[1]?.[1]).toEqual(['ws:online:1'])
-    expect(redisService.eval.mock.calls[1]?.[2]).toEqual(['sock-1'])
+    expect(redisService.eval.mock.calls[1]?.[2]).toEqual(['sock-1', expect.any(Number)])
     expect(redisService.eval.mock.calls[2]?.[2]).toEqual(['1:sock-1'])
     expect(presenceEmit).toHaveBeenCalledWith('presence:update', { userId: 1, online: false })
   })
@@ -238,9 +238,9 @@ describe('P2-17：断开清理失败与遗留成员单独回收', () => {
 
     await (gateway as unknown as { sweepPendingCleanup: () => Promise<void> }).sweepPendingCleanup()
 
-    // 本地兜底成员被精确 SREM 在线集合并广播离线
+    // 本地兜底成员被精确 ZREM 在线集合并广播离线
     expect(redisService.eval.mock.calls[1]?.[1]).toEqual(['ws:online:1'])
-    expect(redisService.eval.mock.calls[1]?.[2]).toEqual(['sock-1'])
+    expect(redisService.eval.mock.calls[1]?.[2]).toEqual(['sock-1', expect.any(Number)])
     expect(presenceEmit).toHaveBeenCalledWith('presence:update', { userId: 1, online: false })
   })
 })
@@ -329,7 +329,7 @@ describe('EventsGateway L4 断开时序 / L8 消息频控', () => {
 
     // 复现旧实现：此时若 userId 未落 data，disconnect 会早退、SREM 不执行
     gateway.handleDisconnect(client as never)
-    expect(redisService.eval.mock.calls.some(([script]) => String(script).includes('SREM'))).toBe(
+    expect(redisService.eval.mock.calls.some(([script]) => String(script).includes('ZREM'))).toBe(
       true,
     )
 
@@ -416,9 +416,9 @@ describe('EventsGateway L4 断开时序 / L8 消息频控', () => {
     release(1)
     await connecting
 
-    // SADD 完成后复检命中 → 内联补偿 SREM
+    // SADD 完成后复检命中 → 内联补偿 ZREM
     expect(redisService.eval).toHaveBeenCalledTimes(1)
-    expect(String(redisService.eval.mock.calls[0]?.[0])).toContain('SREM')
+    expect(String(redisService.eval.mock.calls[0]?.[0])).toContain('ZREM')
     expect(client.data.refreshTimer).toBeUndefined()
     expect(presenceEmit).not.toHaveBeenCalledWith('presence:update', { userId: 1, online: true })
   })
@@ -436,5 +436,52 @@ describe('EventsGateway 在线列表降级（L9）', () => {
 
     await expect(gateway.getOnlineUserIds()).rejects.toThrow(ServiceUnavailableException)
     expect(mockNoteRedisDegraded).toHaveBeenCalledWith('websocket:online-list')
+  })
+})
+
+describe('R05/R06：sorted set 在线一致性（续期重建 + 过期剪枝）', () => {
+  let gateway: InstanceType<typeof EventsGateway>
+  let redisService: { eval: ReturnType<typeof vi.fn> }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    redisService = { eval: vi.fn().mockResolvedValue(1) }
+    gateway = new EventsGateway(
+      { verifyAsync: vi.fn() } as never,
+      { get: vi.fn().mockReturnValue('secret') } as never,
+      redisService as never,
+    )
+    gateway.server = { to: vi.fn().mockReturnValue({ emit: vi.fn() }) } as never
+  })
+
+  it('R05：refreshOnlineTtl 用 ZADD 幂等重登记（key 丢失后活连接自愈）', async () => {
+    await (
+      gateway as unknown as { refreshOnlineTtl: (u: number, s: string) => Promise<void> }
+    ).refreshOnlineTtl(1, 'sock-1')
+
+    const [script, keys, args] = redisService.eval.mock.calls[0] as [
+      string,
+      string[],
+      (string | number)[],
+    ]
+    expect(script).toContain('ZADD')
+    expect(keys).toEqual(['ws:online:1'])
+    expect(args[0]).toBe('sock-1')
+    // args = [socketId, nowMs, nowMs+TTL, TTL]，续期 score 必须晚于 now（否则成员被判过期）
+    expect(args[2]).toBeGreaterThan(args[1] as number)
+  })
+
+  it('R06：pushToUser 用 ZRANGEBYSCORE 只取未过期成员（死成员按 score 自然过期）', async () => {
+    redisService.eval.mockResolvedValue(['sock-1'])
+    await gateway.pushToUser(1, 'e', {})
+
+    const [script, keys, args] = redisService.eval.mock.calls[0] as [
+      string,
+      string[],
+      (string | number)[],
+    ]
+    expect(script).toContain('ZRANGEBYSCORE')
+    expect(keys).toEqual(['ws:online:1'])
+    expect(args[0]).toEqual(expect.any(Number))
   })
 })

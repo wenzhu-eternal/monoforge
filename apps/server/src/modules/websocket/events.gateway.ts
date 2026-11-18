@@ -28,6 +28,12 @@ import { RedisService } from '@/modules/redis/redis.service'
 // 单用户最大 WS 连接数，防 DoS
 const MAX_CONNECTIONS_PER_USER = 5
 
+// R05/R06：在线成员改用 sorted set，score=绝对到期时间戳（毫秒）。
+// 续期用 ZADD 幂等重登记（key 丢失后活连接可自愈），读侧用 ZRANGEBYSCORE/ZCOUNT 只取未过期成员
+//（死成员按 score 自然过期，不再被其他活跃连接续期整 key TTL 而残留）。
+const ONLINE_TTL_SECONDS = 300
+const ONLINE_TTL_MS = ONLINE_TTL_SECONDS * 1000
+
 // L8：消息级频控——持有效 token 者可无上限 emit，ping 1:1 回显即放大；
 // 每连接按 1s 滑窗计数，超限只回 error 不处理（业务消息本身无写操作）
 const WS_MESSAGE_WINDOW_MS = 1000
@@ -131,18 +137,20 @@ export class EventsGateway
       return
     }
 
-    // 原子登记（Lua 保证 SCARD 判断 + SADD + TTL 续期无竞态）:
+    // 原子登记（Lua 保证 ZADD + 剪枝 + ZCARD 无竞态）:
     // 返回 -1 表示连接数超限；否则返回登记后的全局连接数（含本次）
     let connCount: number
     try {
+      const nowMs = Date.now()
       connCount = (await this.redisService.eval(
-        `local n = redis.call('SCARD', KEYS[1])
-         if n >= tonumber(ARGV[2]) then return -1 end
-         redis.call('SADD', KEYS[1], ARGV[1])
-         redis.call('EXPIRE', KEYS[1], ARGV[3])
+        `redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[2])
+         local n = redis.call('ZCARD', KEYS[1])
+         if n >= tonumber(ARGV[4]) then return -1 end
+         redis.call('ZADD', KEYS[1], ARGV[3], ARGV[1])
+         redis.call('EXPIRE', KEYS[1], ARGV[5])
          return n + 1`,
         [`ws:online:${userId}`],
-        [client.id, MAX_CONNECTIONS_PER_USER, 300],
+        [client.id, nowMs, nowMs + ONLINE_TTL_MS, MAX_CONNECTIONS_PER_USER, ONLINE_TTL_SECONDS],
       )) as number
     } catch (err) {
       // Redis 异常时不留本地残留，直接拒绝连接（避免 onlineUsers 与 Redis 不一致）
@@ -225,7 +233,7 @@ export class EventsGateway
           client.disconnect()
           return
         }
-        await this.refreshOnlineTtl(userId)
+        await this.refreshOnlineTtl(userId, client.id)
       } catch (err) {
         // Redis/DB 抖动不踢连接，等待下一轮重试
         this.logger.warn(`WebSocket 定时重校验异常 user=${userId}: ${(err as Error).message}`)
@@ -266,15 +274,16 @@ export class EventsGateway
     this.logger.log(`用户 ${userId} 已断开 (socket: ${client.id})`)
   }
 
-  /** SREM + 弹空即删 key，返回剩余连接数（断开广播与握手补偿共用） */
+  /** ZREM + 剪枝 + 弹空即删 key，返回剩余连接数（断开广播与握手补偿共用） */
   private removeOnlineSocket(userId: number, socketId: string): Promise<unknown> {
     return this.redisService.eval(
-      `redis.call('SREM', KEYS[1], ARGV[1])
-       local n = redis.call('SCARD', KEYS[1])
+      `redis.call('ZREM', KEYS[1], ARGV[1])
+       redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[2])
+       local n = redis.call('ZCARD', KEYS[1])
        if n == 0 then redis.call('DEL', KEYS[1]) end
        return n`,
       [`ws:online:${userId}`],
-      [socketId],
+      [socketId, Date.now()],
     )
   }
 
@@ -385,13 +394,13 @@ export class EventsGateway
   }
 
   /**
-   * 推送给指定用户：从 Redis Set 查全局 socketId，通过 Redis 适配器跨实例投递
+   * 推送给指定用户：从 Redis 在线集合查未过期 socketId，通过 Redis 适配器跨实例投递
    */
   async pushToUser(userId: number, event: string, data: unknown): Promise<void> {
     const socketIds = (await this.redisService.eval(
-      `return redis.call('SMEMBERS', KEYS[1])`,
+      `return redis.call('ZRANGEBYSCORE', KEYS[1], ARGV[1], '+inf')`,
       [`ws:online:${userId}`],
-      [],
+      [Date.now()],
     )) as string[]
     if (!socketIds || socketIds.length === 0) return
     for (const socketId of socketIds) {
@@ -430,25 +439,32 @@ export class EventsGateway
   }
 
   /**
-   * 查询用户全局连接数（Redis Set SCARD）
+   * 查询用户全局连接数（Redis 在线集合未过期成员 ZCOUNT）
    */
   private async getUserConnectionCount(userId: number): Promise<number> {
     const count = (await this.redisService.eval(
-      `return redis.call('SCARD', KEYS[1])`,
+      `return redis.call('ZCOUNT', KEYS[1], ARGV[1], '+inf')`,
       [`ws:online:${userId}`],
-      [],
+      [Date.now()],
     )) as number
     return count
   }
 
   /**
-   * 续期在线状态 TTL（60s 定时重校验时调用，保证长连接期间 key 不过期）
+   * 续期在线状态（60s 定时重校验时调用，保证长连接期间不过期）：
+   * ZADD 幂等重登记自身成员（key 丢失后活连接自愈），并剪掉已过期死成员、弹空即删 key。
    */
-  private async refreshOnlineTtl(userId: number): Promise<void> {
+  private async refreshOnlineTtl(userId: number, socketId: string): Promise<void> {
+    const nowMs = Date.now()
     await this.redisService.eval(
-      `redis.call('EXPIRE', KEYS[1], ARGV[1])`,
+      `redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[2])
+       redis.call('ZADD', KEYS[1], ARGV[3], ARGV[1])
+       local n = redis.call('ZCARD', KEYS[1])
+       if n == 0 then redis.call('DEL', KEYS[1]) end
+       redis.call('EXPIRE', KEYS[1], ARGV[4])
+       return n`,
       [`ws:online:${userId}`],
-      [300],
+      [socketId, nowMs, nowMs + ONLINE_TTL_MS, ONLINE_TTL_SECONDS],
     )
   }
 
