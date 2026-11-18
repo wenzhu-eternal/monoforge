@@ -568,7 +568,8 @@ export class AuthService {
   /**
    * P1-04：验证码回填统一入口——只在剩余有效期仍有效时恢复，且用 SETNX 恢复，
    * 不覆盖并发重发产生的新码、不复活已过期的旧码。
-   * R06：按读取时点的绝对到期时刻重算真实余量，注册耗时跨到期不回填旧码
+   * R03：按读取时点的绝对到期时刻做 PXAT 恢复，命令队列延迟不会推后有效期；
+   * -1（无 TTL 异常态）不回填，避免把异常态重置为满有效期。
    */
   private async restoreRegisterCode(
     codeKey: string,
@@ -576,16 +577,18 @@ export class AuthService {
     remainingTtl: number,
     deadline: number | null,
   ): Promise<void> {
-    // -2/0：读取时已过期/无余量，不得复活；-1：无 TTL（异常态），退回原有效期
-    if (remainingTtl !== -1 && remainingTtl <= 0) return
-    if (remainingTtl === -1) {
-      await this.redisService.setNx(codeKey, code, 5 * 60)
+    // -2/0：读取时已过期/无余量，不得复活
+    if (remainingTtl <= 0) {
+      if (remainingTtl === -1) {
+        // 无 TTL 异常态：不回填，避免把异常态重置为满有效期（无限重置窗口）
+        this.logger.warn(`注册验证码回填跳过：${codeKey} 无 TTL（异常态），不重置有效期`)
+      }
       return
     }
-    const remainingSec =
-      deadline == null ? remainingTtl : Math.floor((deadline - Date.now()) / 1000)
-    if (remainingSec <= 0) return
-    await this.redisService.setNx(codeKey, code, remainingSec)
+    // remainingTtl > 0 时 deadline 必有值（读取时点锚定绝对到期时刻）
+    const deadlineMs = deadline ?? Date.now() + remainingTtl * 1000
+    if (deadlineMs <= Date.now()) return
+    await this.redisService.setNxAt(codeKey, code, deadlineMs)
   }
 
   /**

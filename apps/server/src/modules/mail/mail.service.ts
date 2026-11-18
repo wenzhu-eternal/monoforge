@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ConflictException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
@@ -69,28 +70,37 @@ export class MailService {
 
   // 按收件人邮箱限流：60s 内只允许发一次，防止对同一邮箱轰炸
   // SET NX EX 原子抢占（替代原 exists 检查+事后标记的两步模式，消除并发同时发多封的竞态）
-  private async acquireMailRateLimit(to: string): Promise<boolean> {
+  // R04：返回属主 token；null=被限流，undefined=Redis 降级放行（未持锁，不得释放）
+  private async acquireMailRateLimit(to: string): Promise<string | null | undefined> {
+    const key = `mail:limit:${to}`
+    const token = randomUUID()
     try {
-      return await this.redisService.setNx(`mail:limit:${to}`, '1', 60)
+      return (await this.redisService.setNx(key, token, 60)) ? token : null
     } catch {
-      // Redis 异常时降级放行，避免阻塞主流程
+      // Redis 异常时降级放行，但未真正持锁，不能进入释放路径
       this.logger.warn(`邮件限流锁获取失败，降级放行: ${maskEmail(to)}`)
-      return true
+      return undefined
     }
   }
 
-  // 发送失败时释放限流锁，允许用户立即重试
-  private async releaseMailRateLimit(to: string): Promise<void> {
+  // 发送失败时释放限流锁，允许用户立即重试；compare-and-delete 仅释放仍属于本请求的租约，
+  // 迟到失败不得删除后继请求已重新获取的新锁（降级未持锁同样直接跳过）
+  private async releaseMailRateLimit(to: string, token: string | null | undefined): Promise<void> {
+    if (!token) return
     try {
-      await this.redisService.del(`mail:limit:${to}`)
+      await this.redisService.eval(
+        `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`,
+        [`mail:limit:${to}`],
+        [token],
+      )
     } catch {
       // 释放失败忽略，等待 60s 自然过期
     }
   }
 
   async sendWelcome(to: string, username: string): Promise<void> {
-    const locked = await this.acquireMailRateLimit(to)
-    if (!locked) {
+    const lockToken = await this.acquireMailRateLimit(to)
+    if (lockToken === null) {
       throw new ConflictException('发送过于频繁，请60秒后重试')
     }
     try {
@@ -109,7 +119,7 @@ export class MailService {
         )
       }
     } catch (err) {
-      await this.releaseMailRateLimit(to)
+      await this.releaseMailRateLimit(to, lockToken)
       throw err
     }
   }
@@ -120,8 +130,8 @@ export class MailService {
    *             不传 = 邮件通道测试（J2=C：发测试邮件，不再伪造必然不可用的验证码）
    */
   async sendVerificationCode(to: string, name?: string, code?: string): Promise<void> {
-    const locked = await this.acquireMailRateLimit(to)
-    if (!locked) {
+    const lockToken = await this.acquireMailRateLimit(to)
+    if (lockToken === null) {
       throw new ConflictException('发送过于频繁，请60秒后重试')
     }
     try {
@@ -155,7 +165,7 @@ export class MailService {
         )
       }
     } catch (err) {
-      await this.releaseMailRateLimit(to)
+      await this.releaseMailRateLimit(to, lockToken)
       throw err
     }
   }

@@ -100,6 +100,16 @@ export class RedisService implements OnModuleDestroy {
   }
 
   /**
+   * SET NX PXAT 绝对到期抢占（Redis 6.2+）：到期时刻固定为绝对时间戳（毫秒），
+   * 不会被命令队列延迟推后（相对 EX 从 SET 执行时刻起算）。用于验证码回填等
+   * 需要"绝不复活已过期旧值"的场景。返回 true=抢占成功，false=key 已存在。
+   */
+  async setNxAt(key: string, value: string, expiresAtMs: number): Promise<boolean> {
+    const result = await this.client.set(key, value, 'PXAT', expiresAtMs, 'NX')
+    return result === 'OK'
+  }
+
+  /**
    * 查询 key 剩余 TTL（秒）：-1 永久，-2 不存在。供限流返回真实剩余时间
    */
   async ttl(key: string): Promise<number> {

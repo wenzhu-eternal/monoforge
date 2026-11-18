@@ -46,6 +46,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     eval: ReturnType<typeof vi.fn>
     ttl: ReturnType<typeof vi.fn>
     setNx: ReturnType<typeof vi.fn>
+    setNxAt: ReturnType<typeof vi.fn>
   }
   let errorLogsService: { record: ReturnType<typeof vi.fn> }
 
@@ -83,6 +84,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       eval: vi.fn().mockResolvedValue(0),
       ttl: vi.fn().mockResolvedValue(300),
       setNx: vi.fn().mockResolvedValue(true),
+      setNxAt: vi.fn().mockResolvedValue(true),
     }
     const configService = { get: vi.fn().mockReturnValue('secret') }
     errorLogsService = { record: vi.fn().mockResolvedValue(undefined) }
@@ -305,6 +307,8 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     })
 
     it('L11：输错码回填按剩余 TTL，不重置为满 5 分钟', async () => {
+      const now = 1_700_000_000_000
+      vi.spyOn(Date, 'now').mockReturnValue(now)
       redisService.getdel.mockResolvedValue('123456')
       redisService.eval.mockResolvedValue(1)
       redisService.ttl.mockResolvedValue(60)
@@ -312,13 +316,15 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
       )
-      // R06：按读取时点的绝对到期重算真实余量，仍是剩余（≤60），而非满 5 分钟
-      const ttl = redisService.setNx.mock.calls[0]?.[2] as number
-      expect(ttl).toBeGreaterThan(0)
-      expect(ttl).toBeLessThanOrEqual(60)
+      // R03：按读取时点绝对到期做 PXAT 恢复（now+60s），而非满 5 分钟
+      expect(redisService.setNxAt).toHaveBeenCalledWith(
+        'register:code:a@b.com',
+        '123456',
+        now + 60_000,
+      )
     })
 
-    it('P1-04：无 TTL 异常态（-1）退回原有效期', async () => {
+    it('R03：无 TTL 异常态（-1）不回填，不重置为满 5 分钟', async () => {
       redisService.getdel.mockResolvedValue('123456')
       redisService.eval.mockResolvedValue(1)
       redisService.ttl.mockResolvedValue(-1)
@@ -326,7 +332,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
       )
-      expect(redisService.setNx).toHaveBeenCalledWith('register:code:a@b.com', '123456', 5 * 60)
+      expect(redisService.setNxAt).not.toHaveBeenCalled()
     })
 
     it('P1-04：读取后已过期（-2）不复活旧码', async () => {
@@ -337,22 +343,26 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
       )
-      expect(redisService.setNx).not.toHaveBeenCalled()
+      expect(redisService.setNxAt).not.toHaveBeenCalled()
     })
 
     it('P1-04：回填用 SETNX，并发重发出新码时不覆盖', async () => {
+      const now = 1_700_000_000_000
+      vi.spyOn(Date, 'now').mockReturnValue(now)
       redisService.getdel.mockResolvedValue('123456')
       redisService.eval.mockResolvedValue(1)
       redisService.ttl.mockResolvedValue(60)
       // 新码已由并发重发写入 → SETNX 失败，旧码不得覆盖
-      redisService.setNx.mockResolvedValue(false)
+      redisService.setNxAt.mockResolvedValue(false)
 
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         UnauthorizedException,
       )
-      const ttl = redisService.setNx.mock.calls[0]?.[2] as number
-      expect(ttl).toBeGreaterThan(0)
-      expect(ttl).toBeLessThanOrEqual(60)
+      expect(redisService.setNxAt).toHaveBeenCalledWith(
+        'register:code:a@b.com',
+        '123456',
+        now + 60_000,
+      )
     })
 
     it('P1-04：getdel 不可用 → 503，不当作验证码错误', async () => {
@@ -367,7 +377,7 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     it('P1-04：错码回填失败 → 503 并归因降级', async () => {
       redisService.getdel.mockResolvedValue('123456')
       redisService.ttl.mockResolvedValue(60)
-      redisService.setNx.mockRejectedValue(new Error('redis down'))
+      redisService.setNxAt.mockRejectedValue(new Error('redis down'))
 
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '999999')).rejects.toThrow(
         ServiceUnavailableException,
@@ -400,6 +410,8 @@ describe('AuthService（L7 登出失效时间戳）', () => {
     })
 
     it('L11：非 Conflict 失败同样按剩余 TTL 回填（DB 抖动不烧码）', async () => {
+      const now = 1_700_000_000_000
+      vi.spyOn(Date, 'now').mockReturnValue(now)
       redisService.getdel.mockResolvedValue('123456')
       redisService.ttl.mockResolvedValue(120)
       stubPrivate('register', async () => {
@@ -409,10 +421,12 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
         'db down',
       )
-      // R06：按绝对到期重算真实余量（≤120），而非原样回填旧 TTL
-      const ttl = redisService.setNx.mock.calls[0]?.[2] as number
-      expect(ttl).toBeGreaterThan(0)
-      expect(ttl).toBeLessThanOrEqual(120)
+      // R03：按绝对到期做 PXAT 恢复（now+120s）
+      expect(redisService.setNxAt).toHaveBeenCalledWith(
+        'register:code:a@b.com',
+        '123456',
+        now + 120_000,
+      )
     })
 
     it('R06：注册耗时跨到期 → 不回填旧码（不复活已过期验证码）', async () => {
@@ -428,13 +442,13 @@ describe('AuthService（L7 登出失效时间戳）', () => {
       await expect(service.registerWithCode('u', 'a@b.com', 'Pass1234', '123456')).rejects.toThrow(
         'db down',
       )
-      expect(redisService.setNx).not.toHaveBeenCalled()
+      expect(redisService.setNxAt).not.toHaveBeenCalled()
     })
 
     it('L1：回填失败不顶替原始异常，且归因 Redis 降级并留痕', async () => {
       redisService.getdel.mockResolvedValue('123456')
       redisService.ttl.mockResolvedValue(120)
-      redisService.setNx.mockRejectedValueOnce(new Error('redis down'))
+      redisService.setNxAt.mockRejectedValueOnce(new Error('redis down'))
       stubPrivate('register', async () => {
         throw new Error('db down')
       })
