@@ -42,6 +42,16 @@ const argon2 = await import('argon2')
 
 import { UsersService } from './users.service'
 
+// R01：事务内目标用户行锁（FOR UPDATE）——update 现在先锁用户行再锁角色行
+const userLockChain = (rows: unknown[]) => {
+  const chain = {
+    from: vi.fn(() => chain),
+    where: vi.fn(() => chain),
+    for: vi.fn().mockResolvedValue(rows),
+  }
+  return chain
+}
+
 describe('UsersService', () => {
   let service: UsersService
   let mockErrorLogsService: {
@@ -390,6 +400,8 @@ describe('UsersService', () => {
         id: 1,
         email: 'a@b.com',
       } as never)
+      // R01：先锁目标用户行
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 1, roleId: 2 }]) as never)
       // P2-16：角色行 FOR KEY SHARE 锁查询
       const lockChain = {
         from: () => lockChain,
@@ -425,6 +437,7 @@ describe('UsersService', () => {
         email: 'b@b.com',
         roleId: 2,
       } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 2, roleId: 2 }]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -466,6 +479,7 @@ describe('UsersService', () => {
         email: 'b@b.com',
         roleId: 2,
       } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 2, roleId: 2 }]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -503,6 +517,7 @@ describe('UsersService', () => {
         email: 'b@b.com',
         roleId: 2,
       } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 2, roleId: 2 }]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -561,6 +576,8 @@ describe('UsersService', () => {
         roleId: 2,
       } as never)
       vi.mocked(mockDb.query.roles.findFirst).mockResolvedValue({ id: 1, deletedAt: null } as never)
+      // R01：先锁目标用户行
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 2, roleId: 2 }]) as never)
       // P2-16：角色行 FOR KEY SHARE 锁查询
       const lockChain = {
         from: () => lockChain,
@@ -643,6 +660,7 @@ describe('UsersService', () => {
         email: 'root@b.com',
         roleId: 1,
       } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 1, roleId: 1 }]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -664,6 +682,7 @@ describe('UsersService', () => {
         email: 'root@b.com',
         roleId: 1,
       } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 1, roleId: 1 }]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -684,6 +703,7 @@ describe('UsersService', () => {
         email: 'root@b.com',
         roleId: 1,
       } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 1, roleId: 1 }]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -730,6 +750,7 @@ describe('UsersService', () => {
         email: 'b@b.com',
         roleId: 2,
       } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 2, roleId: 2 }]) as never)
       vi.mocked(mockDb.update).mockReturnValue({
         set: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -742,7 +763,8 @@ describe('UsersService', () => {
 
       const result = await service.update(2, { nickname: 'n' }, { roleId: 2 })
       expect(result.id).toBe(2)
-      expect(mockDb.select).not.toHaveBeenCalled()
+      // R01：仅事务内目标用户行锁一次；roleId 未变更不触发角色行锁/权限集校验
+      expect(mockDb.select).toHaveBeenCalledTimes(1)
     })
 
     it('M1: 仅清 mustChangePassword（不重置密码）写入 DB，解锁微信死锁', async () => {
@@ -751,6 +773,7 @@ describe('UsersService', () => {
         email: 'b@b.com',
         roleId: 2,
       } as never)
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 2, roleId: 2 }]) as never)
       const setSpy = vi.fn()
       vi.mocked(mockDb.update).mockReturnValue({
         set: setSpy.mockReturnValue({
@@ -767,6 +790,30 @@ describe('UsersService', () => {
       expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ mustChangePassword: false }))
       // 不触发密码重置的 token 吊销链
       expect(mockRedisService.deleteByPattern).not.toHaveBeenCalled()
+    })
+
+    it('R01: 预检后目标被并发晋升为超管，事务内按最新角色重验拒绝改密', async () => {
+      // 事务外预检读到普通角色（roleId 2），通过敏感字段闸
+      vi.mocked(mockDb.query.users.findFirst).mockResolvedValue({
+        id: 2,
+        email: 'b@b.com',
+        roleId: 2,
+      } as never)
+      // 事务内锁定目标行时，其已被真超管晋升为 admin（roleId 1）
+      vi.mocked(mockDb.select).mockReturnValueOnce(userLockChain([{ id: 2, roleId: 1 }]) as never)
+      // 密码已哈希（rawPassword 就绪），若未重验将直接写入覆盖超管密码
+      vi.mocked(mockDb.update).mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: 2, email: 'b@b.com', roleId: 1 }]),
+          }),
+        }),
+      } as never)
+
+      await expect(service.update(2, { password: 'new-secret-1' }, { roleId: 2 })).rejects.toThrow(
+        ForbiddenException,
+      )
+      expect(mockDb.update).not.toHaveBeenCalled()
     })
   })
 

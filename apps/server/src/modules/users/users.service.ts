@@ -276,26 +276,9 @@ export class UsersService {
 
     // H1：超管保护从"角色变动"扩展为目标是超管时的一切敏感变更——
     // 持 USER_ROLE_MANAGE 的委托管理员若可对超管改 password/status/email，
-    // 改密后即可登录超管完成接管（fail-closed，caller 缺失同拒）
-    const adminRoleId = getEnv().ADMIN_ROLE_ID
-    const touchesAdminRole =
-      data.roleId === adminRoleId ||
-      (existingUser.roleId === adminRoleId &&
-        data.roleId !== undefined &&
-        data.roleId !== adminRoleId)
-    // M1：mustChangePassword 同属敏感变更——非超管可对超管施加/解除强制改密，
-    // 等同把超管锁进改密环节或解锁未改密的管理员，因此与本段其它三个字段同闸
-    const editsAdminSensitive =
-      existingUser.roleId === adminRoleId &&
-      (data.password !== undefined ||
-        data.status !== undefined ||
-        data.email !== undefined ||
-        // L1：phone 与 email 同属联系方式（短信/找回链路前件），保护圈需一致
-        data.phone !== undefined ||
-        data.mustChangePassword !== undefined)
-    if ((touchesAdminRole || editsAdminSensitive) && !isAdminUser(caller)) {
-      throw new ForbiddenException('仅超级管理员可变更超管账号的敏感信息')
-    }
+    // 改密后即可登录超管完成接管（fail-closed，caller 缺失同拒）。
+    // R01：此处为事务外预检的快速失败；最终裁决以事务内锁定目标行后的最新角色为准
+    this.assertNotTouchingAdmin(data, existingUser.roleId, caller)
 
     // M1/J1：显式指定角色（含同值提交）时按调用者权限集收敛，口径同 create——
     // 非超管无法对"权限集超出自身"的角色做任何指派动作
@@ -323,6 +306,18 @@ export class UsersService {
 
     try {
       const [updatedUser] = await db.transaction(async (tx) => {
+        // R01：锁定目标用户行并按最新角色重验超管敏感字段——预检后目标可能已被并发晋升为超管，
+        // 仅锁新角色行无法阻止旧请求覆盖其密码（实际 UPDATE 只约束 id + notDeleted）
+        const [lockedUser] = await tx
+          .select({ id: users.id, roleId: users.roleId })
+          .from(users)
+          .where(and(eq(users.id, id), notDeleted(users.deletedAt)))
+          .for('update')
+        if (!lockedUser) {
+          throw new NotFoundException(ErrorMessages[ErrorCodes.USER_NOT_FOUND])
+        }
+        this.assertNotTouchingAdmin(data, lockedUser.roleId, caller)
+
         // P2-16：与 roles.remove 的 FOR UPDATE 行锁互斥——已通过预检的角色若在写入前被软删，
         // 这里的 FOR KEY SHARE 落空，杜绝"用户绑定到已删角色"
         if (data.roleId !== undefined && data.roleId !== null) {
@@ -432,6 +427,39 @@ export class UsersService {
         throw new ConflictException('邮箱已被注册（并发冲突）')
       }
       throw error
+    }
+  }
+
+  /**
+   * H1/R01：超管敏感变更保护——目标角色为超管时，非超管不得改敏感字段（密码/状态/邮箱/手机号/强制改密），
+   * 也不得把任意用户指派到超管角色或把超管摘离。事务内锁定目标行后按最新角色重验，
+   * 堵住「预检通过 → 并发晋升为超管 → 旧请求覆盖其密码」的 TOCTOU 接管。
+   */
+  private assertNotTouchingAdmin(
+    data: {
+      roleId?: number | null
+      password?: string
+      status?: boolean
+      email?: string
+      phone?: string | null
+      mustChangePassword?: boolean
+    },
+    targetRoleId: number | null | undefined,
+    caller?: { roleId?: number | null },
+  ): void {
+    const adminRoleId = getEnv().ADMIN_ROLE_ID
+    const touchesAdminRole =
+      data.roleId === adminRoleId ||
+      (targetRoleId === adminRoleId && data.roleId !== undefined && data.roleId !== adminRoleId)
+    const editsAdminSensitive =
+      targetRoleId === adminRoleId &&
+      (data.password !== undefined ||
+        data.status !== undefined ||
+        data.email !== undefined ||
+        data.phone !== undefined ||
+        data.mustChangePassword !== undefined)
+    if ((touchesAdminRole || editsAdminSensitive) && !isAdminUser(caller)) {
+      throw new ForbiddenException('仅超级管理员可变更超管账号的敏感信息')
     }
   }
 
